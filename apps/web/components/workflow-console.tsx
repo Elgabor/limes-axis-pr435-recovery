@@ -1,13 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
   ChevronDown,
   ChevronRight,
   History,
-  RadioTower,
   Route,
   TimerReset,
   Workflow,
@@ -24,23 +23,36 @@ import { Term } from "@/components/ui/glossary";
 import { InspectDrawer } from "@/components/ui/inspect-drawer";
 import { MasterDetail } from "@/components/ui/master-detail";
 import { MetricStrip, type Metric } from "@/components/ui/metric-strip";
+import { SourcePill } from "@/components/ui/source-pill";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import { cn } from "@/lib/cn";
+import { stringUrlField, useConsoleUrlState } from "@/lib/console-url-state";
+import { formatContextPath, formatDateTime, formatNumber } from "@/lib/format";
 import {
   formatOverviewTimestamp,
   platformStatusClass,
   platformStatusLabel,
   type PlatformStatus,
 } from "@/lib/platform-overview";
+import { deriveSourceState } from "@/lib/source-state";
 import { strings } from "@/lib/strings";
 import { parseManufacturingWorkflowConsole } from "@/lib/runtime-contracts/workflows";
+import {
+  buildTenantScopedPath,
+  DEMO_TENANT_ID,
+  OPERATIONS_API_PREFIX,
+} from "@/lib/tenant-scope";
 import { useAxisQuery } from "@/lib/use-axis-query";
+import {
+  IDENTITY_SESSION_ENDPOINT,
+  useConsoleTenantScope,
+} from "@/lib/use-console-tenant-scope";
+import { useTenantVocabulary } from "@/providers/tenant-vocabulary-provider";
 import {
   allWorkflowFilter,
   filterWorkflows,
   formatWorkflowRelativeTime,
   formatWorkflowState,
-  shouldUsePersistedWorkflowData,
   workflowBlockingApprovalId,
   workflowFilterOptions,
   workflowStatusLine,
@@ -50,28 +62,17 @@ import {
   type WorkflowRun,
 } from "@/lib/workflow-demo";
 
-export const WORKFLOW_RUNS_ENDPOINT =
-  "/demo/manufacturing/workflows/runs?tenant_id=tenant_demo_manufacturing&limit=100";
-export const WORKFLOW_REFERENCE_ENDPOINT = "/demo/manufacturing/workflows";
-
-type WorkflowSource = "loading" | "persisted" | "api" | "unavailable";
+export const WORKFLOW_RUNS_ENDPOINT = `${OPERATIONS_API_PREFIX}/workflows/runs`;
 
 const defaultFilters: WorkflowFilters = {
   state: allWorkflowFilter,
   domain: allWorkflowFilter,
 };
-
-function sourceLabel(source: WorkflowSource): string {
-  if (source === "persisted") {
-    return "Persisted workflow runs";
-  }
-
-  if (source === "api") {
-    return "API workflow records";
-  }
-
-  return source === "loading" ? "Loading workflow API" : "Workflow API unavailable";
-}
+const workflowUrlSchema = {
+  state: stringUrlField("state", allWorkflowFilter),
+  domain: stringUrlField("domain", allWorkflowFilter),
+  workflowId: stringUrlField("workflow_id"),
+};
 
 const metricTones: Record<PlatformStatus, Metric["tone"]> = {
   ready: "ready",
@@ -93,7 +94,10 @@ function runStatusToneClass(status: PlatformStatus): string {
   return status === "watch" ? "text-warning" : "text-positive";
 }
 
-function buildFilterDefs(workflowData: ManufacturingWorkflowConsole): FilterDef[] {
+function buildFilterDefs(
+  workflowData: ManufacturingWorkflowConsole,
+  labelDomain: (domain: string) => string,
+): FilterDef[] {
   const options = workflowFilterOptions(workflowData);
   const copy = strings.workflows.filters;
 
@@ -111,19 +115,13 @@ function buildFilterDefs(workflowData: ManufacturingWorkflowConsole): FilterDef[
       label: copy.domain,
       options: [
         { value: allWorkflowFilter, label: copy.allDomains },
-        ...options.domains.map((domain) => ({ value: domain, label: domain })),
+        ...options.domains.map((domain) => ({
+          value: domain,
+          label: labelDomain(domain),
+        })),
       ],
     },
   ];
-}
-
-function formatWorkflowTime(value: string): string {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
 }
 
 /**
@@ -179,7 +177,7 @@ function RuntimeTimeline({ workflow }: { workflow: WorkflowRun }) {
         </div>
         <span className="status-pill signal-watch">
           <History size={15} />
-          {waitingSignals} {copy.waiting}
+          {formatNumber(waitingSignals)} {copy.waiting}
         </span>
       </div>
       <DataTable aria-label="Workflow runtime timeline" minWidth={560}>
@@ -213,7 +211,7 @@ function RuntimeTimeline({ workflow }: { workflow: WorkflowRun }) {
               <td>
                 <span
                   className="font-mono text-xs whitespace-nowrap text-muted"
-                  title={formatWorkflowTime(event.at)}
+                  title={formatDateTime(event.at)}
                 >
                   {formatWorkflowRelativeTime(event.at)}
                 </span>
@@ -239,7 +237,7 @@ function CollapsibleSection({
 
   return (
     <Collapsible onOpenChange={setOpen} open={open}>
-      <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 bg-transparent p-0">
+      <CollapsibleTrigger className="flex min-h-6 cursor-pointer items-center gap-1.5 bg-transparent p-0">
         <Chevron aria-hidden="true" className="text-muted" size={14} />
         <span className="eyebrow">{label}</span>
       </CollapsibleTrigger>
@@ -303,14 +301,20 @@ function PendingSignals({ workflow }: { workflow: WorkflowRun }) {
  * timeline as the centerpiece, collapsed record sections, and the raw record
  * behind an Inspect drawer.
  */
-function WorkflowDetail({ workflow }: { workflow: WorkflowRun }) {
+function WorkflowDetail({
+  workflow,
+  domainLabel,
+}: {
+  workflow: WorkflowRun;
+  domainLabel: string;
+}) {
   const copy = strings.workflows;
 
   return (
     <Card className="grid content-start gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="grid max-w-xl gap-1">
-          <Eyebrow>{workflow.domain}</Eyebrow>
+          <Eyebrow>{domainLabel || workflow.domain}</Eyebrow>
           <h2 className="font-display m-0 text-xl text-ink">{workflow.name}</h2>
           <p className="m-0 text-sm text-muted">{workflow.objective}</p>
           <p className="m-0 text-sm text-ink">{workflowStatusLine(workflow)}</p>
@@ -347,7 +351,7 @@ function WorkflowDetail({ workflow }: { workflow: WorkflowRun }) {
           {workflow.owner_role} / <Term k="autonomy_level">{workflow.autonomy_level}</Term>
         </KeyValueRow>
         <KeyValueRow label={copy.detail.started}>
-          {formatWorkflowTime(workflow.started_at)}
+          {formatDateTime(workflow.started_at)}
         </KeyValueRow>
         <KeyValueRow label={copy.detail.expected}>{workflow.eta}</KeyValueRow>
         <KeyValueRow label={copy.detail.auditScope} mono>
@@ -371,7 +375,7 @@ function WorkflowDetail({ workflow }: { workflow: WorkflowRun }) {
         title={workflow.name}
         trigger={
           <button
-            className="inline-flex w-fit cursor-pointer items-center font-mono text-xs text-muted transition-colors duration-200 hover:text-signal"
+            className="inline-flex min-h-6 w-fit cursor-pointer items-center font-mono text-xs text-muted transition-colors duration-200 hover:text-signal"
             type="button"
           >
             {copy.inspect}
@@ -383,40 +387,55 @@ function WorkflowDetail({ workflow }: { workflow: WorkflowRun }) {
 }
 
 export function WorkflowConsole() {
-  const persisted = useAxisQuery<ManufacturingWorkflowConsole>(WORKFLOW_RUNS_ENDPOINT, {
-    parse: parseManufacturingWorkflowConsole,
-  });
-  const usePersisted = persisted.data !== null && shouldUsePersistedWorkflowData(persisted.data);
-  // The persisted-runs endpoint wins whenever it has records; the reference
-  // registry is only consulted when the API answered with zero persisted runs.
-  const referenceEnabled = persisted.source === "api" && persisted.data !== null && !usePersisted;
-  const reference = useAxisQuery<ManufacturingWorkflowConsole>(WORKFLOW_REFERENCE_ENDPOINT, {
-    enabled: referenceEnabled,
+  const { labelDomain } = useTenantVocabulary();
+  const { identity, tenantId, tenantQueriesEnabled } = useConsoleTenantScope();
+  const runsPath = buildTenantScopedPath(
+    WORKFLOW_RUNS_ENDPOINT,
+    tenantId ?? DEMO_TENANT_ID,
+    { limit: 100 },
+  );
+  const persisted = useAxisQuery<ManufacturingWorkflowConsole>(runsPath, {
+    enabled: tenantQueriesEnabled,
+    expectedTenantId: tenantId ?? undefined,
     parse: parseManufacturingWorkflowConsole,
   });
 
-  const [filters, setFilters] = useState<WorkflowFilters>(defaultFilters);
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState("");
+  const [urlState, setUrlState] = useConsoleUrlState(workflowUrlSchema);
 
-  let workflowData: ManufacturingWorkflowConsole | null = null;
-  let source: WorkflowSource = "loading";
-  if (usePersisted) {
-    workflowData = persisted.data;
-    source = "persisted";
-  } else if (referenceEnabled && reference.source === "api") {
-    workflowData = reference.data;
-    source = "api";
-  } else if (
-    persisted.source === "unavailable"
-    || (referenceEnabled && reference.source === "unavailable")
-  ) {
-    source = "unavailable";
+  const workflowData = persisted.data;
+  const source = deriveSourceState(
+    persisted.source,
+    Boolean(workflowData),
+    workflowData?.provenance,
+  );
+  const validFilterOptions = workflowData ? workflowFilterOptions(workflowData) : null;
+  const filters: WorkflowFilters = {
+    state: urlState.state === allWorkflowFilter
+      || validFilterOptions?.states.includes(urlState.state)
+      ? urlState.state
+      : allWorkflowFilter,
+    domain: urlState.domain === allWorkflowFilter
+      || validFilterOptions?.domains.includes(urlState.domain)
+      ? urlState.domain
+      : allWorkflowFilter,
+  };
+
+  const filteredWorkflows = workflowData ? filterWorkflows(workflowData, filters) : [];
+
+  if (identity.source === "loading") {
+    return <LoadingPanel layout="detail" />;
   }
 
-  const filteredWorkflows = useMemo(
-    () => (workflowData ? filterWorkflows(workflowData, filters) : []),
-    [workflowData, filters],
-  );
+  if (identity.source === "unavailable" || !tenantId) {
+    return (
+      <ErrorPanel
+        detail="The console could not verify the current actor and tenant. Workflow data is not loaded until identity is available."
+        endpoint={IDENTITY_SESSION_ENDPOINT}
+        reference={identity.errorRequestId ?? undefined}
+        title="Identity API unavailable"
+      />
+    );
+  }
 
   if (!workflowData) {
     if (source === "loading") {
@@ -434,7 +453,8 @@ export function WorkflowConsole() {
     return (
       <ErrorPanel
         detail={strings.workflows.error.detail}
-        endpoint={WORKFLOW_RUNS_ENDPOINT}
+        endpoint={runsPath}
+        reference={persisted.errorRequestId ?? undefined}
         title={strings.workflows.error.title}
       />
     );
@@ -450,9 +470,9 @@ export function WorkflowConsole() {
     );
   }
 
-  const selectedWorkflow =
-    filteredWorkflows.find((run) => run.workflow_id === selectedWorkflowId)
-    ?? filteredWorkflows[0];
+  const selectedWorkflow = urlState.workflowId
+    ? filteredWorkflows.find((run) => run.workflow_id === urlState.workflowId)
+    : filteredWorkflows[0];
 
   const metrics: Metric[] = workflowData.metrics.map((metric) => ({
     label: metric.label,
@@ -468,13 +488,14 @@ export function WorkflowConsole() {
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2"
       >
         <p className="m-0 min-w-0 text-sm break-words text-muted">
-          {workflowData.plant_name} / {workflowData.scenario} / {workflowData.tenant_id}
+          {formatContextPath(
+            workflowData.plant_name,
+            workflowData.scenario,
+            workflowData.tenant_id,
+          )}
         </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="status-pill signal-ready">
-            <RadioTower size={15} />
-            {sourceLabel(source)}
-          </span>
+          <SourcePill state={source} subject="workflow runs" />
           <span className={`status-pill ${platformStatusClass(workflowData.runtime_status)}`}>
             <Route size={15} />
             {platformStatusLabel(workflowData.runtime_status)}
@@ -488,34 +509,44 @@ export function WorkflowConsole() {
       {metrics.length > 0 ? <MetricStrip metrics={metrics} /> : null}
 
       <FilterBar
-        filters={buildFilterDefs(workflowData)}
+        filters={buildFilterDefs(workflowData, labelDomain)}
         values={{ state: filters.state, domain: filters.domain }}
         onChange={(id, value) => {
           if (id === "state" || id === "domain") {
-            setFilters((current) => ({ ...current, [id]: value }));
+            setUrlState({ [id]: value, workflowId: "" });
           }
         }}
-        onReset={() => setFilters(defaultFilters)}
+        onReset={() => setUrlState({ ...defaultFilters, workflowId: "" })}
       />
 
-      {filteredWorkflows.length === 0 || !selectedWorkflow ? (
+      {urlState.workflowId && !selectedWorkflow ? (
+        <EmptyPanel
+          detail={strings.states.requestedRecord.detail}
+          title={strings.states.requestedRecord.title}
+        />
+      ) : filteredWorkflows.length === 0 || !selectedWorkflow ? (
         <EmptyPanel
           action={{
             label: strings.workflows.noMatch.reset,
-            onClick: () => setFilters(defaultFilters),
+            onClick: () => setUrlState({ ...defaultFilters, workflowId: "" }),
           }}
           detail={strings.workflows.noMatch.detail}
           title={strings.workflows.noMatch.title}
         />
       ) : (
         <MasterDetail
-          detail={<WorkflowDetail workflow={selectedWorkflow} />}
+          detail={
+            <WorkflowDetail
+              domainLabel={labelDomain(selectedWorkflow.domain)}
+              workflow={selectedWorkflow}
+            />
+          }
           list={
             <Card className="grid content-start gap-4">
               <div className="grid gap-1">
                 <Eyebrow>{strings.workflows.list.eyebrow}</Eyebrow>
                 <h2 className="font-display m-0 text-xl text-ink">
-                  {filteredWorkflows.length} visible
+                  {formatNumber(filteredWorkflows.length)} visible
                 </h2>
               </div>
               <div className="grid gap-2">
@@ -532,12 +563,12 @@ export function WorkflowConsole() {
                           : "border-line bg-transparent hover:border-signal/40 hover:bg-tint-50 dark:border-white/10 dark:hover:bg-white/5",
                       )}
                       key={run.workflow_id}
-                      onClick={() => setSelectedWorkflowId(run.workflow_id)}
+                      onClick={() => setUrlState({ workflowId: run.workflow_id })}
                       type="button"
                     >
                       <span className="grid min-w-0 gap-0.5">
                         <span className="text-sm font-medium text-ink">{run.name}</span>
-                        <span className="text-xs text-muted">{run.domain}</span>
+                        <span className="text-xs text-muted">{labelDomain(run.domain)}</span>
                         <span className="flex items-center gap-1.5 text-xs text-muted">
                           <span
                             aria-hidden="true"

@@ -1,5 +1,8 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from pathlib import Path
 from runpy import run_path
+from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +15,10 @@ from axis_api.config import Settings
 from axis_api.db import session_scope
 from axis_api.main import create_app
 from axis_api.manufacturing_operations import (
+    ManufacturingNotificationAcknowledgementPermissionDenied,
     ManufacturingNotificationAcknowledgementRequest,
+    ManufacturingNotificationAcknowledgementResult,
+    ManufacturingNotificationNotFound,
     ManufacturingNotificationQuery,
     ManufacturingOperationQuery,
     ManufacturingOperationsSnapshotQuery,
@@ -28,6 +34,7 @@ from axis_api.persistence import (
     ManufacturingDailyBriefCreate,
     ManufacturingOperationRecordCreate,
     ManufacturingRiskScenarioCreate,
+    TenantCreate,
     WorkflowRunCreate,
 )
 
@@ -41,6 +48,15 @@ def session_factory() -> sessionmaker[Session]:
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with session_scope(factory) as session:
+        AxisPersistenceRepository(session).create_tenant(
+            TenantCreate(
+                tenant_id="tenant_demo_manufacturing",
+                display_name="Ravenna Works",
+                description="Plant Operations Cockpit",
+                created_by="test",
+            )
+        )
     yield factory
     engine.dispose()
 
@@ -136,6 +152,7 @@ def test_query_manufacturing_operations_dataset_filters_by_domain(
         )
 
     assert dataset.tenant_id == "tenant_demo_manufacturing"
+    assert dataset.provenance == "live"
     assert dataset.domains == ["Quality"]
     assert dataset.source_systems == ["QMS"]
     assert dataset.metrics[0].label == "Operational Records"
@@ -162,6 +179,7 @@ def test_manufacturing_operations_endpoint_returns_persisted_records(
     assert response.status_code == 200
     body = response.json()
     assert body["tenant_id"] == "tenant_demo_manufacturing"
+    assert body["provenance"] == "live"
     assert body["metrics"][1]["label"] == "Action Required"
     assert body["metrics"][1]["value"] == "1"
     assert [record["record_id"] for record in body["records"]] == ["order_rush_4812"]
@@ -295,6 +313,7 @@ def test_build_manufacturing_operations_snapshot_aggregates_persisted_paths(
         )
 
     assert snapshot.tenant_id == "tenant_demo_manufacturing"
+    assert snapshot.provenance == "live"
     assert snapshot.metrics[0].label == "Operation Records"
     assert snapshot.metrics[0].value == "2"
     assert snapshot.metrics[1].label == "Open Workflows"
@@ -335,6 +354,7 @@ def test_manufacturing_operations_snapshot_endpoint_returns_persisted_compositio
     assert response.status_code == 200
     body = response.json()
     assert body["tenant_id"] == "tenant_demo_manufacturing"
+    assert body["provenance"] == "live"
     assert body["metrics"][0]["value"] == "2"
     assert body["latest_daily_briefs"][0]["brief_id"] == "brief_20260621_demo"
     assert body["risk_scenarios"][0]["domain"] == "Supply"
@@ -344,6 +364,37 @@ def test_manufacturing_operations_snapshot_endpoint_returns_persisted_compositio
     assert payload_refs["source_record_ids"] == ["order_rush_4812"]
     assert "workflow_id" not in payload_refs
     assert all(value is not None for value in payload_refs.values())
+
+
+def test_manufacturing_operation_views_use_empty_tenant_metadata(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        repository.create_tenant(
+            TenantCreate(
+                tenant_id="tenant_customer_operations",
+                display_name="Bologna Plant",
+                description="",
+                created_by="test",
+            )
+        )
+        dataset = query_manufacturing_operations_dataset(
+            repository,
+            ManufacturingOperationQuery(tenant_id="tenant_customer_operations"),
+        )
+        snapshot = build_manufacturing_operations_snapshot(
+            repository,
+            ManufacturingOperationsSnapshotQuery(
+                tenant_id="tenant_customer_operations"
+            ),
+        )
+
+    for response_model in (dataset, snapshot):
+        assert response_model.plant_name == "Bologna Plant"
+        assert response_model.scenario is None
+        assert response_model.provenance == "empty"
+        assert "Ravenna" not in response_model.model_dump_json()
 
 
 def test_build_manufacturing_notification_center_derives_from_persisted_snapshot(
@@ -361,6 +412,7 @@ def test_build_manufacturing_notification_center_derives_from_persisted_snapshot
         )
 
     assert center.tenant_id == "tenant_demo_manufacturing"
+    assert center.provenance == "live"
     assert center.generation_boundary == "derived_from_persisted_operations_snapshot"
     assert center.unread_count == 4
     assert center.action_required_count >= 1
@@ -385,6 +437,20 @@ def test_build_manufacturing_notification_center_derives_from_persisted_snapshot
     assert "tenant_other" not in serialized
     assert "password" not in serialized
     assert "secret" not in serialized
+
+
+def test_build_manufacturing_notification_center_preserves_empty_provenance(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_scope(session_factory) as session:
+        center = build_manufacturing_notification_center(
+            AxisPersistenceRepository(session),
+            ManufacturingNotificationQuery(tenant_id="tenant_demo_manufacturing"),
+        )
+
+    assert center.provenance == "empty"
+    assert center.notifications == []
+    assert center.unread_count == 0
 
 
 def test_platform_notification_acknowledgement_is_persisted_and_audited(
@@ -453,6 +519,7 @@ def test_manufacturing_notifications_endpoint_returns_platform_read_model(
     assert response.status_code == 200
     body = response.json()
     assert body["tenant_id"] == "tenant_demo_manufacturing"
+    assert body["provenance"] == "live"
     assert body["unread_count"] == 3
     assert body["notifications"][0]["read_state"] == "unread"
     assert body["notifications"][0]["route"] in {"/", "/approvals", "/workflows"}
@@ -519,6 +586,414 @@ def test_manufacturing_notification_acknowledgement_endpoint_requires_scope_and_
     assert acknowledged["read_state"] == "acknowledged"
     assert acknowledged["acknowledged_by"] == "plant-operations-owner-role"
     assert refreshed_body["unread_count"] == 2
+
+
+def test_manufacturing_notification_acknowledgement_endpoint_replays_without_duplicate_audit(
+    session_factory: sessionmaker[Session],
+) -> None:
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        seed_snapshot_records(repository)
+        center = build_manufacturing_notification_center(
+            repository,
+            ManufacturingNotificationQuery(
+                tenant_id="tenant_demo_manufacturing",
+                actor_id="plant-operations-owner-role",
+                notification_limit=3,
+            ),
+        )
+        notification_id = center.notifications[0].notification_id
+
+    client = TestClient(app)
+    request_payload = {
+        "tenant_id": "tenant_demo_manufacturing",
+        "actor_id": "plant-operations-owner-role",
+        "actor_scopes": ["notifications:acknowledge"],
+        "state": "acknowledged",
+        "reason": "Operator reviewed the signal.",
+    }
+    first = client.post(
+        f"/demo/manufacturing/notifications/{notification_id}/acknowledgement",
+        json=request_payload,
+    )
+    second = client.post(
+        f"/demo/manufacturing/notifications/{notification_id}/acknowledgement",
+        json=request_payload,
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    first_body = first.json()
+    second_body = second.json()
+    assert second_body == first_body
+    assert second_body["audit_event_id"] == first_body["audit_event_id"]
+
+    with session_scope(session_factory) as session:
+        matching_events = [
+            event
+            for event in AxisPersistenceRepository(session).list_audit_events(
+                tenant_id="tenant_demo_manufacturing",
+                event_type="platform.notification.acknowledged",
+                actor_id="plant-operations-owner-role",
+            )
+            if event.payload.get("notification_id") == notification_id
+        ]
+
+    assert len(matching_events) == 1
+    assert str(matching_events[0].id) == first_body["audit_event_id"]
+
+
+def test_notification_acknowledgement_same_state_changed_reason_is_conflict(
+    session_factory: sessionmaker[Session],
+) -> None:
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        seed_snapshot_records(repository)
+        notification_id = build_manufacturing_notification_center(
+            repository,
+            ManufacturingNotificationQuery(
+                tenant_id="tenant_demo_manufacturing",
+                actor_id="plant-operations-owner-role",
+                notification_limit=3,
+            ),
+        ).notifications[0].notification_id
+
+    client = TestClient(app)
+    endpoint = f"/demo/manufacturing/notifications/{notification_id}/acknowledgement"
+    original = client.post(
+        endpoint,
+        json={
+            "tenant_id": "tenant_demo_manufacturing",
+            "actor_id": "plant-operations-owner-role",
+            "actor_scopes": ["notifications:acknowledge"],
+            "state": "acknowledged",
+            "reason": "Operator reviewed the signal.",
+        },
+    )
+    conflict = client.post(
+        endpoint,
+        json={
+            "tenant_id": "tenant_demo_manufacturing",
+            "actor_id": "plant-operations-owner-role",
+            "actor_scopes": ["notifications:acknowledge"],
+            "state": "acknowledged",
+            "reason": "Supervisor supplied a materially different reason.",
+        },
+    )
+
+    assert original.status_code == 200
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"] == {
+        "code": "CONFLICT",
+        "message": "The notification acknowledgement conflicts with persisted state.",
+        "reason": "acknowledgement_replay_payload_conflict",
+        "notification_id": notification_id,
+        "current_state": "acknowledged",
+        "requested_state": "acknowledged",
+    }
+
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        acknowledgement = repository.get_platform_notification_acknowledgement(
+            tenant_id="tenant_demo_manufacturing",
+            notification_id=notification_id,
+            actor_id="plant-operations-owner-role",
+        )
+        matching_events = [
+            event
+            for event in repository.list_audit_events(
+                tenant_id="tenant_demo_manufacturing",
+                event_type="platform.notification.acknowledged",
+                actor_id="plant-operations-owner-role",
+            )
+            if event.payload.get("notification_id") == notification_id
+        ]
+
+    assert acknowledgement is not None
+    assert acknowledgement.reason == "Operator reviewed the signal."
+    assert len(matching_events) == 1
+
+
+def test_notification_acknowledgement_rejects_backward_transition(
+    session_factory: sessionmaker[Session],
+) -> None:
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        seed_snapshot_records(repository)
+        notification_id = build_manufacturing_notification_center(
+            repository,
+            ManufacturingNotificationQuery(
+                tenant_id="tenant_demo_manufacturing",
+                actor_id="plant-operations-owner-role",
+                notification_limit=3,
+            ),
+        ).notifications[0].notification_id
+
+    client = TestClient(app)
+    endpoint = f"/demo/manufacturing/notifications/{notification_id}/acknowledgement"
+    acknowledged = client.post(
+        endpoint,
+        json={
+            "tenant_id": "tenant_demo_manufacturing",
+            "actor_id": "plant-operations-owner-role",
+            "actor_scopes": ["notifications:acknowledge"],
+            "state": "acknowledged",
+            "reason": "Operator completed the review.",
+        },
+    )
+    regression = client.post(
+        endpoint,
+        json={
+            "tenant_id": "tenant_demo_manufacturing",
+            "actor_id": "plant-operations-owner-role",
+            "actor_scopes": ["notifications:acknowledge"],
+            "state": "read",
+            "reason": "Operator tried to reopen the reviewed signal.",
+        },
+    )
+
+    assert acknowledged.status_code == 200
+    assert regression.status_code == 409
+    assert regression.json()["detail"] == {
+        "code": "CONFLICT",
+        "message": "The notification acknowledgement conflicts with persisted state.",
+        "reason": "acknowledgement_state_regression",
+        "notification_id": notification_id,
+        "current_state": "acknowledged",
+        "requested_state": "read",
+    }
+
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        acknowledgement = repository.get_platform_notification_acknowledgement(
+            tenant_id="tenant_demo_manufacturing",
+            notification_id=notification_id,
+            actor_id="plant-operations-owner-role",
+        )
+        matching_events = [
+            event
+            for event in repository.list_audit_events(
+                tenant_id="tenant_demo_manufacturing",
+                actor_id="plant-operations-owner-role",
+            )
+            if event.payload.get("notification_id") == notification_id
+        ]
+
+    assert acknowledgement is not None
+    assert acknowledgement.state == "acknowledged"
+    assert len(matching_events) == 1
+
+
+def test_missing_notification_does_not_acquire_acknowledgement_lock(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+
+        def unexpected_lock(**_kwargs: str) -> None:
+            raise AssertionError("missing notification must not acquire a write lock")
+
+        monkeypatch.setattr(
+            repository,
+            "acquire_platform_notification_acknowledgement_lock",
+            unexpected_lock,
+        )
+        with pytest.raises(ManufacturingNotificationNotFound):
+            record_manufacturing_notification_acknowledgement(
+                repository,
+                "notification_missing",
+                ManufacturingNotificationAcknowledgementRequest(
+                    tenant_id="tenant_demo_manufacturing",
+                    actor_id="plant-operations-owner-role",
+                    actor_scopes=["notifications:acknowledge"],
+                    reason="Operator reviewed the signal.",
+                ),
+            )
+
+
+def test_denied_notification_acknowledgement_does_not_acquire_lock(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        seed_snapshot_records(repository)
+        notification_id = build_manufacturing_notification_center(
+            repository,
+            ManufacturingNotificationQuery(
+                tenant_id="tenant_demo_manufacturing",
+                actor_id="plant-operations-owner-role",
+                notification_limit=3,
+            ),
+        ).notifications[0].notification_id
+
+        def unexpected_lock(**_kwargs: str) -> None:
+            raise AssertionError("denied acknowledgement must not acquire a write lock")
+
+        monkeypatch.setattr(
+            repository,
+            "acquire_platform_notification_acknowledgement_lock",
+            unexpected_lock,
+        )
+        with pytest.raises(ManufacturingNotificationAcknowledgementPermissionDenied):
+            record_manufacturing_notification_acknowledgement(
+                repository,
+                notification_id,
+                ManufacturingNotificationAcknowledgementRequest(
+                    tenant_id="tenant_demo_manufacturing",
+                    actor_id="plant-operations-owner-role",
+                    actor_scopes=["audit:read"],
+                    reason="Operator reviewed the signal.",
+                ),
+            )
+
+
+def test_concurrent_notification_acknowledgements_converge_on_one_audit_event(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "notification-acknowledgement.sqlite"
+    engine = create_engine(
+        f"sqlite+pysqlite:///{database_path}",
+        connect_args={"check_same_thread": False, "timeout": 10},
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+    try:
+        with session_scope(factory) as session:
+            repository = AxisPersistenceRepository(session)
+            repository.create_tenant(
+                TenantCreate(
+                    tenant_id="tenant_demo_manufacturing",
+                    display_name="Ravenna Works",
+                    description="Plant Operations Cockpit",
+                    created_by="test",
+                )
+            )
+            seed_snapshot_records(repository)
+            center = build_manufacturing_notification_center(
+                repository,
+                ManufacturingNotificationQuery(
+                    tenant_id="tenant_demo_manufacturing",
+                    actor_id="plant-operations-owner-role",
+                    notification_limit=3,
+                ),
+            )
+            notification_id = center.notifications[0].notification_id
+
+        start = Barrier(2)
+
+        def acknowledge() -> ManufacturingNotificationAcknowledgementResult:
+            with session_scope(factory) as session:
+                start.wait(timeout=5)
+                return record_manufacturing_notification_acknowledgement(
+                    AxisPersistenceRepository(session),
+                    notification_id,
+                    ManufacturingNotificationAcknowledgementRequest(
+                        tenant_id="tenant_demo_manufacturing",
+                        actor_id="plant-operations-owner-role",
+                        actor_scopes=["notifications:acknowledge"],
+                        state="acknowledged",
+                        reason="Operator reviewed the signal.",
+                    ),
+                )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(acknowledge) for _ in range(2)]
+            results = [future.result() for future in futures]
+
+        assert results[1] == results[0]
+        assert results[0].audit_event_id is not None
+
+        with session_scope(factory) as session:
+            repository = AxisPersistenceRepository(session)
+            acknowledgements = repository.list_platform_notification_acknowledgements(
+                tenant_id="tenant_demo_manufacturing",
+                actor_id="plant-operations-owner-role",
+                notification_ids=[notification_id],
+            )
+            matching_events = [
+                event
+                for event in repository.list_audit_events(
+                    tenant_id="tenant_demo_manufacturing",
+                    event_type="platform.notification.acknowledged",
+                    actor_id="plant-operations-owner-role",
+                )
+                if event.payload.get("notification_id") == notification_id
+            ]
+
+        assert len(acknowledgements) == 1
+        assert len(matching_events) == 1
+        assert matching_events[0].id == results[0].audit_event_id
+        assert acknowledgements[0].audit_event_id == results[0].audit_event_id
+    finally:
+        engine.dispose()
+
+
+def test_notification_acknowledgement_records_actual_state_changes(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        seed_snapshot_records(repository)
+        center = build_manufacturing_notification_center(
+            repository,
+            ManufacturingNotificationQuery(
+                tenant_id="tenant_demo_manufacturing",
+                actor_id="plant-operations-owner-role",
+                notification_limit=3,
+            ),
+        )
+        notification_id = center.notifications[0].notification_id
+        opened = record_manufacturing_notification_acknowledgement(
+            repository,
+            notification_id,
+            ManufacturingNotificationAcknowledgementRequest(
+                tenant_id="tenant_demo_manufacturing",
+                actor_id="plant-operations-owner-role",
+                actor_scopes=["notifications:acknowledge"],
+                state="read",
+                reason="Operator opened the signal.",
+            ),
+        )
+        acknowledged = record_manufacturing_notification_acknowledgement(
+            repository,
+            notification_id,
+            ManufacturingNotificationAcknowledgementRequest(
+                tenant_id="tenant_demo_manufacturing",
+                actor_id="plant-operations-owner-role",
+                actor_scopes=["notifications:acknowledge"],
+                state="acknowledged",
+                reason="Operator completed the review.",
+            ),
+        )
+
+        events = [
+            event
+            for event in repository.list_audit_events(
+                tenant_id="tenant_demo_manufacturing",
+                actor_id="plant-operations-owner-role",
+            )
+            if event.payload.get("notification_id") == notification_id
+        ]
+
+    assert opened.state == "read"
+    assert opened.audit_event_type == "platform.notification.read"
+    assert acknowledged.state == "acknowledged"
+    assert acknowledged.reason == "Operator completed the review."
+    assert acknowledged.audit_event_type == "platform.notification.acknowledged"
+    assert acknowledged.audit_event_id != opened.audit_event_id
+    assert {event.id for event in events} == {
+        opened.audit_event_id,
+        acknowledged.audit_event_id,
+    }
 
 
 def test_manufacturing_demo_readiness_endpoint_reports_demo_ready_evidence(

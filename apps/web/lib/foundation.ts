@@ -1,6 +1,3 @@
-import { navItems, type NavItem } from "./nav";
-
-export type FoundationStatus = "ready" | "guarded" | "planned";
 
 /**
  * Limes Axis brand tokens (2026-07 redesign). Single source of truth for the
@@ -36,16 +33,3 @@ export const brandTokens = {
     mutedChannels: "158 172 200",
   },
 } as const;
-
-/** @deprecated Use `NavItem` from `lib/nav.ts`; kept as an alias for compatibility. */
-export type NavigationItem = NavItem;
-
-/**
- * @deprecated Flat list retained for compatibility; new code should render
- * from `navGroups` in `lib/nav.ts`.
- */
-export const navigationItems: NavigationItem[] = navItems;
-
-export function statusLabel(status: FoundationStatus): string {
-  return status === "ready" ? "Ready" : status === "guarded" ? "Guarded" : "Planned";
-}

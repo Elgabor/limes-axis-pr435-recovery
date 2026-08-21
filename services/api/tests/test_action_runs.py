@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from runpy import run_path
 
@@ -31,6 +31,7 @@ from axis_api.models import ActionRun, AuditEvent, Base, WorkflowRunRecord, Work
 from axis_api.ontology_reference import OntologyReferenceRecordNotFound
 from axis_api.persistence import (
     ActionRunCreate,
+    ActionRunResultRecord,
     AxisPersistenceRepository,
     DemoReferenceRecordCreate,
     WorkflowRunCreate,
@@ -237,12 +238,18 @@ def seed_supplier_delay_workflow(repository: AxisPersistenceRepository) -> None:
     )
 
 
-def seed_approved_supplier_action_run(repository: AxisPersistenceRepository) -> ActionRun:
+def seed_approved_supplier_action_run(
+    repository: AxisPersistenceRepository,
+    *,
+    idempotency_key: str = "supplier-expedite-approved-run",
+    action_id: str = "request_supplier_expedite",
+    status: str = "approved_for_execution",
+) -> ActionRun:
     return repository.create_action_run(
         ActionRunCreate(
             tenant_id="tenant_demo_manufacturing",
-            action_id="request_supplier_expedite",
-            idempotency_key="supplier-expedite-approved-run",
+            action_id=action_id,
+            idempotency_key=idempotency_key,
             execution_mode="approval_gated_dry_run",
             requested_by="agent_supply_risk",
             approval_id="appr_expedite_supplier_batch",
@@ -257,7 +264,7 @@ def seed_approved_supplier_action_run(repository: AxisPersistenceRepository) -> 
                 "schema_version": "test",
                 "dry_run": True,
             },
-            status="approved_for_execution",
+            status=status,
         )
     )
 
@@ -1276,6 +1283,143 @@ def test_action_run_outcome_endpoint_persists_result(
     assert second_body["audit_event_id"] is None
 
 
+def test_action_run_list_endpoint_orders_filters_and_bounds_limit(
+    session_factory: sessionmaker[Session],
+) -> None:
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    client = TestClient(app)
+    observed_at = datetime.now(UTC)
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        oldest = seed_approved_supplier_action_run(
+            repository,
+            idempotency_key="listed-oldest",
+            status="execution_completed",
+        )
+        middle = seed_approved_supplier_action_run(
+            repository,
+            idempotency_key="listed-middle",
+            action_id="shift_maintenance_window",
+        )
+        newest = seed_approved_supplier_action_run(
+            repository,
+            idempotency_key="listed-newest",
+        )
+        other_tenant = repository.create_action_run(
+            ActionRunCreate(
+                tenant_id="tenant_other",
+                action_id="request_supplier_expedite",
+                idempotency_key="listed-other-tenant",
+                execution_mode="approval_gated_dry_run",
+                requested_by="other-tenant-agent",
+                status="approved_for_execution",
+            )
+        )
+        oldest.created_at = observed_at - timedelta(hours=3)
+        middle.created_at = observed_at - timedelta(hours=2)
+        newest.created_at = observed_at - timedelta(hours=1)
+        other_tenant.created_at = observed_at
+
+    listed = client.get(
+        "/operations/actions/runs",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
+    approved = client.get(
+        "/operations/actions/runs",
+        params={
+            "tenant_id": "tenant_demo_manufacturing",
+            "status": "approved_for_execution",
+        },
+    )
+    action_filtered = client.get(
+        "/operations/actions/runs",
+        params={
+            "tenant_id": "tenant_demo_manufacturing",
+            "action_id": "request_supplier_expedite",
+        },
+    )
+    limited = client.get(
+        "/operations/actions/runs",
+        params={"tenant_id": "tenant_demo_manufacturing", "limit": 1},
+    )
+
+    assert listed.status_code == 200
+    assert [run["action_run_id"] for run in listed.json()["runs"]] == [
+        str(newest.id),
+        str(middle.id),
+        str(oldest.id),
+    ]
+    assert [run["action_run_id"] for run in approved.json()["runs"]] == [
+        str(newest.id),
+        str(middle.id),
+    ]
+    assert [run["action_run_id"] for run in action_filtered.json()["runs"]] == [
+        str(newest.id),
+        str(oldest.id),
+    ]
+    assert [run["action_run_id"] for run in limited.json()["runs"]] == [str(newest.id)]
+    assert client.get("/operations/actions/runs", params={"limit": 0}).status_code == 422
+    assert client.get("/operations/actions/runs", params={"limit": 201}).status_code == 422
+
+
+def test_action_run_list_endpoint_reports_outcome_and_derived_waiting_duration(
+    session_factory: sessionmaker[Session],
+) -> None:
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    client = TestClient(app)
+    observed_at = datetime.now(UTC)
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        pending = seed_approved_supplier_action_run(
+            repository,
+            idempotency_key="listed-pending-outcome",
+        )
+        completed = seed_approved_supplier_action_run(
+            repository,
+            idempotency_key="listed-reported-outcome",
+        )
+        pending.created_at = observed_at - timedelta(hours=1)
+        completed.created_at = observed_at - timedelta(hours=2)
+        repository.record_action_run_result(
+            ActionRunResultRecord(
+                tenant_id="tenant_demo_manufacturing",
+                action_run_id=completed.id,
+                status="execution_completed",
+                result_payload={
+                    "source": "action_run_outcome",
+                    "result_summary": "External executor completed the approved action.",
+                    "evidence_refs": ["audit_external_executor_completion"],
+                },
+            )
+        )
+
+    before_request = datetime.now(UTC)
+    response = client.get(
+        "/operations/actions/runs",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
+    after_request = datetime.now(UTC)
+
+    assert response.status_code == 200
+    runs_by_id = {run["action_run_id"]: run for run in response.json()["runs"]}
+    pending_record = runs_by_id[str(pending.id)]
+    completed_record = runs_by_id[str(completed.id)]
+    assert pending_record["outcome"] is None
+    assert int((before_request - pending.created_at).total_seconds()) <= pending_record[
+        "waiting_duration_seconds"
+    ] <= int((after_request - pending.created_at).total_seconds())
+    assert completed_record["outcome"] == {
+        "result_summary": "External executor completed the approved action.",
+        "evidence_refs": ["audit_external_executor_completion"],
+    }
+    assert pending_record["approval_id"] == "appr_expedite_supplier_batch"
+    assert pending_record["workflow_id"] == "wf_supplier_delay_review"
+    assert pending_record["created_at"]
+    assert pending_record["updated_at"]
+
+
 def test_openapi_exposes_action_run_endpoint() -> None:
     client = TestClient(create_app())
     response = client.get("/openapi.json")
@@ -1285,3 +1429,4 @@ def test_openapi_exposes_action_run_endpoint() -> None:
     assert "/demo/manufacturing/actions/runs/{action_run_id}/outcome" in response.json()[
         "paths"
     ]
+    assert "/operations/actions/runs" in response.json()["paths"]

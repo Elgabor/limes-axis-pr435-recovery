@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID, uuid4
@@ -255,6 +256,7 @@ class ConnectorConfigurationCreate(BaseModel):
 class ConnectorManifestCreate(BaseModel):
     tenant_id: str = Field(min_length=1)
     connector_id: str = Field(min_length=1)
+    revision_number: int = Field(ge=1)
     display_name: str = Field(min_length=1)
     connector_type: str = Field(min_length=1)
     source_type: str = Field(min_length=1)
@@ -264,9 +266,12 @@ class ConnectorManifestCreate(BaseModel):
     registered_by: str = Field(min_length=1)
     manifest_payload: dict = Field(default_factory=dict)
     runtime_policy: dict = Field(default_factory=dict)
-    preview_sample: dict = Field(default_factory=dict)
+    preview_sample: dict | None = None
     audit_event_id: UUID | None = None
     audit_event_type: str = Field(default="connector.manifest.registered", min_length=1)
+    revises_revision_number: int | None = None
+    replaced_by_revision_number: int | None = None
+    revision_idempotency_key: str | None = None
     notes: list[str] = Field(default_factory=list)
 
 
@@ -1029,6 +1034,19 @@ class AxisPersistenceRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def defer_until_after_commit(self, callback: Callable[[], None]) -> None:
+        """Run a process-local side effect only after this transaction commits."""
+
+        callbacks = self.session.info.setdefault("axis_after_commit_callbacks", [])
+        callbacks.append(callback)
+
+    def run_after_commit_callbacks(self) -> None:
+        """Drain callbacks registered by a successfully committed request."""
+
+        callbacks = self.session.info.pop("axis_after_commit_callbacks", [])
+        for callback in callbacks:
+            callback()
+
     def _insert_with_on_conflict(self, model: type):
         """Return a dialect-aware INSERT that supports on_conflict_do_nothing.
 
@@ -1507,6 +1525,52 @@ class AxisPersistenceRepository:
         self.session.flush()
         return legal_hold
 
+    def acquire_platform_notification_acknowledgement_lock(
+        self,
+        *,
+        tenant_id: str,
+        notification_id: str,
+        actor_id: str,
+    ) -> None:
+        """Serialize one actor's acknowledgement state transition.
+
+        PostgreSQL uses a transaction-scoped advisory lock so coordination also
+        works across API processes and replicas. SQLite permits only one writer;
+        a no-op update acquires that write intent before the acknowledgement is
+        read, including when no acknowledgement row exists yet. In both cases
+        the lock is held until the request transaction commits or rolls back.
+        """
+
+        dialect_name = self.session.get_bind().dialect.name
+        if dialect_name == "postgresql":
+            lock_key = (
+                "axis:platform-notification-acknowledgement:"
+                f"{len(tenant_id)}:{tenant_id}"
+                f"{len(notification_id)}:{notification_id}"
+                f"{len(actor_id)}:{actor_id}"
+            )
+            self.session.execute(
+                select(func.pg_advisory_xact_lock(func.hashtextextended(lock_key, 0)))
+            )
+            return
+        if dialect_name == "sqlite":
+            self.session.execute(
+                update(PlatformNotificationAcknowledgement)
+                .where(
+                    PlatformNotificationAcknowledgement.tenant_id == tenant_id,
+                    PlatformNotificationAcknowledgement.notification_id == notification_id,
+                    PlatformNotificationAcknowledgement.actor_id == actor_id,
+                )
+                .values(
+                    updated_at=PlatformNotificationAcknowledgement.updated_at,
+                )
+            )
+            return
+        raise NotImplementedError(
+            "Platform notification acknowledgement locking is not supported for "
+            f"dialect {dialect_name!r}."
+        )
+
     def upsert_platform_notification_acknowledgement(
         self,
         record: PlatformNotificationAcknowledgementCreate,
@@ -1856,16 +1920,21 @@ class AxisPersistenceRepository:
     def list_action_runs(
         self,
         tenant_id: str,
+        action_id: str | None = None,
         status: str | None = None,
         limit: int = 100,
     ) -> list[ActionRun]:
         statement: Select[tuple[ActionRun]] = select(ActionRun).where(
             ActionRun.tenant_id == tenant_id
         )
+        if action_id is not None:
+            statement = statement.where(ActionRun.action_id == action_id)
         if status is not None:
             statement = statement.where(ActionRun.status == status)
 
-        statement = statement.order_by(ActionRun.created_at.desc()).limit(limit)
+        statement = statement.order_by(ActionRun.created_at.desc(), ActionRun.id.desc()).limit(
+            limit
+        )
         return list(self.session.scalars(statement))
 
     def upsert_demo_reference_record(
@@ -1915,6 +1984,24 @@ class AxisPersistenceRepository:
         if status is not None:
             statement = statement.where(DemoReferenceRecord.status == status)
         return self.session.scalars(statement).first()
+
+    def has_demo_reference_records(self, tenant_id: str) -> bool:
+        """Whether any active reference record was ever seeded for this tenant.
+
+        Databases bootstrapped before tenants were registered in ``tenants``
+        hold reference records with no matching registry row. Treating those
+        records as proof of existence keeps such deployments serving instead of
+        answering TENANT_NOT_FOUND for every console after an upgrade.
+        """
+        statement = (
+            select(DemoReferenceRecord.id)
+            .where(
+                DemoReferenceRecord.tenant_id == tenant_id,
+                DemoReferenceRecord.status == "active",
+            )
+            .limit(1)
+        )
+        return self.session.scalars(statement).first() is not None
 
     def create_workflow_run(self, record: WorkflowRunCreate) -> WorkflowRunRecord:
         workflow_run = WorkflowRunRecord(
@@ -2337,6 +2424,7 @@ class AxisPersistenceRepository:
         manifest = ConnectorManifestRecord(
             tenant_id=record.tenant_id,
             connector_id=record.connector_id,
+            revision_number=record.revision_number,
             display_name=record.display_name,
             connector_type=record.connector_type,
             source_type=record.source_type,
@@ -2349,6 +2437,9 @@ class AxisPersistenceRepository:
             preview_sample=record.preview_sample,
             audit_event_id=record.audit_event_id,
             audit_event_type=record.audit_event_type,
+            revises_revision_number=record.revises_revision_number,
+            replaced_by_revision_number=record.replaced_by_revision_number,
+            revision_idempotency_key=record.revision_idempotency_key,
             notes=record.notes,
         )
         self.session.add(manifest)
@@ -2360,11 +2451,37 @@ class AxisPersistenceRepository:
         tenant_id: str,
         connector_id: str,
     ) -> ConnectorManifestRecord | None:
-        statement = select(ConnectorManifestRecord).where(
-            ConnectorManifestRecord.tenant_id == tenant_id,
-            ConnectorManifestRecord.connector_id == connector_id,
+        statement = (
+            select(ConnectorManifestRecord)
+            .where(
+                ConnectorManifestRecord.tenant_id == tenant_id,
+                ConnectorManifestRecord.connector_id == connector_id,
+                ConnectorManifestRecord.replaced_by_revision_number.is_(None),
+            )
+            .order_by(ConnectorManifestRecord.revision_number.desc())
         )
         return self.session.scalars(statement).first()
+
+    def get_connector_manifest_by_revision_idempotency_key(
+        self,
+        tenant_id: str,
+        idempotency_key: str,
+    ) -> ConnectorManifestRecord | None:
+        statement = select(ConnectorManifestRecord).where(
+            ConnectorManifestRecord.tenant_id == tenant_id,
+            ConnectorManifestRecord.revision_idempotency_key == idempotency_key,
+        )
+        return self.session.scalars(statement).first()
+
+    def append_connector_manifest_revision(
+        self,
+        current_manifest: ConnectorManifestRecord,
+        record: ConnectorManifestCreate,
+    ) -> ConnectorManifestRecord:
+        current_manifest.replaced_by_revision_number = record.revision_number
+        current_manifest.updated_at = utc_now()
+        self.session.flush()
+        return self.create_connector_manifest(record)
 
     def list_connector_manifests(
         self,
@@ -2373,18 +2490,64 @@ class AxisPersistenceRepository:
         status: str | None = None,
         limit: int = 100,
     ) -> list[ConnectorManifestRecord]:
+        statement = self._connector_manifest_statement(
+            tenant_id,
+            connector_id=connector_id,
+            status=status,
+        ).limit(limit)
+        return list(self.session.scalars(statement))
+
+    def list_all_current_connector_manifests(
+        self,
+        tenant_id: str,
+        connector_id: str | None = None,
+        status: str | None = None,
+    ) -> list[ConnectorManifestRecord]:
+        """Materialize one consistent tenant registry view in a single query."""
+
+        statement = self._connector_manifest_statement(
+            tenant_id,
+            connector_id=connector_id,
+            status=status,
+        )
+        return list(self.session.scalars(statement))
+
+    @staticmethod
+    def _connector_manifest_statement(
+        tenant_id: str,
+        *,
+        connector_id: str | None = None,
+        status: str | None = None,
+    ) -> Select[tuple[ConnectorManifestRecord]]:
         statement: Select[tuple[ConnectorManifestRecord]] = select(
             ConnectorManifestRecord
-        ).where(ConnectorManifestRecord.tenant_id == tenant_id)
+        ).where(
+            ConnectorManifestRecord.tenant_id == tenant_id,
+            ConnectorManifestRecord.replaced_by_revision_number.is_(None),
+        )
         if connector_id is not None:
             statement = statement.where(ConnectorManifestRecord.connector_id == connector_id)
         if status is not None:
             statement = statement.where(ConnectorManifestRecord.status == status)
 
-        statement = statement.order_by(
+        return statement.order_by(
             ConnectorManifestRecord.created_at.desc(),
             ConnectorManifestRecord.id.desc(),
-        ).limit(limit)
+        )
+
+    def list_connector_manifest_revisions(
+        self,
+        tenant_id: str,
+        connector_id: str,
+    ) -> list[ConnectorManifestRecord]:
+        statement = (
+            select(ConnectorManifestRecord)
+            .where(
+                ConnectorManifestRecord.tenant_id == tenant_id,
+                ConnectorManifestRecord.connector_id == connector_id,
+            )
+            .order_by(ConnectorManifestRecord.revision_number.asc())
+        )
         return list(self.session.scalars(statement))
 
     def update_connector_manifest_lifecycle(
@@ -2718,6 +2881,70 @@ class AxisPersistenceRepository:
             ConnectorRun.created_at.desc(),
             ConnectorRun.id.desc(),
         ).limit(limit)
+        return list(self.session.scalars(statement))
+
+    def get_latest_connector_run(
+        self,
+        tenant_id: str,
+        connector_id: str,
+        status: str,
+    ) -> ConnectorRun | None:
+        statement = (
+            select(ConnectorRun)
+            .where(
+                ConnectorRun.tenant_id == tenant_id,
+                ConnectorRun.connector_id == connector_id,
+                ConnectorRun.status == status,
+            )
+            .order_by(
+                ConnectorRun.updated_at.desc(),
+                ConnectorRun.created_at.desc(),
+                ConnectorRun.id.desc(),
+            )
+            .limit(1)
+        )
+        return self.session.scalar(statement)
+
+    def list_latest_connector_runs_by_connector(
+        self,
+        tenant_id: str,
+        status: str,
+    ) -> list[ConnectorRun]:
+        """Return the latest matching run for every tenant connector in one query.
+
+        This stays tenant-wide because registry size is not capped; binding every
+        connector ID would introduce backend-specific parameter-count limits.
+        """
+
+        ranked_runs = (
+            select(
+                ConnectorRun.id.label("connector_run_id"),
+                func.row_number()
+                .over(
+                    partition_by=ConnectorRun.connector_id,
+                    order_by=(
+                        ConnectorRun.updated_at.desc(),
+                        ConnectorRun.created_at.desc(),
+                        ConnectorRun.id.desc(),
+                    ),
+                )
+                .label("run_rank"),
+            )
+            .where(
+                ConnectorRun.tenant_id == tenant_id,
+                ConnectorRun.status == status,
+            )
+            .subquery()
+        )
+        statement = (
+            select(ConnectorRun)
+            .join(
+                ranked_runs,
+                ConnectorRun.id == ranked_runs.c.connector_run_id,
+            )
+            .where(ranked_runs.c.run_rank == 1)
+            .order_by(ConnectorRun.connector_id.asc())
+        )
         return list(self.session.scalars(statement))
 
     def get_connector_run(self, tenant_id: str, run_id: str) -> ConnectorRun | None:
@@ -3504,6 +3731,34 @@ class AxisPersistenceRepository:
         self.session.flush()
         return tenant
 
+    def acquire_first_tenant_bootstrap_lock(self) -> None:
+        """Serialize the one permitted empty-registry bootstrap transaction."""
+
+        dialect_name = self.session.get_bind().dialect.name
+        if dialect_name == "postgresql":
+            self.session.execute(
+                select(
+                    func.pg_advisory_xact_lock(
+                        func.hashtextextended("axis:first-tenant-bootstrap", 0)
+                    )
+                )
+            )
+            return
+        if dialect_name == "sqlite":
+            # SQLite has no advisory locks. A no-op write takes database write
+            # intent before the empty-registry read, closing the two-bootstrap
+            # race in local/test profiles.
+            self.session.execute(
+                update(Tenant)
+                .where(Tenant.id == "__axis_first_tenant_bootstrap_lock__")
+                .values(updated_at=Tenant.updated_at)
+            )
+            return
+        raise NotImplementedError(
+            "First-tenant bootstrap locking is not supported for "
+            f"dialect {dialect_name!r}."
+        )
+
     def get_tenant(self, tenant_id: str) -> Tenant | None:
         return self.session.get(Tenant, tenant_id)
 
@@ -3619,6 +3874,15 @@ class AxisPersistenceRepository:
         self.session.delete(quota)
         self.session.flush()
         return True
+
+    def update_tenant_vocabulary(self, tenant_id: str, vocabulary: dict) -> Tenant:
+        tenant = self.get_tenant(tenant_id)
+        if tenant is None:
+            raise PersistenceRecordNotFound()
+        tenant.vocabulary = vocabulary
+        tenant.updated_at = utc_now()
+        self.session.flush()
+        return tenant
 
     def add_tenant_usage(self, record: TenantUsageAdd) -> None:
         """Fold a consumption delta into the (tenant, metric, period) ledger row.

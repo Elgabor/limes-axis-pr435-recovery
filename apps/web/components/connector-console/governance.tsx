@@ -7,6 +7,7 @@ import { Eyebrow } from "@/components/ui/eyebrow";
 import { InspectDrawer } from "@/components/ui/inspect-drawer";
 import { ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import { formatConnectorLabel } from "@/lib/connectors-demo";
+import { formatDateTime } from "@/lib/format";
 import { strings } from "@/lib/strings";
 import type { AxisQuerySource } from "@/lib/use-axis-query";
 import type { ConnectorRegistries } from "@/lib/use-connector-registries";
@@ -18,16 +19,15 @@ import type { ConnectorRegistries } from "@/lib/use-connector-registries";
  * degrades independently when its registry endpoint fails.
  */
 
-function formatWhen(value: string | null): string {
-  if (!value) {
-    return "not recorded";
+function governanceStatusClass(status: string): string {
+  const normalized = status.toLowerCase();
+  if (["active", "healthy", "valid", "passed", "compliant", "enabled", "rotated"].includes(normalized)) {
+    return "signal-ready";
   }
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+  if (["failed", "revoked", "expired", "breached", "violation", "invalid"].includes(normalized)) {
+    return "signal-action-required";
+  }
+  return "signal-watch";
 }
 
 function Section({
@@ -53,12 +53,14 @@ function Section({
 function SectionState({
   source,
   errorTitle,
+  errorRequestId,
   isEmpty,
   emptyLabel,
   children,
 }: {
   source: AxisQuerySource;
   errorTitle: string;
+  errorRequestId?: string | null;
   isEmpty: boolean;
   emptyLabel: string;
   children: ReactNode;
@@ -67,7 +69,7 @@ function SectionState({
     return <LoadingPanel rows={2} />;
   }
   if (source === "unavailable" && isEmpty) {
-    return <ErrorPanel title={errorTitle} />;
+    return <ErrorPanel reference={errorRequestId ?? undefined} title={errorTitle} />;
   }
   if (isEmpty) {
     return <p className="m-0 text-sm text-muted">{emptyLabel}</p>;
@@ -101,7 +103,9 @@ function RecordRow({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-sm font-medium text-ink">{title}</span>
         <span className="flex items-center gap-3">
-          <span className="status-pill signal-watch">{formatConnectorLabel(status)}</span>
+          <span className={`status-pill ${governanceStatusClass(status)}`}>
+            {formatConnectorLabel(status)}
+          </span>
           <InspectDrawer record={record} title={title} />
         </span>
       </div>
@@ -134,6 +138,7 @@ export function ConnectorGovernance({
       <Section detail={copy.handles.detail} title={copy.handles.title}>
         <SectionState
           emptyLabel={copy.handles.empty}
+          errorRequestId={registries.credentialHandles.errorRequestId}
           errorTitle={copy.handles.error}
           isEmpty={handles.length === 0}
           source={registries.credentialHandles.source}
@@ -162,6 +167,7 @@ export function ConnectorGovernance({
       <Section detail={copy.leases.detail} title={copy.leases.title}>
         <SectionState
           emptyLabel={copy.leases.empty}
+          errorRequestId={registries.credentialLeases.errorRequestId}
           errorTitle={copy.leases.error}
           isEmpty={leases.length === 0}
           source={registries.credentialLeases.source}
@@ -178,7 +184,7 @@ export function ConnectorGovernance({
                   {lease.lease_id}
                 </KeyValueRow>
                 <KeyValueRow label="Window">
-                  {formatWhen(lease.granted_at)} → {formatWhen(lease.expires_at)}
+                  {formatDateTime(lease.granted_at)} → {formatDateTime(lease.expires_at)}
                 </KeyValueRow>
               </RecordRow>
             ))}
@@ -189,6 +195,7 @@ export function ConnectorGovernance({
       <Section detail={copy.egress.detail} title={copy.egress.title}>
         <SectionState
           emptyLabel={copy.egress.empty}
+          errorRequestId={registries.egressPolicies.errorRequestId}
           errorTitle={copy.egress.error}
           isEmpty={egressPolicies.length === 0}
           source={registries.egressPolicies.source}
@@ -217,8 +224,9 @@ export function ConnectorGovernance({
       <Section detail={copy.invariants.detail} title={copy.invariants.title}>
         <SectionState
           emptyLabel={copy.invariants.allClear}
+          errorRequestId={registries.evidenceInvariants.errorRequestId}
           errorTitle={copy.invariants.error}
-          isEmpty={invariantReport?.invariants.length === 0}
+          isEmpty={(invariantReport?.invariants ?? []).length === 0}
           source={registries.evidenceInvariants.source}
         >
           {invariantReport ? (

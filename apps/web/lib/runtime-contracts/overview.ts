@@ -9,6 +9,7 @@ import type {
   ManufacturingOverview,
 } from "../platform-overview";
 import {
+  manufacturingProvenanceSchema,
   nullableStringSchema,
   overviewMetricSchema,
   parseContract,
@@ -18,8 +19,9 @@ import {
 
 const manufacturingOverview = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   metrics: z.array(overviewMetricSchema),
   risk_signals: z.array(z.object({
@@ -64,8 +66,9 @@ const manufacturingOverview = z.object({
 
 const operationsSnapshot = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   metrics: z.array(overviewMetricSchema),
   domain_snapshots: z.array(z.object({
@@ -131,8 +134,9 @@ const operationsSnapshot = z.object({
 
 const notificationCenter = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   unread_count: z.number(),
   action_required_count: z.number(),

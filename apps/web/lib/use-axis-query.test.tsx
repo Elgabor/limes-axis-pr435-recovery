@@ -32,6 +32,7 @@ vi.mock("@/lib/use-oidc-session", () => ({
 
 import { AxisApiDecodeError, AxisApiError } from "./axis-api";
 import { useAxisQuery } from "./use-axis-query";
+import { OPERATIONS_API_PREFIX } from "./tenant-scope";
 
 type Registry = { items: string[] };
 const parseRegistry = (value: unknown): Registry => value as Registry;
@@ -124,6 +125,32 @@ describe("useAxisQuery", () => {
     expect(result.current.data).toBeNull();
   });
 
+  it("classifies a TENANT_NOT_FOUND response separately from transport unavailability", async () => {
+    mocks.axisFetchParsedJson.mockRejectedValueOnce(
+      new AxisApiError(`${OPERATIONS_API_PREFIX}/overview`, 404, {
+        body: {
+          detail: {
+            code: "TENANT_NOT_FOUND",
+            message: "The manufacturing tenant is unknown.",
+            tenant_id: "tenant_nope",
+          },
+        },
+      }),
+    );
+
+    const { result } = renderHook(() =>
+      useAxisQuery<Registry>(`${OPERATIONS_API_PREFIX}/overview?tenant_id=tenant_nope`, {
+        parse: parseRegistry,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.source).toBe("tenant_not_found"));
+    expect(result.current.errorStatus).toBe(404);
+    expect(result.current.errorCode).toBe("TENANT_NOT_FOUND");
+    expect(result.current.isTenantNotFound).toBe(true);
+    expect(result.current.isUnavailable).toBe(false);
+  });
+
   it("keeps errorStatus null for non-HTTP failures and clears it on success", async () => {
     mocks.axisFetchParsedJson.mockRejectedValueOnce(new TypeError("fetch failed"));
 
@@ -182,9 +209,11 @@ describe("useAxisQuery", () => {
     await waitFor(() => expect(result.current.source).toBe("unavailable"));
     expect(mocks.axisFetchParsedJson).toHaveBeenCalledWith(
       "/demo/registry",
-      parse,
+      expect.any(Function),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+    const decoder = mocks.axisFetchParsedJson.mock.calls[0]?.[1] as (value: unknown) => Registry;
+    expect(decoder({ items: ["decoded"] })).toEqual({ items: ["decoded"] });
     expect(result.current.error).toBe(
       "Axis API response did not match the expected contract.",
     );
@@ -270,20 +299,28 @@ describe("useAxisQuery", () => {
   });
 
   it("rejects a response owned by a different tenant", async () => {
-    mocks.axisFetchParsedJson.mockResolvedValueOnce({
-      items: ["tenant-a-secret"],
-      tenant_id: "tenant-a",
+    const parseTenantRegistry = (value: unknown) => value as Registry & { tenant_id: string };
+    mocks.axisFetchParsedJson.mockImplementation(async (path, decoder) => {
+      expect(() => decoder({
+        items: ["tenant-a-secret"],
+        tenant_id: "tenant-a",
+      })).toThrow("Axis API response belongs to a different tenant.");
+      throw new AxisApiDecodeError(path, "Axis API response did not match the expected contract.", {
+        requestId: "request-tenant-mismatch",
+      });
     });
 
     const { result } = renderHook(() =>
       useAxisQuery<Registry & { tenant_id: string }>("/demo/registry?tenant_id=tenant-b", {
         expectedTenantId: "tenant-b",
-        parse: (value) => value as Registry & { tenant_id: string },
+        parse: parseTenantRegistry,
       }),
     );
 
     await waitFor(() => expect(result.current.source).toBe("unavailable"));
     expect(result.current.data).toBeNull();
-    expect(result.current.error).toContain("does not match the requested tenant tenant-b");
+    expect(result.current.error).toBe("Axis API response did not match the expected contract.");
+    expect(result.current.errorRequestId).toBe("request-tenant-mismatch");
+    expect(result.current.error).not.toContain("tenant-a-secret");
   });
 });

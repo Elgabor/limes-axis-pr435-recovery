@@ -50,14 +50,20 @@ describe("identity session bindings", () => {
 
   it("throws a typed error when the API denies the revocation", async () => {
     process.env.NEXT_PUBLIC_AXIS_API_BASE_URL = "http://axis-api.test";
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response("{}", { status: 403 }));
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("{}", {
+      headers: { "x-request-id": "request-session-revoke-403" },
+      status: 403,
+    }));
     vi.stubGlobal("fetch", fetchMock);
 
     const failure = revokeIdentitySession("2f6d8f34-1b34-4b7e-9f3a-51f6f0f9c001");
     await expect(failure).rejects.toBeInstanceOf(AxisApiError);
     await expect(
       revokeIdentitySession("2f6d8f34-1b34-4b7e-9f3a-51f6f0f9c001"),
-    ).rejects.toMatchObject({ status: 403 });
+    ).rejects.toMatchObject({
+      requestId: "request-session-revoke-403",
+      status: 403,
+    });
   });
 
   it("labels session lifecycle statuses with console signal classes", () => {

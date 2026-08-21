@@ -5,6 +5,7 @@ import pytest
 
 from axis_api.config import RuntimeConfigurationError, Settings, validate_runtime_configuration
 from axis_api.runtime_readiness import static_runtime_readiness_service
+from axis_api.tenant_admission import TENANT_ADMISSION_REGISTERED_ONLY
 
 
 async def _healthy() -> None:
@@ -99,6 +100,22 @@ def test_production_with_auth_and_development_without_auth_are_valid() -> None:
             api_rate_limit_backend="redis",
             api_rate_limit_failure_mode="closed",
             redis_url="redis://rate-limit.internal:6379/0",
+            tenant_admission_mode=TENANT_ADMISSION_REGISTERED_ONLY,
         )
     )
     validate_runtime_configuration(Settings(environment="development", oidc_auth_required=False))
+
+
+def test_production_requires_registered_tenant_admission() -> None:
+    with pytest.raises(RuntimeConfigurationError, match="AXIS_TENANT_ADMISSION_MODE"):
+        validate_runtime_configuration(
+            Settings(
+                environment="production",
+                oidc_auth_required=True,
+                api_rate_limit_enabled=True,
+                api_rate_limit_paths=["*"],
+                api_rate_limit_backend="redis",
+                api_rate_limit_failure_mode="closed",
+                redis_url="redis://rate-limit.internal:6379/0",
+            )
+        )

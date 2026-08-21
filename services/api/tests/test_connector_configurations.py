@@ -30,6 +30,7 @@ from axis_api.persistence import (
     AxisPersistenceRepository,
     ConnectorConfigurationCreate,
     DemoReferenceRecordCreate,
+    TenantCreate,
 )
 
 
@@ -56,6 +57,15 @@ def empty_session_factory() -> sessionmaker[Session]:
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with session_scope(factory) as session:
+        AxisPersistenceRepository(session).create_tenant(
+            TenantCreate(
+                tenant_id="tenant_demo_manufacturing",
+                display_name="Ravenna Works",
+                description="Plant Operations Cockpit",
+                created_by="test",
+            )
+        )
     yield factory
     engine.dispose()
 
@@ -355,6 +365,28 @@ def test_create_connector_configuration_endpoint_persists_preview_only_config(
     assert "password" not in str(body).lower()
     assert "api_key" not in str(body).lower()
     assert "credential_value" not in str(body).lower()
+
+
+def test_create_connector_configuration_uses_manifest_without_reference_seed(
+    empty_session_factory: sessionmaker[Session],
+) -> None:
+    with session_scope(empty_session_factory) as session:
+        seed_active_file_csv_manifest(AxisPersistenceRepository(session))
+
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = empty_session_factory
+    client = TestClient(app)
+
+    response = client.post(
+        "/operations/connectors/configurations",
+        json=connector_configuration_request().model_dump(),
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["connector_id"] == "file_csv_manufacturing_assets"
+    assert body["status"] == "configured_preview_only"
+    assert body["runtime_boundary"] == "axis-connector-sandbox"
 
 
 def test_create_connector_configuration_endpoint_requires_active_preview_manifest(

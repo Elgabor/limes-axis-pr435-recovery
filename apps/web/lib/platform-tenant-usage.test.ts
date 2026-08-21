@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AxisApiError } from "./axis-api";
 import {
   buildPlatformTenantUsagePath,
   defaultUsageWindowDays,
@@ -95,10 +94,13 @@ describe("fetchTenantUsage", () => {
     delete process.env.NEXT_PUBLIC_AXIS_API_BASE_URL;
   });
 
-  function stubFetch(status: number, body: unknown) {
+  function stubFetch(status: number, body: unknown, requestId?: string) {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(body === null ? null : JSON.stringify(body), {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(requestId ? { "x-request-id": requestId } : {}),
+        },
         status,
       }),
     );
@@ -127,8 +129,11 @@ describe("fetchTenantUsage", () => {
 
   it("throws AxisApiError on a non-OK, non-404 response", async () => {
     process.env.NEXT_PUBLIC_AXIS_API_BASE_URL = "http://axis-api.test";
-    stubFetch(503, { detail: { message: "down" } });
+    stubFetch(503, { detail: { message: "down" } }, "request-tenant-usage-503");
 
-    await expect(fetchTenantUsage("tenant_acme")).rejects.toBeInstanceOf(AxisApiError);
+    await expect(fetchTenantUsage("tenant_acme")).rejects.toMatchObject({
+      requestId: "request-tenant-usage-503",
+      status: 503,
+    });
   });
 });

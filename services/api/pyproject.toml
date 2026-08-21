@@ -22,6 +22,9 @@ dependencies = [
   "uvicorn[standard]>=0.38",
 ]
 
+[project.scripts]
+axis-bootstrap-first-tenant = "axis_api.bootstrap_tenant:main"
+
 [dependency-groups]
 dev = [
   "httpx>=0.28",

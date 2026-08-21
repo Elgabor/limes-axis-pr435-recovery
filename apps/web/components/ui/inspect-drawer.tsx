@@ -71,7 +71,7 @@ export function InspectDrawer({ title, record, trigger }: InspectDrawerProps) {
       <SheetTrigger asChild>
         {trigger ?? (
           <button
-            className="inline-flex cursor-pointer items-center font-mono text-xs text-muted transition-colors duration-200 hover:text-signal"
+            className="inline-flex min-h-6 cursor-pointer items-center font-mono text-xs text-muted transition-colors duration-200 hover:text-signal"
             type="button"
           >
             Inspect

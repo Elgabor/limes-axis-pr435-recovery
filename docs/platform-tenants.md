@@ -1,7 +1,7 @@
 # Platform Tenant Lifecycle and Quotas
 
-The tenant lifecycle slice turns tenants from migration-seeded rows into
-governed platform resources. It adds operator-driven provisioning, suspension
+The tenant lifecycle slice turns persisted tenant rows into governed platform
+resources. It adds operator-driven provisioning, suspension
 and reactivation, a per-tenant quota store, and real enforcement wiring for
 suspended tenants and quota overrides. This is the entry gate to the
 multi-tenant SaaS reference in the Enterprise track.
@@ -41,6 +41,23 @@ The demo-mode caveat applies as everywhere: in unauthenticated local demo mode
 scopes are self-asserted in the request body. The routes are only truly
 OIDC-bound when authentication is present or required.
 
+### First-tenant bootstrap
+
+Production uses `AXIS_TENANT_ADMISSION_MODE=registered_only`, so an empty
+tenant registry cannot admit an OIDC operator to call `POST /platform/tenants`.
+This is a deliberate fail-closed boundary. Operators run
+`axis-bootstrap-first-tenant` once, after migrations, from the packaged API
+image with the deployment's database credential. The direct database authority
+is not exposed as an HTTP route. It reuses the normal provisioning permission,
+idempotency and audit path, appends a distinct
+`platform.tenant.first_bootstrap.completed` event with
+`authority=direct_database`, serializes competing attempts, permits an exact
+replay without duplicate evidence, rejects same-key payload drift with
+`provision_idempotency_conflict`, and refuses a different later request with
+`tenant_registry_already_initialized`. Every tenant after the first is created
+through the authenticated API. The full command and Kubernetes example lives
+in [Deployment Baseline](deployment.md#bootstrap-the-first-registered-tenant).
+
 ## Lifecycle Model
 
 A tenant carries a `status` (`active`, `suspended`, `pending_deletion` — the
@@ -59,6 +76,13 @@ or reusing the tenant id under a new key returns a `CONFLICT`. An optional
 bootstrap admin creates the actor row inside the same transaction. Scope grants
 stay IdP-owned: the requested bootstrap scopes are recorded as audit evidence
 only, never as a live grant.
+
+Provision audit events created before immutable `provision_notes` evidence was
+introduced can be replayed only while the tenant's latest-event pointer still
+references that provisioning event. After a lifecycle transition, the original
+notes are no longer provable, so those legacy same-key replays fail closed with
+`provision_idempotency_conflict`; newly provisioned tenants remain replayable
+because their original notes are retained in the audit ledger.
 
 Suspension requires an active tenant and a reason; reactivation requires a
 non-active tenant and clears the suspension fields (history stays in the audit
@@ -89,7 +113,7 @@ if rollback bundles become necessary.
 
 Enforcement is wired at real choke points, not decoratively:
 
-- **Suspended tenants fail closed.** The shared OIDC principal dependency —
+- **Inactive tenants fail closed.** The shared OIDC principal dependency —
   the single place where tenant scoping is resolved for every OIDC-bound
   route, covering bearer tokens and browser session cookies — rejects requests
   for suspended or pending-deletion tenants with a 403, a distinct
@@ -97,6 +121,10 @@ Enforcement is wired at real choke points, not decoratively:
   `platform.tenant.suspended_request.denied` audit event in the tenant's
   ledger. Unauthenticated demo-mode requests carry no verified tenant context
   and are not covered, matching the demo-mode caveat used across the API.
+  Lifecycle status is an allowlist boundary: only the exact persisted `active`
+  value is admitted. Unknown, corrupt, mixed-case or future status values fail
+  closed with `tenant_status_not_active` rather than becoming accidental access
+  paths.
 - **Suspended tenants cannot establish or rotate sessions.** Session
   establishment and rotation bypass the resource-access choke point, so they
   are guarded independently. `GET /identity/oidc/callback` (login) checks the
@@ -135,9 +163,11 @@ hot request path, so tenant status and quotas are read through a bounded
 in-process cache (`AXIS_TENANT_STATE_CACHE_TTL_SECONDS`, default 5 seconds, at
 most 1024 tenant entries). The staleness window equals the TTL: a suspension or
 quota change made on another replica or process takes effect locally within at
-most one TTL. Lifecycle and quota routes invalidate the local entry
-immediately, so single-process deployments observe changes at once. A TTL of
-`0` disables caching and reads fresh state on every request. If the status
+most one TTL. Lifecycle, quota and provisioning routes invalidate the local
+entry immediately after their database transaction commits, so single-process
+deployments observe committed changes at once without allowing a concurrent
+request to repopulate pre-commit state. A TTL of `0` disables caching and reads
+fresh state on every request. If the status
 lookup itself fails (for example the database is unreachable), the check defers
 to the route layer, which surfaces the same persistence failure on its own
 database access.
@@ -232,6 +262,18 @@ the audited lifecycle transitions and the quota audit trail.
   fail-closed with no session row plus audit evidence, and a suspended tenant's
   refresh rejected with the stored session revoked and no IdP refresh grant
   attempted.
+- Production identity admission is registry-backed. With
+  `AXIS_TENANT_ADMISSION_MODE=registered_only`, verified bearer tokens and
+  browser sessions are admitted only for persisted active tenants; unknown
+  tenants are rejected with `tenant_not_registered`, login creates no session,
+  and refresh revokes an existing session before any IdP grant. Local/demo
+  environments keep the backward-compatible `claims_only` default. Only the
+  exact persisted `active` lifecycle status is admitted. A packaged,
+  direct-database first-tenant bootstrap closes the otherwise empty-registry
+  deadlock without weakening the HTTP boundary; exact replay is idempotent and
+  every later bootstrap is refused. Successful lifecycle and quota writes clear
+  the process-local tenant-state cache only after commit; other replicas
+  converge within the configured cache TTL.
 - The OpenAPI contract is regenerated and checked; migration identifier tests
   cover the extended `tenants` schema and the new `tenant_quotas` table.
 - Public documentation avoids customer data, personal names, contacts,

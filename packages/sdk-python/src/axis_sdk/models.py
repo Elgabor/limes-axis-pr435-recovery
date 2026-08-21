@@ -353,8 +353,8 @@ class WorkflowRun(AxisModel):
 
 class WorkflowConsole(AxisModel):
     tenant_id: str
-    plant_name: str
-    scenario: str
+    plant_name: str | None = None
+    scenario: str | None = None
     as_of: str
     runtime_status: OverviewStatus
     workflow_runs: list[WorkflowRun] = Field(default_factory=list)
@@ -400,8 +400,8 @@ class AuditFilterOptions(AxisModel):
 
 class AuditExplorer(AxisModel):
     tenant_id: str
-    plant_name: str
-    scenario: str
+    plant_name: str | None = None
+    scenario: str | None = None
     as_of: str
     ledger_status: OverviewStatus
     events: list[AuditLedgerEvent] = Field(default_factory=list)
@@ -463,7 +463,7 @@ class AuditExportManifest(AxisModel):
 
 class AuditExportBundle(AxisModel):
     tenant_id: str
-    scenario: str
+    scenario: str | None = None
     format: str
     export_reason: str
     filters: AuditEventQuery

@@ -1,7 +1,12 @@
 import { z } from "zod";
 
 import type { TenantUsageSummary } from "../platform-tenant-usage";
-import type { TenantQuotaSet, TenantRecord, TenantRegistry } from "../platform-tenants";
+import type {
+  TenantQuotaSet,
+  TenantRecord,
+  TenantRegistry,
+  TenantVocabularySet,
+} from "../platform-tenants";
 import {
   nullableStringSchema,
   parseContract,
@@ -50,6 +55,24 @@ const tenantQuotaSet = z.object({
   })).optional(),
   quota_notes: stringArraySchema.optional(),
 });
+const tenantVocabulary = z.object({
+  site_singular: z.string(),
+  site_plural: z.string(),
+  workspace_label: z.string(),
+  domain_labels: z.record(z.string(), z.string()),
+});
+const tenantVocabularySet = z.object({
+  tenant_id: z.string(),
+  vocabulary: tenantVocabulary,
+  configured: z.boolean(),
+  changes: z.array(z.object({
+    previous_value: tenantVocabulary.nullable().optional(),
+    new_value: tenantVocabulary,
+    audit_event_id: nullableStringSchema.optional(),
+    audit_event_type: z.string(),
+  })).optional(),
+  vocabulary_notes: stringArraySchema.optional(),
+});
 const tenantUsageSummary = z.object({
   tenant_id: z.string(),
   window_start: z.string(),
@@ -75,6 +98,9 @@ export function parseTenantRegistry(value: unknown): TenantRegistry {
 
 export function parseTenantQuotaSet(value: unknown): TenantQuotaSet {
   return parseContract(tenantQuotaSet, value);
+}
+export function parseTenantVocabularySet(value: unknown): TenantVocabularySet {
+  return parseContract(tenantVocabularySet, value);
 }
 export function parseTenantUsageSummary(value: unknown): TenantUsageSummary {
   return parseContract(tenantUsageSummary, value);

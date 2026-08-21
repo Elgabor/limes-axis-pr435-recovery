@@ -35,6 +35,24 @@
   --positive: 5 150 105;
   --warning: 180 83 9;
   --danger: 220 38 38;
+
+  /*
+   * Console geometry. The console is a dense operator tool, not a landing
+   * page: one control height for every button/input/select/icon-button so
+   * toolbars align, an 8px control radius, and a 16px surface radius.
+   */
+  --control-h: 36px;
+  --control-h-sm: 32px;
+  --control-h-lg: 40px;
+  --radius-control: 8px;
+  --radius-surface: 16px;
+
+  /* Interaction motion — tools respond, they don't animate. */
+  --motion-control: 150ms;
+
+  /* Two elevation steps only; hairline borders carry the structure. */
+  --shadow-popover: 0 4px 16px rgb(4 18 46 / 0.1);
+  --shadow-modal: 0 16px 40px rgb(4 18 46 / 0.2);
 }
 
 [data-theme="dark"] {
@@ -163,20 +181,38 @@ textarea:focus-visible {
 
 /* ============ Brand utilities ============ */
 
-/* Display type — Geist at 450, tight tracking, like the brand's headlines. */
+/*
+ * Display type. The marketing hero tracking (-0.03em/1.06) is calibrated for
+ * 48px+; in the console this class is used at 15–24px, where it reads cramped.
+ * Large type opts back into tighter tracking explicitly via `.font-display-lg`.
+ */
 .font-display {
   font-weight: 450;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.font-display-lg {
   letter-spacing: -0.03em;
   line-height: 1.06;
 }
 
-/* Mono eyebrow labels */
+/*
+ * The console's single micro-label: mono, 11px, uppercase. Muted by default —
+ * these labels caption almost every card, and rendering them all in Signal made
+ * the accent meaningless. `.eyebrow-accent` re-applies it for the page eyebrow,
+ * where it names the navigation group and genuinely aids orientation.
+ */
 .eyebrow {
   font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  color: rgb(var(--muted));
+}
+
+.eyebrow-accent {
   color: rgb(var(--signal));
 }
 
@@ -324,23 +360,14 @@ textarea:focus-visible {
   font-weight: 560;
 }
 
-.status-ready,
-.status-online,
 .signal-ready {
   background: rgb(var(--positive) / 12%);
   color: rgb(var(--positive));
 }
 
-.status-guarded,
-.status-degraded,
 .signal-watch {
   background: rgb(var(--warning) / 12%);
   color: rgb(var(--warning));
-}
-
-.status-planned {
-  background: rgb(var(--signal) / 12%);
-  color: rgb(var(--signal));
 }
 
 .status-checking {
@@ -348,7 +375,6 @@ textarea:focus-visible {
   color: rgb(var(--muted));
 }
 
-.status-unavailable,
 .signal-action-required {
   background: rgb(var(--danger) / 12%);
   color: rgb(var(--danger));

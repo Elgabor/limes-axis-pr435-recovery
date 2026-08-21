@@ -8,7 +8,11 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InspectDrawer } from "@/components/ui/inspect-drawer";
 import { EmptyPanel, ErrorPanel } from "@/components/ui/states";
-import { axisFetch, decodeAxisJson } from "@/lib/axis-api";
+import {
+  axisFetchParsedJson,
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
 import { parseManufacturingReplaySimulation } from "@/lib/runtime-contracts/simulation";
 import {
   buildReplaySimulationPath,
@@ -22,7 +26,7 @@ import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 
 /*
  * Run replay from the UI: a parameterized GET against
- * /demo/manufacturing/simulation/replay (workflow window, retention,
+ * /operations/simulation/replay (workflow window, retention,
  * optional policy-set comparison), rendered as a baseline-vs-simulated
  * decision diff. The raw API result stays behind the Inspect drawer.
  */
@@ -49,24 +53,6 @@ const initialDraft: ReplayDraft = {
   candidatePolicySetId: "",
   connectorId: "",
 };
-
-async function readReplayErrorDetail(response: Response): Promise<string> {
-  try {
-    const payload = (await response.json()) as {
-      detail?: { message?: string; reason?: string } | string;
-    };
-    if (typeof payload.detail === "string") {
-      return payload.detail;
-    }
-    return (
-      payload.detail?.message
-      ?? payload.detail?.reason
-      ?? strings.simulation.run.error.detail
-    );
-  } catch {
-    return strings.simulation.run.error.detail;
-  }
-}
 
 function parseBoundedInt(value: string, fallback: number, min: number, max: number): number {
   const parsed = Number.parseInt(value, 10);
@@ -206,7 +192,7 @@ export function RunReplayForm({ tenantId }: { tenantId: string }) {
   const { session } = useOidcConsoleSession();
   const [draft, setDraft] = useState<ReplayDraft>(initialDraft);
   const [running, setRunning] = useState(false);
-  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const [runError, setRunError] = useState<AxisOperatorError | null>(null);
   const [result, setResult] = useState<ManufacturingReplaySimulation | null>(null);
 
   function updateDraft(patch: Partial<ReplayDraft>) {
@@ -219,7 +205,7 @@ export function RunReplayForm({ tenantId }: { tenantId: string }) {
       return;
     }
     setRunning(true);
-    setErrorDetail(null);
+    setRunError(null);
 
     const path = buildReplaySimulationPath({
       tenantId,
@@ -233,28 +219,28 @@ export function RunReplayForm({ tenantId }: { tenantId: string }) {
     });
 
     try {
-      const response = await axisFetch(path, { session });
-      if (!response.ok) {
-        setResult(null);
-        setErrorDetail(await readReplayErrorDetail(response));
-        return;
-      }
-      setResult(decodeAxisJson(
+      const replay = await axisFetchParsedJson(
         path,
-        await response.json(),
-        parseManufacturingReplaySimulation,
-        response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id"),
-      ));
-    } catch {
+        (value) => {
+          const parsed = parseManufacturingReplaySimulation(value);
+          if (parsed.tenant_id !== tenantId) {
+            throw new Error("Replay response tenant mismatch.");
+          }
+          return parsed;
+        },
+        { session },
+      );
+      setResult(replay);
+    } catch (caught) {
       setResult(null);
-      setErrorDetail(copy.error.detail);
+      setRunError(toAxisOperatorError(caught, copy.error.detail));
     } finally {
       setRunning(false);
     }
   }
 
   return (
-    <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
+    <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
         <div>
           <p className="eyebrow m-0">{copy.eyebrow}</p>
@@ -331,7 +317,13 @@ export function RunReplayForm({ tenantId }: { tenantId: string }) {
         {copy.fields.comparisonHint}
       </p>
 
-      {errorDetail ? <ErrorPanel detail={errorDetail} title={copy.error.title} /> : null}
+      {runError ? (
+        <ErrorPanel
+          detail={runError.message}
+          reference={runError.requestId ?? undefined}
+          title={copy.error.title}
+        />
+      ) : null}
       {result ? <ReplayComparison result={result} /> : null}
     </section>
   );

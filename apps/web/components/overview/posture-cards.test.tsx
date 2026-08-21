@@ -9,6 +9,8 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+import { strings } from "@/lib/strings";
+
 import { PostureCards } from "./posture-cards";
 import {
   modelRoutingFixture,
@@ -57,25 +59,25 @@ describe("PostureCards", () => {
 
     expect(screen.getAllByRole("listitem")).toHaveLength(5);
 
-    expect(within(card("Agents")).getByText("2")).toBeInTheDocument();
-    expect(within(card("Agents")).getByRole("link", { name: /Manage agents/ })).toHaveAttribute(
+    expect(within(card(strings.overview.posture.agents.label)).getByText("2")).toBeInTheDocument();
+    expect(within(card(strings.overview.posture.agents.label)).getByRole("link", { name: /Manage agents/ })).toHaveAttribute(
       "href",
       "/agents",
     );
-    expect(within(card("Workflows")).getByText("2")).toBeInTheDocument();
+    expect(within(card(strings.overview.posture.workflows.label)).getByText("2")).toBeInTheDocument();
     expect(
-      within(card("Workflows")).getByRole("link", { name: /Open workflows/ }),
+      within(card(strings.overview.posture.workflows.label)).getByRole("link", { name: /Open workflows/ }),
     ).toHaveAttribute("href", "/workflows");
-    expect(within(card("Connectors")).getByText("1")).toBeInTheDocument();
+    expect(within(card(strings.overview.posture.connectors.label)).getByText("1")).toBeInTheDocument();
     expect(
-      within(card("Connectors")).getByRole("link", { name: /Manage connectors/ }),
+      within(card(strings.overview.posture.connectors.label)).getByRole("link", { name: /Manage connectors/ }),
     ).toHaveAttribute("href", "/connectors");
-    expect(within(card("Policies")).getByText("1")).toBeInTheDocument();
+    expect(within(card(strings.overview.posture.policies.label)).getByText("1")).toBeInTheDocument();
     expect(
-      within(card("Policies")).getByRole("link", { name: /Review policies/ }),
+      within(card(strings.overview.posture.policies.label)).getByRole("link", { name: /Review policies/ }),
     ).toHaveAttribute("href", "/policies");
-    expect(within(card("Models")).getByText("2")).toBeInTheDocument();
-    expect(within(card("Models")).getByRole("link", { name: /View routing/ })).toHaveAttribute(
+    expect(within(card(strings.overview.posture.models.label)).getByText("2")).toBeInTheDocument();
+    expect(within(card(strings.overview.posture.models.label)).getByRole("link", { name: /View routing/ })).toHaveAttribute(
       "href",
       "/model-routing",
     );
@@ -91,11 +93,11 @@ describe("PostureCards", () => {
       />,
     );
 
-    expect(within(card("Agents")).getByText("Unavailable")).toBeInTheDocument();
-    expect(within(card("Workflows")).getByText("Unavailable")).toBeInTheDocument();
+    expect(within(card(strings.overview.posture.agents.label)).getByText("Unavailable")).toBeInTheDocument();
+    expect(within(card(strings.overview.posture.workflows.label)).getByText("Unavailable")).toBeInTheDocument();
     // The other three cards keep their API-backed values.
-    expect(within(card("Connectors")).getByText("1")).toBeInTheDocument();
-    expect(within(card("Policies")).getByText("1")).toBeInTheDocument();
-    expect(within(card("Models")).getByText("2")).toBeInTheDocument();
+    expect(within(card(strings.overview.posture.connectors.label)).getByText("1")).toBeInTheDocument();
+    expect(within(card(strings.overview.posture.policies.label)).getByText("1")).toBeInTheDocument();
+    expect(within(card(strings.overview.posture.models.label)).getByText("2")).toBeInTheDocument();
   });
 });

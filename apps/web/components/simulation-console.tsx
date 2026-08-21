@@ -1,93 +1,87 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { FileText, GitBranch, History, RadioTower, ShieldCheck } from "lucide-react";
+import { FileText, GitBranch, History, ShieldCheck } from "lucide-react";
 
 import { RunReplayForm } from "@/components/simulation/run-replay-form";
-import { ErrorPanel, LoadingPanel } from "@/components/ui/states";
-import { axisFetchParsedJson } from "@/lib/axis-api";
-import { parseManufacturingReplaySimulation } from "@/lib/runtime-contracts/simulation";
-import { strings } from "@/lib/strings";
-import { useOidcConsoleSession } from "@/lib/use-oidc-session";
+import { SourcePill } from "@/components/ui/source-pill";
+import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import {
+  formatContextPath,
+  formatDateTime,
+  formatNumber,
+  pluralize,
+} from "@/lib/format";
+import { stringUrlField, useConsoleUrlState } from "@/lib/console-url-state";
+import { parseManufacturingReplaySimulation } from "@/lib/runtime-contracts/simulation";
+import { deriveSourceState } from "@/lib/source-state";
+import { strings } from "@/lib/strings";
+import {
+  buildReplaySimulationPath,
   countChangedPolicySetDiffs,
   countChangedPolicyResults,
-  findReplayArtifactById,
   formatSimulationLabel,
-  shouldUsePersistedReplayData,
   type ManufacturingReplaySimulation,
+  type PolicySimulationResult,
 } from "@/lib/simulation-demo";
 import {
   formatOverviewTimestamp,
   platformStatusClass,
   platformStatusLabel,
 } from "@/lib/platform-overview";
-import { useConsole } from "@/providers/console-provider";
+import { DEMO_TENANT_ID } from "@/lib/tenant-scope";
+import { useAxisQuery } from "@/lib/use-axis-query";
+import {
+  IDENTITY_SESSION_ENDPOINT,
+  useConsoleTenantScope,
+} from "@/lib/use-console-tenant-scope";
 
-type SimulationSource = "loading" | "persisted" | "unavailable";
-
-function sourceLabel(source: SimulationSource): string {
-  if (source === "persisted") {
-    return "Persisted replay artifacts";
-  }
-
-  return source === "loading" ? "Loading replay API" : "Replay API unavailable";
-}
-
-function formatReplayTime(value: string): string {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
+// Module scope, like every other console's schema: an inline literal is a new
+// object each render, which defeats the hook's memo and makes its setter churn.
+const simulationUrlSchema = {
+  artifactId: stringUrlField("artifact_id"),
+};
 
 export function SimulationConsole() {
-  const [simulationData, setSimulationData] = useState<ManufacturingReplaySimulation | null>(null);
-  const [source, setSource] = useState<SimulationSource>("loading");
-  const [selectedArtifactId, setSelectedArtifactId] = useState("");
-  const { refreshNonce } = useConsole();
-  const { session } = useOidcConsoleSession();
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    async function loadReplaySimulation() {
-      setSource("loading");
-
-      try {
-        const data = await axisFetchParsedJson<ManufacturingReplaySimulation>(
-          "/demo/manufacturing/simulation/replay?tenant_id=tenant_demo_manufacturing&limit=20",
-          parseManufacturingReplaySimulation,
-          { session, signal: controller.signal },
-        );
-        setSimulationData(data);
-        setSelectedArtifactId(data.artifacts[0]?.artifact_id ?? "");
-        setSource(shouldUsePersistedReplayData(data) ? "persisted" : "persisted");
-      } catch {
-        if (!controller.signal.aborted) {
-          setSimulationData(null);
-          setSelectedArtifactId("");
-          setSource("unavailable");
-        }
-      }
-    }
-
-    void loadReplaySimulation();
-
-    return () => controller.abort();
-  }, [refreshNonce, session]);
-
-  const selectedArtifact = useMemo(
-    () =>
-      simulationData && simulationData.artifacts.length > 0
-        ? findReplayArtifactById(simulationData, selectedArtifactId)
-        : null,
-    [simulationData, selectedArtifactId],
+  const [urlState, setUrlState] = useConsoleUrlState(simulationUrlSchema);
+  const { identity, tenantId, tenantQueriesEnabled } = useConsoleTenantScope();
+  const replayPath = buildReplaySimulationPath({
+    tenantId: tenantId ?? DEMO_TENANT_ID,
+    limit: 20,
+  });
+  const replayQuery = useAxisQuery<ManufacturingReplaySimulation>(replayPath, {
+    enabled: tenantQueriesEnabled,
+    expectedTenantId: tenantId ?? undefined,
+    parse: parseManufacturingReplaySimulation,
+  });
+  const simulationData = replayQuery.data;
+  const source = deriveSourceState(
+    replayQuery.source,
+    Boolean(simulationData),
+    simulationData?.provenance,
   );
+
+  const selectedArtifact = urlState.artifactId
+    ? simulationData?.artifacts.find(
+        (artifact) => artifact.artifact_id === urlState.artifactId,
+      ) ?? null
+    : simulationData?.artifacts[0] ?? null;
   const changedPolicies = simulationData ? countChangedPolicyResults(simulationData) : 0;
   const changedPolicySetDiffs = simulationData ? countChangedPolicySetDiffs(simulationData) : 0;
+
+  if (identity.source === "loading") {
+    return <LoadingPanel layout="detail" />;
+  }
+
+  if (identity.source === "unavailable" || !tenantId) {
+    return (
+      <ErrorPanel
+        detail="The console could not verify the current actor and tenant. Replay data is not loaded until identity is available."
+        endpoint={IDENTITY_SESSION_ENDPOINT}
+        reference={identity.errorRequestId ?? undefined}
+        title="Identity API unavailable"
+      />
+    );
+  }
 
   if (!simulationData) {
     if (source === "loading") {
@@ -97,23 +91,33 @@ export function SimulationConsole() {
     return (
       <ErrorPanel
         detail={strings.simulation.error.detail}
-        endpoint="/demo/manufacturing/simulation/replay"
+        endpoint={replayPath}
+        reference={replayQuery.errorRequestId ?? undefined}
         title={strings.simulation.error.title}
+      />
+    );
+  }
+
+  if (simulationData.artifacts.length === 0) {
+    return (
+      <EmptyPanel
+        detail={strings.simulation.noArtifacts.detail}
+        icon={History}
+        title={strings.simulation.noArtifacts.title}
       />
     );
   }
 
   if (!selectedArtifact) {
     return (
-      <ErrorPanel
-        detail={strings.simulation.noArtifacts.detail}
-        endpoint="/demo/manufacturing/simulation/replay"
-        title={strings.simulation.noArtifacts.title}
+      <EmptyPanel
+        detail={strings.states.requestedRecord.detail}
+        title={strings.states.requestedRecord.title}
       />
     );
   }
 
-  const primaryPolicy = selectedArtifact.policy_results[0];
+  const primaryPolicy: PolicySimulationResult | undefined = selectedArtifact.policy_results[0];
   const primaryPolicySetDiff = (selectedArtifact.policy_set_diffs ?? [])[0];
   const persistedOutputs = simulationData.persisted_outputs ?? [];
   const retentionWindow = simulationData.retention_window;
@@ -129,13 +133,14 @@ export function SimulationConsole() {
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2"
       >
         <p className="m-0 min-w-0 text-sm leading-snug break-words text-muted">
-          {simulationData.plant_name} / {simulationData.scenario} / {simulationData.tenant_id}
+          {formatContextPath(
+            simulationData.plant_name,
+            simulationData.scenario,
+            simulationData.tenant_id,
+          )}
         </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="status-pill signal-ready">
-            <RadioTower size={15} />
-            {sourceLabel(source)}
-          </span>
+          <SourcePill state={source} subject="replay artifacts" />
           <span className={`status-pill ${platformStatusClass(simulationData.simulation_status)}`}>
             <ShieldCheck size={15} />
             {platformStatusLabel(simulationData.simulation_status)}
@@ -146,14 +151,14 @@ export function SimulationConsole() {
 
       <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         {simulationData.metrics.map((metric) => (
-          <article className="min-w-0 rounded-3xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]" key={metric.label}>
+          <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]" key={metric.label}>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-line/60 py-3 first:border-t-0 dark:border-white/10">
               <p className="eyebrow m-0">{metric.label}</p>
               <span className={`status-pill ${platformStatusClass(metric.status)}`}>
                 {platformStatusLabel(metric.status)}
               </span>
             </div>
-            <p className="font-display mx-0 mt-4 mb-2 text-3xl text-ink">{metric.value}</p>
+            <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{metric.value}</p>
             <p className="m-0 text-xs leading-relaxed text-muted break-words">{metric.detail}</p>
           </article>
         ))}
@@ -161,11 +166,11 @@ export function SimulationConsole() {
 
       <RunReplayForm tenantId={simulationData.tenant_id} />
 
-      <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+      <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
           <div>
             <p className="eyebrow m-0">Replay Window</p>
-            <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{retentionWindow.retention_days} day retention</h2>
+            <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{pluralize(retentionWindow.retention_days, "day")} retention</h2>
             <p className="mx-0 mt-1 mb-0 leading-snug text-muted break-words font-mono text-[13px]">
               {retentionWindow.policy_id} / {retentionWindow.disposal_action}
             </p>
@@ -182,37 +187,37 @@ export function SimulationConsole() {
         <div className="grid grid-cols-2 gap-3.5 border-y border-line/60 py-3.5 xl:grid-cols-4 dark:border-white/10 [&>*]:min-w-0">
           <div>
             <p className="eyebrow m-0">Window Start</p>
-            <p className="m-0 font-medium text-ink break-words">{formatReplayTime(retentionWindow.retention_window_start)}</p>
+            <p className="m-0 font-medium text-ink break-words">{formatDateTime(retentionWindow.retention_window_start)}</p>
             <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{retentionWindow.retention_enforced ? "active" : "held"}</p>
           </div>
           <div>
             <p className="eyebrow m-0">Timeline</p>
-            <p className="m-0 font-medium text-ink break-words">{retentionWindow.excluded_timeline_event_count} excluded</p>
+            <p className="m-0 font-medium text-ink break-words">{formatNumber(retentionWindow.excluded_timeline_event_count)} excluded</p>
             <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">history events</p>
           </div>
           <div>
             <p className="eyebrow m-0">Audit</p>
-            <p className="m-0 font-medium text-ink break-words">{retentionWindow.excluded_audit_event_count} excluded</p>
+            <p className="m-0 font-medium text-ink break-words">{formatNumber(retentionWindow.excluded_audit_event_count)} excluded</p>
             <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">ledger events</p>
           </div>
           <div>
             <p className="eyebrow m-0">Outputs</p>
-            <p className="m-0 font-medium text-ink break-words">{retentionWindow.excluded_output_count} excluded</p>
-            <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{excludedReplayRecords} total excluded</p>
+            <p className="m-0 font-medium text-ink break-words">{formatNumber(retentionWindow.excluded_output_count)} excluded</p>
+            <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{formatNumber(excludedReplayRecords)} total excluded</p>
           </div>
         </div>
       </section>
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(300px,0.42fr)_minmax(0,1fr)] [&>*]:min-w-0">
-        <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
             <div>
               <p className="eyebrow m-0">Artifacts</p>
-              <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{simulationData.artifacts.length} replay previews</h2>
+              <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{pluralize(simulationData.artifacts.length, "replay preview")}</h2>
             </div>
             <span className="status-pill signal-watch">
               <GitBranch size={15} />
-              {changedPolicies + changedPolicySetDiffs} changed
+              {formatNumber(changedPolicies + changedPolicySetDiffs)} changed
             </span>
           </div>
 
@@ -225,14 +230,14 @@ export function SimulationConsole() {
                   aria-pressed={isSelected}
                   className={`grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3.5 border-0 border-t border-line/60 bg-transparent px-2.5 py-3.5 text-left text-ink transition-colors first:border-t-0 hover:bg-ink/4 dark:border-white/10 dark:hover:bg-white/6${isSelected ? " bg-signal/10 shadow-[inset_2px_0_0_rgb(var(--signal))] dark:bg-signal/15" : ""}`}
                   key={artifact.artifact_id}
-                  onClick={() => setSelectedArtifactId(artifact.artifact_id)}
+                  onClick={() => setUrlState({ artifactId: artifact.artifact_id })}
                   type="button"
                 >
                   <span>
                     <span className="m-0 font-medium text-ink break-words">{artifact.workflow_name}</span>
                     <span className="mx-0 mt-1 mb-0 leading-snug text-muted break-words font-mono text-[13px]">{artifact.workflow_id}</span>
                     <span className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
-                      {artifact.timeline_event_count + artifact.audit_event_count} evidence events
+                      {pluralize(artifact.timeline_event_count + artifact.audit_event_count, "evidence event")}
                     </span>
                   </span>
                   <span className="status-pill signal-watch">
@@ -244,7 +249,7 @@ export function SimulationConsole() {
           </div>
         </section>
 
-        <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
+        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
             <div>
               <p className="eyebrow m-0">{selectedArtifact.replay_mode}</p>
@@ -272,8 +277,14 @@ export function SimulationConsole() {
             </div>
             <div>
               <p className="eyebrow m-0">Policy</p>
-              <p className="m-0 font-medium text-ink break-words font-mono text-[13px]">{primaryPolicy.policy_id}</p>
-              <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{primaryPolicy.simulated_decision}</p>
+              {primaryPolicy ? (
+                <>
+                  <p className="m-0 font-medium text-ink break-words font-mono text-[13px]">{primaryPolicy.policy_id}</p>
+                  <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{primaryPolicy.simulated_decision}</p>
+                </>
+              ) : (
+                <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{strings.simulation.noPolicyResult}</p>
+              )}
             </div>
             <div>
               <p className="eyebrow m-0">Replay Ready</p>
@@ -282,27 +293,29 @@ export function SimulationConsole() {
             </div>
           </div>
 
-          <section className="grid items-start gap-4 border-b border-line/60 pb-4 dark:border-white/10 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.48fr)] [&>*]:min-w-0">
-            <div>
-              <p className="eyebrow m-0">Policy Simulation</p>
-              <h3 className="font-display mx-0 mt-1 mb-0 text-lg text-ink">{primaryPolicy.policy_name}</h3>
-              <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{primaryPolicy.summary}</p>
-            </div>
-            <div className="grid min-w-0 gap-2">
-              <div className="grid min-w-0 grid-cols-1 items-start gap-1 border-t border-line/60 pt-2 first:border-t-0 first:pt-0 dark:border-white/10 sm:grid-cols-[minmax(120px,0.35fr)_minmax(0,1fr)] sm:gap-2.5">
-                <span className="eyebrow m-0">Baseline</span>
-                <span className="font-mono text-[13px] break-words">{primaryPolicy.baseline_decision}</span>
+          {primaryPolicy ? (
+            <section className="grid items-start gap-4 border-b border-line/60 pb-4 dark:border-white/10 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.48fr)] [&>*]:min-w-0">
+              <div>
+                <p className="eyebrow m-0">Policy Simulation</p>
+                <h3 className="font-display mx-0 mt-1 mb-0 text-lg text-ink">{primaryPolicy.policy_name}</h3>
+                <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{primaryPolicy.summary}</p>
               </div>
-              <div className="grid min-w-0 grid-cols-1 items-start gap-1 border-t border-line/60 pt-2 first:border-t-0 first:pt-0 dark:border-white/10 sm:grid-cols-[minmax(120px,0.35fr)_minmax(0,1fr)] sm:gap-2.5">
-                <span className="eyebrow m-0">Simulated</span>
-                <span className="font-mono text-[13px] break-words">{primaryPolicy.simulated_decision}</span>
+              <div className="grid min-w-0 gap-2">
+                <div className="grid min-w-0 grid-cols-1 items-start gap-1 border-t border-line/60 pt-2 first:border-t-0 first:pt-0 dark:border-white/10 sm:grid-cols-[minmax(120px,0.35fr)_minmax(0,1fr)] sm:gap-2.5">
+                  <span className="eyebrow m-0">Baseline</span>
+                  <span className="font-mono text-[13px] break-words">{primaryPolicy.baseline_decision}</span>
+                </div>
+                <div className="grid min-w-0 grid-cols-1 items-start gap-1 border-t border-line/60 pt-2 first:border-t-0 first:pt-0 dark:border-white/10 sm:grid-cols-[minmax(120px,0.35fr)_minmax(0,1fr)] sm:gap-2.5">
+                  <span className="eyebrow m-0">Simulated</span>
+                  <span className="font-mono text-[13px] break-words">{primaryPolicy.simulated_decision}</span>
+                </div>
+                <div className="grid min-w-0 grid-cols-1 items-start gap-1 border-t border-line/60 pt-2 first:border-t-0 first:pt-0 dark:border-white/10 sm:grid-cols-[minmax(120px,0.35fr)_minmax(0,1fr)] sm:gap-2.5">
+                  <span className="eyebrow m-0">Outcome Change</span>
+                  <span className="font-mono text-[13px] break-words">{primaryPolicy.changed_outcome ? "yes" : "no"}</span>
+                </div>
               </div>
-              <div className="grid min-w-0 grid-cols-1 items-start gap-1 border-t border-line/60 pt-2 first:border-t-0 first:pt-0 dark:border-white/10 sm:grid-cols-[minmax(120px,0.35fr)_minmax(0,1fr)] sm:gap-2.5">
-                <span className="eyebrow m-0">Outcome Change</span>
-                <span className="font-mono text-[13px] break-words">{primaryPolicy.changed_outcome ? "yes" : "no"}</span>
-              </div>
-            </div>
-          </section>
+            </section>
+          ) : null}
 
           {primaryPolicySetDiff ? (
             <section className="grid items-start gap-4 border-b border-line/60 pb-4 dark:border-white/10 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.48fr)] [&>*]:min-w-0">
@@ -380,7 +393,7 @@ export function SimulationConsole() {
               </div>
               <span className="status-pill signal-ready">
                 <History size={15} />
-                {selectedArtifact.timeline.length} events
+                {pluralize(selectedArtifact.timeline.length, "event")}
               </span>
             </div>
             <div className="grid gap-3">
@@ -391,7 +404,7 @@ export function SimulationConsole() {
                     <div>
                       <p className="m-0 font-medium text-ink break-words font-mono text-[13px]">{event.event}</p>
                       <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
-                        {formatReplayTime(event.at)} / {event.actor} / {event.result}
+                        {formatDateTime(event.at)} / {event.actor} / {event.result}
                       </p>
                       <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{event.summary}</p>
                     </div>
@@ -404,11 +417,11 @@ export function SimulationConsole() {
         </section>
       </div>
 
-      <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+      <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
           <div>
             <p className="eyebrow m-0">Persisted Outputs</p>
-            <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{persistedOutputs.length} governed output</h2>
+            <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{pluralize(persistedOutputs.length, "governed output")}</h2>
           </div>
           <span className="status-pill signal-ready">
             <FileText size={15} />
@@ -442,7 +455,7 @@ export function SimulationConsole() {
             </div>
             <div>
               <p className="eyebrow m-0">Retention</p>
-              <p className="m-0 font-medium text-ink break-words">{output.retention_window_days} days</p>
+              <p className="m-0 font-medium text-ink break-words">{pluralize(output.retention_window_days, "day")}</p>
               <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{output.status}</p>
             </div>
             <div>
@@ -459,7 +472,7 @@ export function SimulationConsole() {
         ))}
       </section>
 
-      <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+      <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
         <p className="eyebrow m-0">Simulation Notes</p>
         <div className="grid min-w-0 gap-2.5">
           {simulationData.simulation_notes.map((note) => (

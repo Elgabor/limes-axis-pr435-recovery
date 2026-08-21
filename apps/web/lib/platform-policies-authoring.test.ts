@@ -400,11 +400,12 @@ describe("write failure mapping", () => {
           message: "The platform policy already exists.",
           reason: "policy_already_exists",
         },
-      }),
+      }, "request-policy-conflict"),
     ).toEqual({
       kind: "conflict",
       reason: "policy_already_exists",
       message: "The platform policy already exists.",
+      requestId: "request-policy-conflict",
     });
   });
 
@@ -480,10 +481,13 @@ describe("policy write bindings", () => {
     delete process.env.NEXT_PUBLIC_AXIS_API_BASE_URL;
   });
 
-  function stubFetch(status: number, body: unknown) {
+  function stubFetch(status: number, body: unknown, requestId?: string) {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(JSON.stringify(body), {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(requestId ? { "x-request-id": requestId } : {}),
+        },
         status,
       }),
     );
@@ -529,11 +533,15 @@ describe("policy write bindings", () => {
         message: "The platform policy already exists.",
         reason: "policy_already_exists",
       },
-    });
+    }, "request-policy-create-409");
 
     await expect(
       createPlatformPolicy(buildPolicyCreatePayload("tenant_demo_manufacturing", buildDraft())),
-    ).resolves.toMatchObject({ kind: "conflict", reason: "policy_already_exists" });
+    ).resolves.toMatchObject({
+      kind: "conflict",
+      reason: "policy_already_exists",
+      requestId: "request-policy-create-409",
+    });
   });
 
   it("encodes the policy id into the revisions path", () => {

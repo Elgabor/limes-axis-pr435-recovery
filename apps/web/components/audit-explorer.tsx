@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Download, FileText, Filter, RadioTower, RotateCcw, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Download, FileText, Filter, RotateCcw, ShieldCheck } from "lucide-react";
 
-import { axisFetchParsedJson } from "@/lib/axis-api";
+import {
+  axisFetchParsedJson,
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
 import {
   parseAuditExportBundle,
   parseManufacturingAuditExplorer,
@@ -13,16 +17,27 @@ import {
   buildAuditExportFileName,
   buildAuditExportSummary,
   filterAuditEvents,
-  findAuditEventById,
   formatAuditLabel,
-  resolveAuditEventSelection,
   type AuditFilters,
   type AuditExportBundle,
   type ManufacturingAuditExplorer,
 } from "@/lib/audit-demo";
+import { stringUrlField, useConsoleUrlState } from "@/lib/console-url-state";
 import { strings } from "@/lib/strings";
+import {
+  buildTenantScopedPath,
+  DEMO_TENANT_ID,
+  OPERATIONS_API_PREFIX,
+} from "@/lib/tenant-scope";
+import {
+  IDENTITY_SESSION_ENDPOINT,
+  useConsoleTenantScope,
+} from "@/lib/use-console-tenant-scope";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
+import { useAxisQuery } from "@/lib/use-axis-query";
 import { buildConnectorSnapshotHref } from "@/lib/connectors-demo";
+import { formatContextPath, formatDateTime, formatNumber } from "@/lib/format";
+import { deriveSourceState } from "@/lib/source-state";
 import {
   formatOverviewTimestamp,
   platformStatusClass,
@@ -33,27 +48,23 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { InspectDrawer } from "@/components/ui/inspect-drawer";
 import { Select } from "@/components/ui/select";
+import { SourcePill } from "@/components/ui/source-pill";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
 
-type AuditSource = "loading" | "persisted" | "api" | "unavailable";
+const AUDIT_EVENTS_ENDPOINT = `${OPERATIONS_API_PREFIX}/audit/events`;
+const AUDIT_EXPORT_ENDPOINT = `${OPERATIONS_API_PREFIX}/audit/export`;
 
 const defaultFilters: AuditFilters = {
   tenant: allAuditFilter,
   eventType: allAuditFilter,
   scope: allAuditFilter,
 };
-
-function sourceLabel(source: AuditSource): string {
-  if (source === "persisted") {
-    return "Persisted audit events";
-  }
-
-  if (source === "api") {
-    return "API audit records";
-  }
-
-  return source === "loading" ? "Loading audit API" : "Audit API unavailable";
-}
+const auditUrlSchema = {
+  tenant: stringUrlField("tenant", allAuditFilter),
+  eventType: stringUrlField("event_type", allAuditFilter),
+  scope: stringUrlField("scope", allAuditFilter),
+  eventId: stringUrlField("event_id"),
+};
 
 /** Serialize the already-fetched export bundle and trigger a client download. */
 function downloadAuditExportBundle(bundle: AuditExportBundle) {
@@ -86,13 +97,13 @@ function AuditIntegrityExportPanel({ exportBundle }: { exportBundle: AuditExport
   };
 
   return (
-    <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
+    <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
         <div>
           <p className="eyebrow m-0">{copy.eyebrow}</p>
           <h2 className="font-display mx-0 mt-1 mb-1 text-xl text-ink">{copy.title}</h2>
           <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
-            {exportBundle.manifest.record_count} records, ready to download as{" "}
+            {formatNumber(exportBundle.manifest.record_count)} records, ready to download as{" "}
             {exportBundle.format.toUpperCase()}.
           </p>
           <p className="mx-0 mt-1 mb-0 leading-snug text-muted break-words font-mono text-[13px]">
@@ -139,107 +150,99 @@ function AuditIntegrityExportPanel({ exportBundle }: { exportBundle: AuditExport
   );
 }
 
-function formatAuditTime(value: string): string {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
-
 export function AuditExplorer() {
-  const [auditData, setAuditData] = useState<ManufacturingAuditExplorer | null>(null);
   const [auditExport, setAuditExport] = useState<AuditExportBundle | null>(null);
-  const [source, setSource] = useState<AuditSource>("loading");
-  const [filters, setFilters] = useState<AuditFilters>(defaultFilters);
-  const [requestedEventId, setRequestedEventId] = useState<string | null>(() =>
-    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("event_id"),
-  );
-  const [selectedEventId, setSelectedEventId] = useState("");
+  const [auditExportError, setAuditExportError] = useState<AxisOperatorError | null>(null);
+  const [urlState, setUrlState] = useConsoleUrlState(auditUrlSchema);
   const { refreshNonce } = useConsole();
   const { session } = useOidcConsoleSession();
+  const { identity, tenantId, tenantQueriesEnabled } = useConsoleTenantScope();
+  const auditEventsPath = buildTenantScopedPath(
+    AUDIT_EVENTS_ENDPOINT,
+    tenantId ?? DEMO_TENANT_ID,
+    { limit: 100 },
+  );
+  const auditExportPath = buildTenantScopedPath(
+    AUDIT_EXPORT_ENDPOINT,
+    tenantId ?? DEMO_TENANT_ID,
+    { limit: 100, export_reason: "console-review" },
+  );
+  const auditQuery = useAxisQuery<ManufacturingAuditExplorer>(auditEventsPath, {
+    enabled: tenantQueriesEnabled,
+    expectedTenantId: tenantId ?? undefined,
+    parse: parseManufacturingAuditExplorer,
+  });
+  const auditData = auditQuery.data;
+  const source = deriveSourceState(
+    auditQuery.source,
+    Boolean(auditData),
+    auditData?.provenance,
+  );
+  const filters: AuditFilters = auditData
+    ? {
+        tenant: urlState.tenant === allAuditFilter
+          || auditData.filter_options.tenants.includes(urlState.tenant)
+          ? urlState.tenant
+          : allAuditFilter,
+        eventType: urlState.eventType === allAuditFilter
+          || auditData.filter_options.event_types.includes(urlState.eventType)
+          ? urlState.eventType
+          : allAuditFilter,
+        scope: urlState.scope === allAuditFilter
+          || auditData.filter_options.scopes.includes(urlState.scope)
+          ? urlState.scope
+          : allAuditFilter,
+      }
+    : defaultFilters;
 
   useEffect(() => {
     const controller = new AbortController();
 
     async function loadAuditExport() {
+      if (!tenantQueriesEnabled || !tenantId) {
+        setAuditExport(null);
+        setAuditExportError(null);
+        return;
+      }
+
+      setAuditExport(null);
+      setAuditExportError(null);
       try {
         const exportData = await axisFetchParsedJson<AuditExportBundle>(
-          "/demo/manufacturing/audit/export?tenant_id=tenant_demo_manufacturing&limit=100&export_reason=console-review",
-          parseAuditExportBundle,
+          auditExportPath,
+          (value) => {
+            const parsed = parseAuditExportBundle(value);
+            if (parsed.tenant_id !== tenantId) {
+              throw new Error("Audit export tenant does not match the verified console tenant.");
+            }
+            return parsed;
+          },
           { session, signal: controller.signal },
         );
         if (!controller.signal.aborted) {
           setAuditExport(exportData);
+          setAuditExportError(null);
         }
-      } catch {
+      } catch (caught) {
         if (!controller.signal.aborted) {
           setAuditExport(null);
+          setAuditExportError(toAxisOperatorError(
+            caught,
+            strings.audit.integrity.error.detail,
+          ));
         }
       }
     }
 
-    async function fetchAudit() {
-      setSource("loading");
-
-      try {
-        const persistedAuditData = await axisFetchParsedJson<ManufacturingAuditExplorer>(
-          "/demo/manufacturing/audit/events?tenant_id=tenant_demo_manufacturing&limit=100",
-          parseManufacturingAuditExplorer,
-          { session, signal: controller.signal },
-        );
-        await loadAuditExport();
-        if (persistedAuditData.events.length > 0) {
-          setAuditData(persistedAuditData);
-          setSelectedEventId(persistedAuditData.events[0]?.audit_event_id ?? "");
-          setSource("persisted");
-          return;
-        }
-
-        const referenceAuditData = await axisFetchParsedJson<ManufacturingAuditExplorer>(
-          "/demo/manufacturing/audit",
-          parseManufacturingAuditExplorer,
-          { session, signal: controller.signal },
-        );
-        setAuditData(referenceAuditData);
-        setSelectedEventId(referenceAuditData.events[0]?.audit_event_id ?? "");
-        setSource("api");
-      } catch {
-        if (!controller.signal.aborted) {
-          setAuditData(null);
-          setAuditExport(null);
-          setSelectedEventId("");
-          setSource("unavailable");
-        }
-      }
-    }
-
-    void fetchAudit();
+    void loadAuditExport();
 
     return () => controller.abort();
-  }, [refreshNonce, session]);
+  }, [auditExportPath, refreshNonce, session, tenantId, tenantQueriesEnabled]);
 
-  const filteredEvents = useMemo(
-    () => (auditData ? filterAuditEvents(auditData, filters) : []),
-    [auditData, filters],
-  );
-  const effectiveSelectedEventId = auditData
-    ? resolveAuditEventSelection({
-        explorer: auditData,
-        filteredEvents,
-        requestedEventId,
-        selectedEventId,
-      })
-    : "";
-
-  const selectedEvent = useMemo(
-    () =>
-      auditData && auditData.events.length > 0
-        ? findAuditEventById(auditData, effectiveSelectedEventId)
-        : null,
-    [auditData, effectiveSelectedEventId],
-  );
+  const filteredEvents = auditData ? filterAuditEvents(auditData, filters) : [];
+  const selectedEvent = urlState.eventId
+    ? filteredEvents.find((event) => event.audit_event_id === urlState.eventId)
+    : filteredEvents[0];
   const selectedEventConnectorSnapshotHref =
     selectedEvent?.event_type === "connector.evidence_invariants.snapshot_persisted" &&
     selectedEvent.payload_preview.snapshot_id
@@ -250,14 +253,26 @@ export function AuditExplorer() {
       : null;
 
   function updateFilter(filterName: keyof AuditFilters, value: string) {
-    setFilters((current) => ({
-      ...current,
-      [filterName]: value,
-    }));
+    setUrlState({ [filterName]: value, eventId: "" });
   }
 
   function resetFilters() {
-    setFilters(defaultFilters);
+    setUrlState({ ...defaultFilters, eventId: "" });
+  }
+
+  if (identity.source === "loading") {
+    return <LoadingPanel layout="detail" />;
+  }
+
+  if (identity.source === "unavailable" || !tenantId) {
+    return (
+      <ErrorPanel
+        detail="The console could not verify the current actor and tenant. Audit data is not loaded until identity is available."
+        endpoint={IDENTITY_SESSION_ENDPOINT}
+        reference={identity.errorRequestId ?? undefined}
+        title="Identity API unavailable"
+      />
+    );
   }
 
   if (!auditData) {
@@ -268,18 +283,41 @@ export function AuditExplorer() {
     return (
       <ErrorPanel
         detail={strings.audit.error.detail}
-        endpoint="/demo/manufacturing/audit/events"
+        endpoint={auditEventsPath}
+        reference={auditQuery.errorRequestId ?? undefined}
         title={strings.audit.error.title}
+      />
+    );
+  }
+
+  if (auditData.events.length === 0) {
+    return (
+      <EmptyPanel
+        detail="Governed actions and decisions will appear here as append-only evidence."
+        icon={FileText}
+        title="No audit evidence yet"
+      />
+    );
+  }
+
+  if (urlState.eventId && !selectedEvent) {
+    return (
+      <EmptyPanel
+        action={{ label: "Reset filters", onClick: resetFilters }}
+        detail={strings.states.requestedRecord.detail}
+        icon={Filter}
+        title={strings.states.requestedRecord.title}
       />
     );
   }
 
   if (!selectedEvent) {
     return (
-      <ErrorPanel
-        detail={strings.audit.noRecords.detail}
-        endpoint="/demo/manufacturing/audit/events"
-        title={strings.audit.noRecords.title}
+      <EmptyPanel
+        action={{ label: "Reset filters", onClick: resetFilters }}
+        detail="No audit events match the selected filters."
+        icon={Filter}
+        title="No matching audit evidence"
       />
     );
   }
@@ -291,13 +329,14 @@ export function AuditExplorer() {
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2"
       >
         <p className="m-0 min-w-0 text-sm leading-snug break-words text-muted">
-          {auditData.plant_name} / {auditData.scenario} / {auditData.tenant_id}
+          {formatContextPath(
+            auditData.plant_name,
+            auditData.scenario,
+            auditData.tenant_id,
+          )}
         </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="status-pill signal-ready">
-            <RadioTower size={15} />
-            {sourceLabel(source)}
-          </span>
+          <SourcePill state={source} subject="audit ledger" />
           <span className={`status-pill ${platformStatusClass(auditData.ledger_status)}`}>
             <ShieldCheck size={15} />
             {platformStatusLabel(auditData.ledger_status)}
@@ -308,20 +347,20 @@ export function AuditExplorer() {
 
       <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         {auditData.metrics.map((metric) => (
-          <article className="min-w-0 rounded-3xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]" key={metric.label}>
+          <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]" key={metric.label}>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-line/60 py-3 first:border-t-0 dark:border-white/10">
               <p className="eyebrow m-0">{metric.label}</p>
               <span className={`status-pill ${platformStatusClass(metric.status)}`}>
                 {platformStatusLabel(metric.status)}
               </span>
             </div>
-            <p className="font-display mx-0 mt-4 mb-2 text-3xl text-ink">{metric.value}</p>
+            <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{metric.value}</p>
             <p className="m-0 text-xs leading-relaxed text-muted break-words">{metric.detail}</p>
           </article>
         ))}
       </div>
 
-      <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-end justify-between gap-4">
+      <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow m-0">Filters</p>
           <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">Audit explorer</h2>
@@ -367,15 +406,15 @@ export function AuditExplorer() {
       </section>
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(310px,0.48fr)_minmax(0,1fr)] [&>*]:min-w-0">
-        <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
             <div>
               <p className="eyebrow m-0">Events</p>
-              <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{filteredEvents.length} visible</h2>
+              <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{formatNumber(filteredEvents.length)} visible</h2>
             </div>
             <span className="status-pill signal-ready">
               <Filter size={15} />
-              {auditData.events.length} total
+              {formatNumber(auditData.events.length)} total
             </span>
           </div>
           {filteredEvents.length === 0 ? (
@@ -394,16 +433,13 @@ export function AuditExplorer() {
                   aria-pressed={isSelected}
                   className={`grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-3.5 border-0 border-t border-line/60 bg-transparent px-2.5 py-3.5 text-left text-ink transition-colors first:border-t-0 hover:bg-ink/4 dark:border-white/10 dark:hover:bg-white/6${isSelected ? " bg-signal/10 shadow-[inset_2px_0_0_rgb(var(--signal))] dark:bg-signal/15" : ""}`}
                   key={event.audit_event_id}
-                  onClick={() => {
-                    setRequestedEventId(null);
-                    setSelectedEventId(event.audit_event_id);
-                  }}
+                  onClick={() => setUrlState({ eventId: event.audit_event_id })}
                   type="button"
                 >
                   <span>
                     <span className="m-0 font-medium text-ink break-words font-mono text-[13px]">{event.event_type}</span>
                     <span className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
-                      {formatAuditTime(event.occurred_at)} / {event.actor_id}
+                      {formatDateTime(event.occurred_at)} / {event.actor_id}
                     </span>
                     <span className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{event.scope}</span>
                   </span>
@@ -416,7 +452,7 @@ export function AuditExplorer() {
           </div>
         </section>
 
-        <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
+        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
             <div>
               <p className="eyebrow m-0">{selectedEvent.category}</p>
@@ -454,7 +490,7 @@ export function AuditExplorer() {
             </div>
             <div>
               <p className="eyebrow m-0">Occurred</p>
-              <p className="m-0 font-medium text-ink break-words">{formatAuditTime(selectedEvent.occurred_at)}</p>
+              <p className="m-0 font-medium text-ink break-words">{formatDateTime(selectedEvent.occurred_at)}</p>
               <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{selectedEvent.data_classification}</p>
             </div>
           </div>
@@ -514,7 +550,7 @@ export function AuditExplorer() {
         </section>
       </div>
 
-      <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+      <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
         <p className="eyebrow m-0">Retention Notes</p>
         <div className="grid min-w-0 gap-2.5">
           {auditData.retention_notes.map((note) => (
@@ -530,7 +566,8 @@ export function AuditExplorer() {
       ) : (
         <ErrorPanel
           detail={strings.audit.integrity.error.detail}
-          endpoint="/demo/manufacturing/audit/export"
+          endpoint={auditExportPath}
+          reference={auditExportError?.requestId ?? undefined}
           title={strings.audit.integrity.error.title}
         />
       )}

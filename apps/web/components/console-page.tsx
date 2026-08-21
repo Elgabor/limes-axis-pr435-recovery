@@ -1,9 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
 import { ConsoleTopbar } from "@/components/console-topbar";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadingPanel } from "@/components/ui/states";
+import { ConsoleUrlStateProvider } from "@/lib/console-url-state";
 import { strings, type PageKey } from "@/lib/strings";
 
 type ConsolePageProps = {
@@ -45,7 +47,11 @@ export function ConsolePage({
         eyebrow={resolvedEyebrow}
         title={resolvedTitle}
       />
-      <div className="grid min-w-0 gap-3.5">{children}</div>
+      <div className="grid min-w-0 gap-3.5">
+        <Suspense fallback={<LoadingPanel layout="detail" />}>
+          <ConsoleUrlStateProvider>{children}</ConsoleUrlStateProvider>
+        </Suspense>
+      </div>
     </div>
   );
 }

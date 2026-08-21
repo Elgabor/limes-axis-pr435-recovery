@@ -1,6 +1,7 @@
 import { z, type ZodType } from "zod";
 
 export const platformStatusSchema = z.enum(["ready", "watch", "action_required"]);
+export const manufacturingProvenanceSchema = z.enum(["reference_scenario", "live", "empty"]);
 export const readinessStatusSchema = z.enum(["ready", "action_required"]);
 export const stringArraySchema = z.array(z.string());
 export const nullableStringSchema = z.string().nullable();

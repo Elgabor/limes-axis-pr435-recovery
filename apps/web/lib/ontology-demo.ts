@@ -1,4 +1,4 @@
-import type { PlatformStatus } from "./platform-overview";
+import type { ManufacturingProvenance, PlatformStatus } from "./platform-overview";
 
 export type OntologyNodeType =
   | "organization"
@@ -64,8 +64,9 @@ export type OntologyGraphQueryMetadata = {
 
 export type ManufacturingOntology = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   nodes: OntologyNode[];
   relationships: OntologyRelationship[];
@@ -82,8 +83,9 @@ export type OntologyEntityRelationship = {
 
 export type ManufacturingOntologyEntityDetail = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   node: OntologyNode;
   connected_relationships: OntologyEntityRelationship[];
@@ -188,6 +190,7 @@ export function buildOntologyEntityDetail(
     tenant_id: ontology.tenant_id,
     plant_name: ontology.plant_name,
     scenario: ontology.scenario,
+    provenance: ontology.provenance,
     as_of: ontology.as_of,
     node,
     connected_relationships: connectedRelationships,

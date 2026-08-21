@@ -23,13 +23,16 @@ vi.mock("@/lib/use-axis-query", () => ({
 vi.mock("@/components/console-page", () => ({
   ConsolePage: ({
     title,
+    sourceLabel,
     children,
   }: {
     title?: string;
+    sourceLabel?: string;
     children: React.ReactNode;
   }) => (
     <div>
       <h1>{title}</h1>
+      {sourceLabel ? <p>{sourceLabel}</p> : null}
       {children}
     </div>
   ),
@@ -48,6 +51,7 @@ function queryResult(data: unknown, source: Source) {
     isRefreshing: false,
     isLoading: source === "loading",
     isUnavailable: source === "unavailable",
+    errorRequestId: source === "unavailable" ? "req-settings-refresh" : null,
   };
 }
 
@@ -195,18 +199,23 @@ const fixtures: [string, unknown][] = [
   ["/support/diagnostics", supportFixture],
 ];
 
-function mockQueriesByPath(overrides: Record<string, Source> = {}) {
+function mockQueriesByPath(
+  overrides: Record<string, Source> = {},
+  retainedPaths: readonly string[] = [],
+) {
   mocks.useAxisQuery.mockImplementation((path: string) => {
     const match = fixtures.find(([prefix]) => path === prefix);
     if (!match) {
       throw new Error(`Unexpected settings query path: ${path}`);
     }
     const source = overrides[path] ?? "api";
-    return queryResult(source === "api" ? match[1] : null, source);
+    const retainData = source === "api" || retainedPaths.includes(path);
+    return queryResult(retainData ? match[1] : null, source);
   });
 }
 
 beforeEach(() => {
+  window.history.replaceState(null, "", "/settings");
   mocks.useAxisQuery.mockReset();
 });
 
@@ -240,6 +249,58 @@ describe("PlatformSettingsConsole", () => {
     expect(
       screen.getByRole("heading", { name: "Support diagnostics API unavailable" }),
     ).toBeInTheDocument();
+    expect(window.location.search).toBe("?tab=support");
+  });
+
+  it("keeps validated panel data visible but never labels a failed refresh live", async () => {
+    mockQueriesByPath(
+      { "/support/diagnostics": "unavailable" },
+      ["/support/diagnostics"],
+    );
+    const user = userEvent.setup();
+    render(<PlatformSettingsConsole />);
+
+    expect(screen.getByText("Stale system status")).toBeInTheDocument();
+    expect(screen.queryByText("Live system status")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Support" }));
+    expect(
+      screen.getByText(
+        /Live refresh failed\. Showing the last validated system status.+Request req-settings-refresh\./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Safe to share")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Support diagnostics API unavailable" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("restores a linked settings tab from the URL", () => {
+    window.history.replaceState(null, "", "/settings?tab=identity");
+    mockQueriesByPath();
+
+    render(<PlatformSettingsConsole />);
+
+    expect(screen.getByRole("tab", { name: "Identity" })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
+    expect(screen.getByText("Browser session")).toBeInTheDocument();
+  });
+
+  it("pushes discrete tab changes into browser history", async () => {
+    const pushState = vi.spyOn(window.history, "pushState");
+    mockQueriesByPath();
+    render(<PlatformSettingsConsole />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Identity" }));
+
+    expect(pushState).toHaveBeenCalledWith(
+      window.history.state,
+      "",
+      "/settings?tab=identity",
+    );
+    pushState.mockRestore();
   });
 
   it("renders a loading skeleton for a pending panel instead of an error", () => {

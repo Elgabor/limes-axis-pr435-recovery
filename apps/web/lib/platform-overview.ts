@@ -1,4 +1,5 @@
 export type PlatformStatus = "ready" | "watch" | "action_required";
+export type ManufacturingProvenance = "reference_scenario" | "live" | "empty";
 
 export type OverviewMetric = {
   label: string;
@@ -52,8 +53,9 @@ export type AuditEvidence = {
 
 export type ManufacturingOverview = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   metrics: OverviewMetric[];
   risk_signals: RiskSignal[];
@@ -128,8 +130,9 @@ export type ManufacturingAuditEventSummary = {
 
 export type ManufacturingOperationsSnapshot = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   metrics: OverviewMetric[];
   domain_snapshots: ManufacturingDomainSnapshot[];
@@ -159,8 +162,8 @@ export type ManufacturingDemoReadinessCheck = {
 
 export type ManufacturingDemoReadinessReport = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
   as_of: string;
   readiness_status: PlatformStatus;
   summary: string;
@@ -194,8 +197,9 @@ export type ManufacturingPlatformNotification = {
 
 export type ManufacturingNotificationCenter = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   unread_count: number;
   action_required_count: number;

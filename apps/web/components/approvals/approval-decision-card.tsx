@@ -14,8 +14,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Eyebrow } from "@/components/ui/eyebrow";
+import { ErrorPanel } from "@/components/ui/states";
 import { useToast } from "@/components/ui/toast";
-import { axisFetchParsedJson } from "@/lib/axis-api";
+import {
+  axisFetchParsedJson,
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
 import {
   approvalDecisionActorId,
   approvalDecisionLabel,
@@ -28,8 +33,9 @@ import {
 import { cn } from "@/lib/cn";
 import { strings } from "@/lib/strings";
 import { parseApprovalDecisionPersistenceResult } from "@/lib/runtime-contracts/approvals";
-import { buildTenantScopedPath, DEMO_TENANT_ID } from "@/lib/tenant-scope";
+import { buildTenantScopedPath, DEMO_TENANT_ID, OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
+import { useTenantVocabulary } from "@/providers/tenant-vocabulary-provider";
 
 /*
  * The decision block of the approval flow: option buttons with their
@@ -59,11 +65,11 @@ export interface ApprovalDecisionCardProps {
   /** Current decision lifecycle for this approval; undefined = pending. */
   decision?: ApprovalDecisionRecord;
   /** Last persistence error for this approval. */
-  error?: string;
+  error?: AxisOperatorError;
   tenantId?: string;
   actor?: { actorId: string; scopes: string[] };
   onDecisionChange: (approvalId: string, record: ApprovalDecisionRecord | null) => void;
-  onErrorChange?: (approvalId: string, message: string | null) => void;
+  onErrorChange?: (approvalId: string, error: AxisOperatorError | null) => void;
 }
 
 /**
@@ -72,7 +78,7 @@ export interface ApprovalDecisionCardProps {
  */
 export function useApprovalDecisionState() {
   const [decisions, setDecisions] = useState<Record<string, ApprovalDecisionRecord>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, AxisOperatorError>>({});
 
   const setDecision = useCallback(
     (approvalId: string, record: ApprovalDecisionRecord | null) => {
@@ -88,14 +94,14 @@ export function useApprovalDecisionState() {
     [],
   );
 
-  const setError = useCallback((approvalId: string, message: string | null) => {
+  const setError = useCallback((approvalId: string, error: AxisOperatorError | null) => {
     setErrors((current) => {
-      if (message === null) {
+      if (error === null) {
         const next = { ...current };
         delete next[approvalId];
         return next;
       }
-      return { ...current, [approvalId]: message };
+      return { ...current, [approvalId]: error };
     });
   }, []);
 
@@ -136,6 +142,7 @@ export function ApprovalDecisionCard({
   const [note, setNote] = useState("");
   const { session } = useOidcConsoleSession();
   const { push } = useToast();
+  const { labelDomain } = useTenantVocabulary();
   const copy = strings.approvals.decision;
 
   function openConfirm(option: ApprovalDecisionOption) {
@@ -168,7 +175,7 @@ export function ApprovalDecisionCard({
     try {
       const result = await axisFetchParsedJson<ApprovalDecisionPersistenceResult>(
         buildTenantScopedPath(
-          `/demo/manufacturing/approvals/${approvalId}/decision`,
+          `${OPERATIONS_API_PREFIX}/approvals/${approvalId}/decision`,
           tenantId,
         ),
         parseApprovalDecisionPersistenceResult,
@@ -204,9 +211,10 @@ export function ApprovalDecisionCard({
       onDecisionChange(approvalId, null);
       onErrorChange?.(
         approvalId,
-        caught instanceof Error
-          ? caught.message
-          : "Approval decision API persistence is unavailable.",
+        toAxisOperatorError(
+          caught,
+          "Approval decision API persistence is unavailable.",
+        ),
       );
     } finally {
       setNote("");
@@ -271,7 +279,11 @@ export function ApprovalDecisionCard({
       )}
 
       {error ? (
-        <p className="m-0 text-xs text-danger">Decision persistence error: {error}</p>
+        <ErrorPanel
+          detail={error.message}
+          reference={error.requestId ?? undefined}
+          title="Decision persistence error"
+        />
       ) : null}
 
       <Dialog
@@ -291,7 +303,8 @@ export function ApprovalDecisionCard({
               <DialogDescription>{pendingOption.consequence}</DialogDescription>
             </DialogHeader>
             <p className="m-0 text-sm text-muted">
-              {approval.action} <span aria-hidden="true">·</span> {approval.domain}
+              {approval.action} <span aria-hidden="true">·</span>{" "}
+              {labelDomain(approval.domain)}
             </p>
             <label className="grid gap-1.5">
               <span className="text-xs font-medium text-muted">{copy.rationaleLabel}</span>

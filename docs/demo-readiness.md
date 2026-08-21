@@ -200,7 +200,9 @@ Run browser smoke tests against the production Next.js build:
 pnpm --filter @limes-axis/web test:e2e
 ```
 
-Run the live browser smoke test when the local API is running:
+Run the live overview and product-story checks when the local API is running.
+The command builds once, runs read-only scenarios across desktop, mobile and
+tablet in parallel, then serializes the shared-state writes once in Chromium:
 
 ```bash
 pnpm --filter @limes-axis/web test:e2e:live
@@ -303,8 +305,9 @@ make demo-stack-down
       overflow.
 - [ ] `pnpm --filter @limes-axis/web test:e2e` passes API-unavailable smoke
       tests against a production build with browser-local fallbacks disabled.
-- [ ] `pnpm --filter @limes-axis/web test:e2e:live` passes the live overview
-      smoke test against the running Axis API.
+- [ ] `pnpm --filter @limes-axis/web test:e2e:live` passes the live overview and
+      product-story checks against the running Axis API without flaky retries or
+      skipped stateful cases.
 - [ ] The overview page loads from `/demo/manufacturing/overview`.
 - [x] The overview page composes `/demo/manufacturing/operations/snapshot` into
       the first-screen operational cockpit.

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ManufacturingWorkflowConsole } from "../workflow-demo";
 import {
   autonomyLevelSchema,
+  manufacturingProvenanceSchema,
   nullableStringSchema,
   overviewMetricSchema,
   parseContract,
@@ -12,8 +13,9 @@ import {
 
 const workflowConsole = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   runtime_status: platformStatusSchema,
   metrics: z.array(overviewMetricSchema),

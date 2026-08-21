@@ -7,8 +7,8 @@ import { cn } from "@/lib/cn";
  * surface, hairline border, Signal focus ring, red border when invalid.
  */
 export const controlClassName = cn(
-  "w-full min-h-[38px] rounded-xl border border-line bg-surface px-3 text-sm text-ink",
-  "placeholder:text-muted/70 transition-colors duration-200",
+  "w-full min-h-9 rounded-lg border border-line bg-surface px-3 text-sm text-ink",
+  "placeholder:text-muted/70 transition-colors duration-150",
   "focus:border-signal focus:outline-none focus:ring-2 focus:ring-signal/25",
   "disabled:cursor-not-allowed disabled:opacity-55",
   "aria-[invalid=true]:border-danger aria-[invalid=true]:focus:ring-danger/25",

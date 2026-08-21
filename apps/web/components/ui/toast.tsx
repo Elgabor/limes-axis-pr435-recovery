@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useSyncExternalStore,
   useCallback,
   useContext,
   useEffect,
@@ -52,6 +53,8 @@ export function useToast(): ToastContextValue {
   return context;
 }
 
+const subscribeNoop = () => () => {};
+
 const toneClasses: Record<ToastTone, string> = {
   positive: "text-positive",
   danger: "text-danger",
@@ -60,20 +63,31 @@ const toneClasses: Record<ToastTone, string> = {
 
 function ToastCard({ toast, onDismiss }: { toast: ToastRecord; onDismiss: (id: number) => void }) {
   const { id } = toast;
+  // Hovering or tabbing into a toast holds it open: a 6s auto-dismiss would
+  // otherwise pull the card (and its link) out from under the pointer, and
+  // steal focus to <body> mid-interaction.
+  const [held, setHeld] = useState(false);
 
   useEffect(() => {
+    if (held) {
+      return;
+    }
+
     const timer = setTimeout(() => onDismiss(id), TOAST_DURATION_MS);
     return () => clearTimeout(timer);
-  }, [id, onDismiss]);
+  }, [id, onDismiss, held]);
 
   return (
     <div
       className={cn(
         "pointer-events-auto flex w-80 max-w-[calc(100vw-2rem)] items-start gap-2.5 rounded-2xl border border-line",
-        "bg-surface p-4 shadow-[0_16px_44px_rgb(4_18_46/0.2)]",
+        "bg-surface p-4 shadow-[var(--shadow-popover)]",
         "dark:border-white/10 dark:shadow-[0_16px_44px_rgb(0_0_0/0.5)]",
       )}
-      role="status"
+      onBlurCapture={() => setHeld(false)}
+      onFocusCapture={() => setHeld(true)}
+      onMouseEnter={() => setHeld(true)}
+      onMouseLeave={() => setHeld(false)}
     >
       <span
         aria-hidden="true"
@@ -108,10 +122,20 @@ function ToastCard({ toast, onDismiss }: { toast: ToastRecord; onDismiss: (id: n
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
-  // Toasts are only pushed from client-side interaction, so the portal never
-  // renders during SSR/hydration — no mounted gate needed.
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
   const nextIdRef = useRef(0);
+  // The live region has to exist *before* a toast lands in it: assistive tech
+  // does not announce content inserted together with a new live region, so
+  // mounting the container on the first toast meant the first toast — often
+  // "Approval failed" — was never announced. Gated on mount because the portal
+  // needs `document`.
+  // `useSyncExternalStore` rather than setState-in-effect: it yields false on
+  // the server and true on the client without an extra render pass.
+  const portalReady = useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false,
+  );
 
   const dismiss = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -127,7 +151,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={contextValue}>
       {children}
-      {toasts.length > 0
+      {portalReady
         ? createPortal(
             <div
               aria-live="polite"

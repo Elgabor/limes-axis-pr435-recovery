@@ -52,6 +52,7 @@ def _enterprise_sso_settings(**overrides: object) -> Settings:
         "redis_url": "redis://redis.example:6379/0",
         "api_rate_limit_requests": 120,
         "api_rate_limit_window_seconds": 60,
+        "tenant_admission_mode": "registered_only",
         "deployment_tenancy_mode": "saas_multi_tenant",
         "deployment_customer_isolation_configured": True,
         "deployment_data_residency_configured": True,
@@ -77,6 +78,7 @@ def test_deployment_readiness_marks_default_profile_demo_safe_not_production_rea
     assert body["capabilities"]["external_model_egress_enabled"] is False
     assert body["capabilities"]["external_db_live_query_execution_enabled"] is False
     assert body["capabilities"]["external_db_live_query_profile_configured"] is False
+    assert body["capabilities"]["tenant_admission_mode"] == "claims_only"
     assert body["capabilities"]["api_rate_limit_enabled"] is False
     assert body["capabilities"]["object_store_adapter"] == "local_filesystem"
     assert body["capabilities"]["network_policy_enabled"] is False
@@ -93,6 +95,7 @@ def test_deployment_readiness_marks_default_profile_demo_safe_not_production_rea
     checks = _checks_by_id(body)
     assert checks["oidc_enterprise_sso"]["status"] == "action_required"
     assert checks["oidc_secure_cookie_session"]["status"] == "action_required"
+    assert checks["registered_tenant_admission"]["status"] == "action_required"
     assert checks["api_rate_limiting"]["status"] == "action_required"
     assert checks["external_model_egress_disabled"]["status"] == "ready"
     assert checks["live_connector_execution_disabled"]["status"] == "ready"
@@ -109,6 +112,7 @@ def test_deployment_readiness_marks_default_profile_demo_safe_not_production_rea
     assert body["production_blockers"] == [
         "oidc_enterprise_sso",
         "oidc_secure_cookie_session",
+        "registered_tenant_admission",
         "api_rate_limiting",
         "network_egress_restricted",
         "deployment_tenancy_profile",
@@ -459,6 +463,8 @@ def test_deployment_readiness_accepts_on_prem_profile_with_required_boundaries()
     checks = _checks_by_id(body)
     assert body["production_ready"] is True
     assert body["capabilities"]["deployment_tenancy_mode"] == "on_prem"
+    assert body["capabilities"]["tenant_admission_mode"] == "registered_only"
+    assert checks["registered_tenant_admission"]["status"] == "ready"
     assert checks["deployment_tenancy_profile"]["status"] == "ready"
     assert "deployment_tenancy_profile" not in body["production_blockers"]
     assert "axis-secret-key" not in str(body)

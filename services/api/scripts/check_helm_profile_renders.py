@@ -55,6 +55,7 @@ def _profile_render_terms(contract: ProfileRenderContract) -> tuple[str, ...]:
         f"limes-axis.io/profile: {contract.profile}",
         f'AXIS_DEPLOYMENT_TENANCY_MODE: "{contract.tenancy_mode}"',
         f'AXIS_DEPLOYMENT_NETWORK_EGRESS_MODE: "{contract.network_mode}"',
+        'AXIS_TENANT_ADMISSION_MODE: "registered_only"',
         'AXIS_DEPLOYMENT_CUSTOMER_ISOLATION_CONFIGURED: "false"',
         'AXIS_DEPLOYMENT_DATA_RESIDENCY_CONFIGURED: "false"',
         'AXIS_DEPLOYMENT_OPERATOR_ACCESS_RUNBOOK_CONFIGURED: "false"',

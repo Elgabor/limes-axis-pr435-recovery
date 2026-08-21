@@ -56,7 +56,7 @@ export function SheetContent({ side = "right", className, children, ...props }: 
         {...props}
       >
         {children}
-        <SheetPrimitive.Close aria-label="Close" className="icon-button absolute top-4 right-4">
+        <SheetPrimitive.Close aria-label="Close" className="icon-button absolute! top-4 right-4">
           <X aria-hidden="true" size={16} />
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>

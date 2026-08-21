@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Bot, RadioTower } from "lucide-react";
+import { Bot } from "lucide-react";
 
 import { AgentDetail } from "@/components/agents/agent-detail";
 import { Card } from "@/components/ui/card";
@@ -10,41 +9,54 @@ import { FilterBar, type FilterDef } from "@/components/ui/filter-bar";
 import { Term } from "@/components/ui/glossary";
 import { MasterDetail } from "@/components/ui/master-detail";
 import { MetricStrip, type Metric } from "@/components/ui/metric-strip";
+import { SourcePill } from "@/components/ui/source-pill";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import {
   allAgentFilter,
   filterAgents,
-  findAgentById,
   formatAgentLabel,
   type AgentFilters,
   type ManufacturingAgentRegistry,
 } from "@/lib/agent-demo";
 import { cn } from "@/lib/cn";
+import { enumUrlField, stringUrlField, useConsoleUrlState } from "@/lib/console-url-state";
+import { formatContextPath, formatNumber, formatTimestamp } from "@/lib/format";
 import {
-  formatOverviewTimestamp,
   platformStatusClass,
   platformStatusLabel,
   type PlatformStatus,
 } from "@/lib/platform-overview";
+import { deriveSourceState } from "@/lib/source-state";
 import { strings } from "@/lib/strings";
 import { parseManufacturingAgentRegistry } from "@/lib/runtime-contracts/agents";
+import {
+  buildTenantScopedPath,
+  DEMO_TENANT_ID,
+  OPERATIONS_API_PREFIX,
+} from "@/lib/tenant-scope";
 import { useAxisQuery } from "@/lib/use-axis-query";
+import {
+  IDENTITY_SESSION_ENDPOINT,
+  useConsoleTenantScope,
+} from "@/lib/use-console-tenant-scope";
+import { useTenantVocabulary } from "@/providers/tenant-vocabulary-provider";
 
-const AGENTS_ENDPOINT = "/demo/manufacturing/agents";
+const AGENTS_ENDPOINT = `${OPERATIONS_API_PREFIX}/agents`;
 
 const defaultFilters: AgentFilters = {
   domain: allAgentFilter,
   autonomyLevel: allAgentFilter,
   status: allAgentFilter,
 };
-
-function sourceLabel(source: "loading" | "api" | "unavailable"): string {
-  if (source === "api") {
-    return "API agent registry";
-  }
-
-  return source === "loading" ? "Loading agent API" : "Agent API unavailable";
-}
+const agentTabs = ["overview", "permissions", "runs", "evidence"] as const;
+const agentUrlSchema = {
+  domain: stringUrlField("domain", allAgentFilter),
+  autonomyLevel: stringUrlField("autonomy", allAgentFilter),
+  status: stringUrlField("status", allAgentFilter),
+  agentId: stringUrlField("agent_id"),
+  tab: enumUrlField("tab", agentTabs, "overview"),
+  runId: stringUrlField("run_id"),
+};
 
 const metricTones: Record<PlatformStatus, Metric["tone"]> = {
   ready: "ready",
@@ -63,14 +75,20 @@ function agentStatusToneClass(status: string): string {
   return "text-positive";
 }
 
-function buildFilterDefs(registry: ManufacturingAgentRegistry): FilterDef[] {
+function buildFilterDefs(
+  registry: ManufacturingAgentRegistry,
+  labelDomain: (domain: string) => string,
+): FilterDef[] {
   return [
     {
       id: "domain",
       label: "Domain",
       options: [
         { value: allAgentFilter, label: "All domains" },
-        ...registry.filter_options.domains.map((domain) => ({ value: domain, label: domain })),
+        ...registry.filter_options.domains.map((domain) => ({
+          value: domain,
+          label: labelDomain(domain),
+        })),
       ],
     },
     {
@@ -105,16 +123,58 @@ const filterIdToKey: Record<string, keyof AgentFilters> = {
 };
 
 export function AgentRegistry() {
-  const { data: registry, source } = useAxisQuery<ManufacturingAgentRegistry>(AGENTS_ENDPOINT, {
+  const { labelDomain } = useTenantVocabulary();
+  const { identity, tenantId, tenantQueriesEnabled } = useConsoleTenantScope();
+  const agentsPath = buildTenantScopedPath(AGENTS_ENDPOINT, tenantId ?? DEMO_TENANT_ID);
+  const {
+    data: registry,
+    errorRequestId: registryErrorRequestId,
+    source,
+  } = useAxisQuery<ManufacturingAgentRegistry>(agentsPath, {
+    enabled: tenantQueriesEnabled,
+    expectedTenantId: tenantId ?? undefined,
     parse: parseManufacturingAgentRegistry,
   });
-  const [filters, setFilters] = useState<AgentFilters>(defaultFilters);
-  const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [urlState, setUrlState] = useConsoleUrlState(agentUrlSchema);
+  const filters: AgentFilters = registry
+    ? {
+        domain: urlState.domain === allAgentFilter
+          || registry.filter_options.domains.includes(urlState.domain)
+          ? urlState.domain
+          : allAgentFilter,
+        autonomyLevel: urlState.autonomyLevel === allAgentFilter
+          || registry.filter_options.autonomy_levels.includes(urlState.autonomyLevel)
+          ? urlState.autonomyLevel
+          : allAgentFilter,
+        status: urlState.status === allAgentFilter
+          || registry.filter_options.statuses.includes(urlState.status)
+          ? urlState.status
+          : allAgentFilter,
+      }
+    : defaultFilters;
 
-  const filteredAgents = useMemo(
-    () => (registry ? filterAgents(registry, filters) : []),
-    [registry, filters],
-  );
+  const filteredAgents = registry ? filterAgents(registry, filters) : [];
+
+  if (identity.source === "unavailable") {
+    return (
+      <ErrorPanel
+        detail="The agent registry is not loaded until the current actor and tenant are verified."
+        endpoint={IDENTITY_SESSION_ENDPOINT}
+        reference={identity.errorRequestId ?? undefined}
+        title="Identity API unavailable"
+      />
+    );
+  }
+
+  if (identity.source === "api" && !tenantId) {
+    return (
+      <ErrorPanel
+        detail="The authenticated identity response does not contain a tenant. Axis will not fall back to demo agent records."
+        endpoint={IDENTITY_SESSION_ENDPOINT}
+        title="Authenticated tenant missing"
+      />
+    );
+  }
 
   if (!registry) {
     if (source === "loading") {
@@ -132,7 +192,8 @@ export function AgentRegistry() {
     return (
       <ErrorPanel
         detail={strings.agents.error.detail}
-        endpoint={AGENTS_ENDPOINT}
+        endpoint={agentsPath}
+        reference={registryErrorRequestId ?? undefined}
         title={strings.agents.error.title}
       />
     );
@@ -148,13 +209,9 @@ export function AgentRegistry() {
     );
   }
 
-  // `findAgentById` falls back to the first agent, so a stale selection always
-  // resolves to a real record; prefer the first *filtered* agent when the
-  // selection is filtered out.
-  const selectedAgent =
-    filteredAgents.find((agent) => agent.agent_id === selectedAgentId)
-    ?? filteredAgents[0]
-    ?? findAgentById(registry, selectedAgentId);
+  const selectedAgent = urlState.agentId
+    ? filteredAgents.find((agent) => agent.agent_id === urlState.agentId)
+    : filteredAgents[0];
 
   const metrics: Metric[] = registry.metrics.map((metric) => ({
     label: metric.label,
@@ -170,19 +227,19 @@ export function AgentRegistry() {
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2"
       >
         <p className="m-0 min-w-0 text-sm break-words text-muted">
-          {registry.plant_name} / {registry.scenario} / {registry.tenant_id}
+          {formatContextPath(registry.plant_name, registry.scenario, registry.tenant_id)}
         </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="status-pill signal-ready">
-            <RadioTower size={15} />
-            {sourceLabel(source)}
-          </span>
+          <SourcePill
+            state={deriveSourceState(source, Boolean(registry), registry.provenance)}
+            subject="agent registry"
+          />
           <span className={`status-pill ${platformStatusClass(registry.registry_status)}`}>
             <Bot size={15} />
             {platformStatusLabel(registry.registry_status)}
           </span>
           <span className="font-mono text-xs text-muted">
-            {formatOverviewTimestamp(registry.as_of)}
+            {formatTimestamp(registry.as_of)}
           </span>
         </div>
       </div>
@@ -190,7 +247,7 @@ export function AgentRegistry() {
       {metrics.length > 0 ? <MetricStrip metrics={metrics} /> : null}
 
       <FilterBar
-        filters={buildFilterDefs(registry)}
+        filters={buildFilterDefs(registry, labelDomain)}
         values={{
           domain: filters.domain,
           autonomy: filters.autonomyLevel,
@@ -199,30 +256,44 @@ export function AgentRegistry() {
         onChange={(id, value) => {
           const key = filterIdToKey[id];
           if (key) {
-            setFilters((current) => ({ ...current, [key]: value }));
+            setUrlState({ [key]: value, agentId: "", runId: "" });
           }
         }}
-        onReset={() => setFilters(defaultFilters)}
+        onReset={() => setUrlState({ ...defaultFilters, agentId: "", runId: "" })}
       />
 
-      {filteredAgents.length === 0 ? (
+      {urlState.agentId && !selectedAgent ? (
+        <EmptyPanel
+          detail={strings.states.requestedRecord.detail}
+          title={strings.states.requestedRecord.title}
+        />
+      ) : filteredAgents.length === 0 || !selectedAgent ? (
         <EmptyPanel
           action={{
             label: strings.agents.noMatch.reset,
-            onClick: () => setFilters(defaultFilters),
+            onClick: () => setUrlState({ ...defaultFilters, agentId: "", runId: "" }),
           }}
           detail={strings.agents.noMatch.detail}
           title={strings.agents.noMatch.title}
         />
       ) : (
         <MasterDetail
-          detail={<AgentDetail agent={selectedAgent} />}
+          detail={
+            <AgentDetail
+              activeTab={urlState.tab}
+              agent={selectedAgent}
+              domainLabel={labelDomain(selectedAgent.domain)}
+              onRunSelect={(runId) => setUrlState({ runId })}
+              onTabChange={(tab) => setUrlState({ tab })}
+              selectedRunId={urlState.runId}
+            />
+          }
           list={
             <Card className="grid content-start gap-4">
               <div className="grid gap-1">
                 <Eyebrow>{strings.agents.list.eyebrow}</Eyebrow>
                 <h2 className="font-display m-0 text-xl text-ink">
-                  {filteredAgents.length} visible
+                  {formatNumber(filteredAgents.length)} visible
                 </h2>
               </div>
               <div className="grid gap-2">
@@ -239,12 +310,12 @@ export function AgentRegistry() {
                           : "border-line bg-transparent hover:border-signal/40 hover:bg-tint-50 dark:border-white/10 dark:hover:bg-white/5",
                       )}
                       key={agent.agent_id}
-                      onClick={() => setSelectedAgentId(agent.agent_id)}
+                      onClick={() => setUrlState({ agentId: agent.agent_id, runId: "" })}
                       type="button"
                     >
                       <span className="grid min-w-0 gap-0.5">
                         <span className="text-sm font-medium text-ink">{agent.name}</span>
-                        <span className="text-xs text-muted">{agent.domain}</span>
+                        <span className="text-xs text-muted">{labelDomain(agent.domain)}</span>
                         <span className="flex items-center gap-1.5 text-xs text-muted">
                           <span
                             aria-hidden="true"

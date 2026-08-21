@@ -11,6 +11,7 @@ import {
   type ManufacturingReplaySimulation,
   type ReplayArtifact,
 } from "./simulation-demo";
+import { OPERATIONS_API_PREFIX } from "./tenant-scope";
 
 const replayArtifactFixture: ReplayArtifact = {
   artifact_id: "replay_supply_fixture",
@@ -111,6 +112,7 @@ const replaySimulationFixture: ManufacturingReplaySimulation = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Plant",
   scenario: "Runtime contract fixture",
+  provenance: "live",
   as_of: "2026-06-22T09:00:00+02:00",
   simulation_status: "ready",
   metrics: [],
@@ -186,7 +188,7 @@ describe("replay simulation helpers", () => {
 describe("buildReplaySimulationPath", () => {
   it("always scopes to the tenant and omits unset params", () => {
     expect(buildReplaySimulationPath({ tenantId: "tenant_fixture" })).toBe(
-      "/demo/manufacturing/simulation/replay?tenant_id=tenant_fixture",
+      `${OPERATIONS_API_PREFIX}/simulation/replay?tenant_id=tenant_fixture`,
     );
   });
 
@@ -203,7 +205,7 @@ describe("buildReplaySimulationPath", () => {
     });
     const query = new URLSearchParams(path.split("?")[1]);
 
-    expect(path.startsWith("/demo/manufacturing/simulation/replay?")).toBe(true);
+    expect(path.startsWith(`${OPERATIONS_API_PREFIX}/simulation/replay?`)).toBe(true);
     expect(Object.fromEntries(query.entries())).toEqual({
       tenant_id: "tenant_fixture",
       workflow_id: "wf_supply_fixture",
@@ -225,7 +227,7 @@ describe("buildReplaySimulationPath", () => {
       candidatePolicySetId: "  ",
       connectorId: "",
     });
-    expect(path).toBe("/demo/manufacturing/simulation/replay?tenant_id=tenant_fixture");
+    expect(path).toBe(`${OPERATIONS_API_PREFIX}/simulation/replay?tenant_id=tenant_fixture`);
   });
 
   it("counts total and changed policy decisions across artifacts", () => {

@@ -29,13 +29,28 @@ export function MetricSparkbar({
   ...rest
 }: MetricSparkbarProps) {
   const max = Math.max(1, ...points.map((point) => point.value));
+  const valueSummary = points.map((point) => `${point.label}: ${point.value}`).join(", ");
+  const accessibleLabel = valueSummary
+    ? `${caption}. ${valueSummary}.`
+    : `${caption}. No data.`;
 
   return (
-    <div className={cn("grid gap-1.5", className)} role="img" aria-label={caption} {...rest}>
+    <div
+      aria-label={accessibleLabel}
+      className={cn("grid gap-1.5", className)}
+      role="img"
+      {...rest}
+    >
       <div className="flex items-end gap-1" style={{ height }}>
         {points.map((point, index) => (
           <span
-            className="bar-grow min-w-1 flex-1 rounded-t-[3px] bg-signal/80 dark:bg-signal"
+            className={cn(
+              "bar-grow min-w-1 flex-1 rounded-t-[3px] bg-signal/80 dark:bg-signal",
+              // `flex-1` alone lets a sparse series stretch each bar across the
+              // whole strip: one bucket rendered as a solid full-width slab
+              // rather than a chart, which is what a new tenant sees.
+              "max-w-6",
+            )}
             key={`${point.label}-${index}`}
             style={
               {

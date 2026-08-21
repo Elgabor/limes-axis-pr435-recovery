@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ManufacturingAgentRegistry } from "../agent-demo";
 import {
   autonomyLevelSchema,
+  manufacturingProvenanceSchema,
   nullableStringSchema,
   overviewMetricSchema,
   parseContract,
@@ -12,8 +13,9 @@ import {
 
 const agentRegistry = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   registry_status: platformStatusSchema,
   metrics: z.array(overviewMetricSchema),

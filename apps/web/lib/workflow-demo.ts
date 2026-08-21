@@ -1,4 +1,4 @@
-import type { PlatformStatus } from "./platform-overview";
+import type { ManufacturingProvenance, PlatformStatus } from "./platform-overview";
 
 export type WorkflowSignal = {
   signal: string;
@@ -43,8 +43,9 @@ export type WorkflowRun = {
 
 export type ManufacturingWorkflowConsole = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   runtime_status: PlatformStatus;
   metrics: {

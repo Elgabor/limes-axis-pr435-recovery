@@ -8,13 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Eyebrow } from "@/components/ui/eyebrow";
+import { InlineOperatorError } from "@/components/ui/inline-operator-error";
 import { cn } from "@/lib/cn";
 import type { ManufacturingAgentRegistry } from "@/lib/agent-demo";
 import type { ManufacturingConnectorRegistry } from "@/lib/connectors-demo";
 import type { ManufacturingOntology } from "@/lib/ontology-demo";
+import type { AxisOperatorError } from "@/lib/axis-api";
 import type { PlatformPolicyRegistry } from "@/lib/platform-policies";
 import { strings } from "@/lib/strings";
-import { buildTenantScopedPath, DEMO_TENANT_ID } from "@/lib/tenant-scope";
+import { buildTenantScopedPath, DEMO_TENANT_ID, OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 import { parseManufacturingAgentRegistry } from "@/lib/runtime-contracts/agents";
 import { parseManufacturingConnectorRegistry } from "@/lib/runtime-contracts/connectors";
 import { parseManufacturingOntology } from "@/lib/runtime-contracts/ontology";
@@ -33,11 +35,11 @@ import type { ManufacturingWorkflowConsole } from "@/lib/workflow-demo";
  */
 
 export const ONBOARDING_ENDPOINTS = {
-  connectors: "/demo/manufacturing/connectors",
-  ontology: "/demo/manufacturing/ontology",
+  connectors: `${OPERATIONS_API_PREFIX}/connectors`,
+  ontology: `${OPERATIONS_API_PREFIX}/ontology`,
   policies: "/platform/policies",
-  agents: "/demo/manufacturing/agents",
-  workflows: "/demo/manufacturing/workflows",
+  agents: `${OPERATIONS_API_PREFIX}/agents`,
+  workflows: `${OPERATIONS_API_PREFIX}/workflows`,
 } as const;
 
 export type OnboardingStepId = keyof typeof ONBOARDING_ENDPOINTS;
@@ -64,7 +66,7 @@ export type OnboardingChecklistProps = {
   /** In-flight demo bootstrap: the CTA disables and shows the pending label. */
   demoPending?: boolean;
   /** Bootstrap failure rendered inline above the CTA; the CTA stays retryable. */
-  demoError?: string | null;
+  demoError?: AxisOperatorError | null;
   /** API-verified tenant scope; defaults to the explicit public demo tenant. */
   tenantId?: string;
 };
@@ -248,7 +250,7 @@ export function OnboardingChecklist({
             </div>
             <CollapsibleTrigger asChild>
               <button
-                className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-ink"
+                className="inline-flex min-h-6 cursor-pointer items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-ink"
                 type="button"
               >
                 <ToggleChevron aria-hidden="true" size={13} />
@@ -277,9 +279,7 @@ export function OnboardingChecklist({
       <StepList steps={steps} />
       <div className="grid gap-3 border-t border-line/60 pt-4 dark:border-white/10">
         {demoError ? (
-          <p className="m-0 text-sm leading-snug text-danger break-words" role="alert">
-            {demoError}
-          </p>
+          <InlineOperatorError error={demoError} />
         ) : null}
         <div className="flex flex-wrap items-center gap-3">
           <ExploreDemoButton

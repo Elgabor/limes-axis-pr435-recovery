@@ -52,7 +52,12 @@ describe("strings.pages", () => {
 
 describe("strings.nav", () => {
   it("exposes the four sidebar group labels", () => {
-    expect(Object.values(strings.nav)).toEqual(navGroupLabels);
+    // `strings.nav` also carries the footer's copy, so assert the group labels
+    // are present rather than that they are the only entries.
+    const navValues: string[] = Object.values(strings.nav);
+    expect(navGroupLabels.every((label) => navValues.includes(label))).toBe(true);
+    expect(strings.nav.help.length).toBeGreaterThan(0);
+    expect(strings.nav.signedOut.length).toBeGreaterThan(0);
   });
 });
 
@@ -100,6 +105,20 @@ describe("strings.workflows", () => {
     expect(workflows.sections.outputs.length).toBeGreaterThan(0);
     expect(workflows.sections.context.length).toBeGreaterThan(0);
     expect(workflows.inspect.length).toBeGreaterThan(0);
+  });
+});
+
+describe("strings.tenantVocabulary", () => {
+  it("provides editor, validation, source and configuration-state copy", () => {
+    const vocabulary = strings.tenantVocabulary;
+    expect(vocabulary.title).toBe("Console terminology");
+    expect(vocabulary.mode.defaults.length).toBeGreaterThan(0);
+    expect(vocabulary.mode.configured.length).toBeGreaterThan(0);
+    expect(vocabulary.actions.addDomain.length).toBeGreaterThan(0);
+    expect(vocabulary.validation.labelTooLong(100)).toContain("100");
+    expect(vocabulary.errors.requiredPermission("Denied.", "tenant:configure")).toContain(
+      "tenant:configure",
+    );
   });
 });
 

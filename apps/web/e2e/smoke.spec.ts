@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import { strings } from "@/lib/strings";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 async function expectNoHorizontalOverflow(page: Page) {
   const overflow = await page.evaluate(() => {
@@ -30,6 +32,92 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(overflow.hasOverflow, JSON.stringify(overflow, null, 2)).toBe(false);
 }
 
+/**
+ * WCAG 2.2 SC 2.5.8 (Target Size, Minimum): standalone controls need at least a
+ * 24x24 CSS px target. Links inline in a sentence are exempt, which is why this
+ * ignores anchors sitting inside a paragraph of prose.
+ */
+async function expectNoUndersizedTargets(page: Page) {
+  const undersized = await page.evaluate(() => {
+    const offenders: string[] = [];
+    for (const element of document.querySelectorAll<HTMLElement>("button, a, [role=button]")) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      if (rect.height >= 24 && rect.width >= 24) continue;
+      const inlineInProse =
+        element.tagName === "A" && element.closest("p") !== null;
+      if (inlineInProse) continue;
+      offenders.push(
+        `${element.tagName.toLowerCase()} ${Math.round(rect.width)}x${Math.round(rect.height)} ` +
+          `"${(element.textContent ?? "").trim().slice(0, 30)}" .${element.className.toString().slice(0, 70)}`,
+      );
+    }
+    return offenders;
+  });
+
+  expect(undersized, undersized.join("\n")).toEqual([]);
+}
+
+async function expectMobileHeadersStacked(page: Page) {
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+
+  const geometry = await page.evaluate(() => {
+    const navigation = document.querySelector<HTMLElement>("[data-mobile-navigation]");
+    const statusBar = document.querySelector<HTMLElement>(".ops-topbar");
+    const trigger = document.querySelector<HTMLElement>("[data-mobile-navigation-trigger]");
+
+    if (!navigation || !statusBar || !trigger) {
+      return null;
+    }
+
+    const navigationRect = navigation.getBoundingClientRect();
+    const statusBarRect = statusBar.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      triggerRect.left + triggerRect.width / 2,
+      triggerRect.top + triggerRect.height / 2,
+    );
+
+    return {
+      navigationBottom: Math.round(navigationRect.bottom),
+      navigationTop: Math.round(navigationRect.top),
+      statusBarTop: Math.round(statusBarRect.top),
+      triggerHit: hit === trigger || (hit instanceof Node && trigger.contains(hit)),
+    };
+  });
+
+  expect(geometry).not.toBeNull();
+  expect(geometry?.navigationTop).toBe(0);
+  expect(geometry?.statusBarTop).toBeGreaterThanOrEqual((geometry?.navigationBottom ?? 0) - 1);
+  expect(geometry?.triggerHit).toBe(true);
+}
+
+async function expectNavigationDestination(
+  page: Page,
+  label: string,
+  href: string,
+) {
+  const desktopLink = page.locator(".sidebar").getByRole("link", {
+    name: label,
+    exact: true,
+  });
+  if (await desktopLink.isVisible()) {
+    await expect(desktopLink).toHaveAttribute("href", href);
+    return;
+  }
+
+  const trigger = page.locator("[data-mobile-navigation-trigger]");
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const drawer = page.getByRole("dialog", { name: "Navigate Axis" });
+  await expect(drawer.getByRole("link", { name: label, exact: true })).toHaveAttribute(
+    "href",
+    href,
+  );
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+}
+
 async function expectAxisLightShell(page: Page) {
   const shell = await page.evaluate(() => {
     const root = getComputedStyle(document.documentElement);
@@ -56,17 +144,20 @@ async function expectAxisLightShell(page: Page) {
   });
 }
 
-async function routeVerifiedDemoIdentity(page: Page) {
-  await page.route("http://127.0.0.1:65534/identity/session", async (route) => {
+const identitySessionUrl = "http://127.0.0.1:65534/identity/session";
+
+async function routeVerifiedIdentity(page: Page, tenantId: string | null = null) {
+  const authenticated = tenantId !== null;
+  await page.route(identitySessionUrl, async (route) => {
     await route.fulfill({
       contentType: "application/json",
       json: {
-        authenticated: false,
-        mode: "public_demo",
-        actor_id: null,
-        tenant_id: null,
-        scopes: [],
-        expires_at: null,
+        authenticated,
+        mode: authenticated ? "secure_oidc_cookie" : "public_demo",
+        actor_id: authenticated ? "operator-e2e" : null,
+        tenant_id: tenantId,
+        scopes: authenticated ? ["tenant:read"] : [],
+        expires_at: authenticated ? 4102444800 : null,
         api_auth_required: true,
         enterprise_sso_ready: true,
         readiness_status: "watch",
@@ -83,7 +174,17 @@ async function routeVerifiedDemoIdentity(page: Page) {
   });
 }
 
+async function routeVerifiedDemoIdentity(page: Page) {
+  await routeVerifiedIdentity(page);
+}
+
 test.describe("Axis console smoke", () => {
+  test.beforeEach(async ({ page }) => {
+    // Tenant-scoped feature tests start from an API-verified public-demo
+    // identity. Identity-failure and authenticated-session tests replace it.
+    await routeVerifiedDemoIdentity(page);
+  });
+
   test("requires the overview APIs section by section instead of local data", async ({ page }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -121,7 +222,7 @@ test.describe("Axis console smoke", () => {
     // The page header renders once; every section shows its own ErrorPanel
     // instead of one page-level gate.
     await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Operations API unavailable" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: strings.overview.hero.error.title })).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Attention items unavailable" }),
     ).toBeVisible();
@@ -132,26 +233,27 @@ test.describe("Axis console smoke", () => {
       page.getByRole("heading", { name: "Operations snapshot API unavailable" }),
     ).toBeVisible();
     await expect(page.getByRole("heading", { name: "System health unavailable" })).toBeVisible();
-    await expect(page.getByText("Local fallback overview records are disabled.")).toBeVisible();
+    await expect(page.getByText(strings.overview.hero.error.detail)).toBeVisible();
 
     // Posture cards degrade in place instead of disappearing.
     await expect(page.locator("[data-kpi-card]")).toHaveCount(5);
     await expect(page.getByText("Unavailable", { exact: true })).toHaveCount(5);
 
     // Endpoint paths are demoted behind the ErrorPanel "Technical details" expander.
-    await expect(page.getByText("/demo/manufacturing/overview")).toHaveCount(0);
+    await expect(page.getByText(`${OPERATIONS_API_PREFIX}/overview`)).toHaveCount(0);
     await page.getByRole("button", { name: "Technical details" }).first().click();
-    await expect(page.getByText("/demo/manufacturing/overview")).toBeVisible();
+    await expect(page.getByText(`${OPERATIONS_API_PREFIX}/overview`)).toBeVisible();
     await expect(page.getByText("Fallback demo seed")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Ravenna Works" })).toHaveCount(0);
     await expect(page.getByText("Plant Operations Cockpit")).toHaveCount(0);
     await expect(page.getByText("Live API")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Refresh state" }).click();
-    await expect(page.getByRole("heading", { name: "Operations API unavailable" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: strings.overview.hero.error.title })).toBeVisible();
 
     await expectAxisLightShell(page);
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -183,6 +285,7 @@ test.describe("Axis console smoke", () => {
     );
     expect(reloaded).toBe("rgb(4, 18, 46)");
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
 
     await page.getByRole("button", { name: "Toggle color theme" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
@@ -191,6 +294,7 @@ test.describe("Axis console smoke", () => {
   });
 
   test("keeps shell utilities actionable without mock controls", async ({ page }) => {
+    await page.unroute(identitySessionUrl);
     await page.goto("/");
 
     await expect(page.getByRole("button", { name: "Open notifications" })).toBeVisible();
@@ -214,9 +318,13 @@ test.describe("Axis console smoke", () => {
     await page.getByRole("button", { name: "Open notifications" }).click();
     const notificationsPanel = page.locator('[aria-label="Notifications"]');
     await expect(notificationsPanel).toBeVisible();
-    await expect(notificationsPanel.getByText("API required", { exact: true })).toBeVisible();
     await expect(
-      notificationsPanel.getByText("Live notification data requires `/demo/manufacturing/notifications`."),
+      notificationsPanel.locator('[data-source-state="unavailable"]'),
+    ).toContainText("notifications: unavailable");
+    await expect(
+      notificationsPanel.getByText(
+        `Notification data requires ${OPERATIONS_API_PREFIX}/notifications.`,
+      ),
     ).toBeVisible();
     const notificationsTopbarHeight = await page.locator(".ops-topbar").evaluate((element) =>
       Math.round(element.getBoundingClientRect().height),
@@ -259,12 +367,14 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("combobox", { name: "Environment" })).toHaveCount(0);
     await expect(page.getByRole("combobox", { name: "Evidence window" })).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
   });
 
   test("routes verified cookie sessions through the real federated logout endpoint", async ({
     page,
   }) => {
-    await page.route("http://127.0.0.1:65534/identity/session", async (route) => {
+    await page.unroute(identitySessionUrl);
+    await page.route(identitySessionUrl, async (route) => {
       await route.fulfill({
         contentType: "application/json",
         json: {
@@ -293,11 +403,13 @@ test.describe("Axis console smoke", () => {
     await page.getByRole("button", { name: "Open operator account" }).click();
 
     await expect(page.locator('[aria-label="Operator account"]')).toBeVisible();
-    await expect(page.getByText("plant-operations-owner-role")).toBeVisible();
+    await expect(
+      page.locator('[aria-label="Operator account"]').getByText("plant-operations-owner-role"),
+    ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Sign out with identity provider" }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Open operator account" })).toHaveText("PO");
+    await expect(page.locator("[data-operator-initials]").first()).toHaveText("PO");
 
     const [logoutRequest] = await Promise.all([
       page.waitForRequest("http://127.0.0.1:65534/identity/oidc/logout?return_to=%2F"),
@@ -351,7 +463,6 @@ test.describe("Axis console smoke", () => {
       "Audit",
       "Simulation",
       "Tenants",
-      "Settings",
     ]);
     expect(sidebarState.sidebar?.clientHeight).toBe(sidebarState.viewportHeight);
     expect(sidebarState.sidebar?.scrollHeight ?? 0).toBeLessThanOrEqual(
@@ -363,7 +474,10 @@ test.describe("Axis console smoke", () => {
     await page.locator(".nav-list").evaluate((element) => {
       element.scrollTop = element.scrollHeight;
     });
+    // Settings and the account row live in the footer now, outside the
+    // scrolling nav list, so they stay reachable on a short screen.
     await expect(page.getByRole("link", { name: "Settings" })).toBeInViewport();
+    await expect(page.getByRole("button", { name: "Open operator account" })).toBeInViewport();
   });
 
   test("keeps topbar utility hitboxes and popovers stable", async ({ page }) => {
@@ -376,16 +490,20 @@ test.describe("Axis console smoke", () => {
     const utilityRects = await page
       .locator(".ops-toolbar-icons button")
       .evaluateAll((buttons) =>
-        buttons.map((button) => {
-          const rect = button.getBoundingClientRect();
-          return {
-            height: Math.round(rect.height),
-            width: Math.round(rect.width),
-          };
-        }),
+        buttons
+          // Below 921px the topbar also carries the identity controls; at this
+          // width they are display:none and would measure 0x0.
+          .filter((button) => (button as HTMLElement).offsetParent !== null)
+          .map((button) => {
+            const rect = button.getBoundingClientRect();
+            return {
+              height: Math.round(rect.height),
+              width: Math.round(rect.width),
+            };
+          }),
       );
 
-    expect(utilityRects.length).toBeGreaterThanOrEqual(5);
+    expect(utilityRects.length).toBeGreaterThanOrEqual(4);
     for (const rect of utilityRects) {
       expect(rect).toEqual({ height: 34, width: 34 });
     }
@@ -431,18 +549,34 @@ test.describe("Axis console smoke", () => {
     expect(accountPopover.bottom).toBeLessThanOrEqual(760 - 16);
   });
 
-  test("keeps navigation and requires agent/action APIs on mobile", async ({ page }) => {
+  test("keeps grouped navigation operable and requires agent/action APIs on mobile", async ({ page }) => {
     await routeVerifiedDemoIdentity(page);
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/");
+    await page.goto("/settings/sessions");
 
-    const mobileNav = page.locator(".topnav");
+    const mobileNav = page.locator("[data-mobile-navigation]");
     await expect(mobileNav).toBeVisible();
-    await expect(mobileNav.getByRole("link", { name: "Agents" })).toHaveAttribute(
-      "href",
-      "/agents",
+    await expect(mobileNav.locator("[data-mobile-current-section]")).toHaveText("Settings");
+    const menuTrigger = mobileNav.getByRole("button", {
+      name: "Open navigation. Current section: Settings",
+    });
+    await menuTrigger.click();
+
+    const drawer = page.getByRole("dialog", { name: "Navigate Axis" });
+    await expect(drawer).toBeVisible();
+    const platformGroup = drawer.getByRole("region", { name: "Platform" });
+    await expect(platformGroup.getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "aria-current",
+      "page",
     );
-    await page.goto("/agents");
+    await page.keyboard.press("Escape");
+    await expect(drawer).toBeHidden();
+    await expect(menuTrigger).toBeFocused();
+
+    await menuTrigger.click();
+    await drawer.getByRole("link", { name: "Agents" }).click();
+    await expect(drawer).toBeHidden();
+    await expect(page).toHaveURL(/\/agents$/);
 
     await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Agent API unavailable" })).toBeVisible();
@@ -456,12 +590,25 @@ test.describe("Axis console smoke", () => {
 
     // The endpoint path stays demoted behind the ErrorPanel expander, and no
     // fabricated run timelines or detail tabs render without the registry API.
-    await expect(page.getByText("/demo/manufacturing/agents", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(`${OPERATIONS_API_PREFIX}/agents`, { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Technical details" }).first().click();
-    await expect(page.getByText("/demo/manufacturing/agents", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText(
+        `${OPERATIONS_API_PREFIX}/agents?tenant_id=tenant_demo_manufacturing`,
+        { exact: true },
+      ),
+    ).toBeVisible();
     await expect(page.getByRole("tab", { name: "Runs" })).toHaveCount(0);
     await expect(page.getByText("No runs recorded — execution flag-gated")).toHaveCount(0);
 
+    await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
+    await expectMobileHeadersStacked(page);
+
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await page.goto("/policies/policy_e2e_navigation");
+    await expect(page.locator("[data-mobile-current-section]")).toHaveText("Policies");
+    await expectMobileHeadersStacked(page);
     await expectNoHorizontalOverflow(page);
   });
 
@@ -483,6 +630,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByText("Fallback entity seed")).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
   });
 
   test("zooms the mocked ontology graph and opens the entity slide-over in place", async ({
@@ -490,6 +638,8 @@ test.describe("Axis console smoke", () => {
   }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.unroute(identitySessionUrl);
+    await routeVerifiedIdentity(page, "tenant_e2e");
 
     const relationshipMetadata = {
       owner_role: "quality-owner",
@@ -543,26 +693,36 @@ test.describe("Axis console smoke", () => {
     ];
 
     await page.route(
-      (url) => url.href.startsWith("http://127.0.0.1:65534/demo/manufacturing/ontology"),
+      (url) => url.href.startsWith(`http://127.0.0.1:65534${OPERATIONS_API_PREFIX}/ontology`),
       async (route) => {
         if (route.request().url().includes("/entities/")) {
+          const requestUrl = new URL(route.request().url());
+          const requestedNodeId = decodeURIComponent(requestUrl.pathname.split("/").at(-1) ?? "");
+          const requestedNode = nodes.find((node) => node.node_id === requestedNodeId);
+          if (!requestedNode) {
+            await route.fulfill({ contentType: "application/json", json: {}, status: 404 });
+            return;
+          }
+
+          const viewingPlant = requestedNode.node_id === nodes[0].node_id;
           await route.fulfill({
             contentType: "application/json",
             json: {
               tenant_id: "tenant_e2e",
               plant_name: "E2E Plant",
               scenario: "E2E mocked scenario",
+              provenance: "reference_scenario",
               as_of: "2026-07-10T09:00:00+02:00",
-              node: nodes[1],
+              node: requestedNode,
               connected_relationships: [
                 {
-                  direction: "inbound",
+                  direction: viewingPlant ? "outbound" : "inbound",
                   relationship: relationships[0],
-                  peer_node: nodes[0],
+                  peer_node: viewingPlant ? nodes[1] : nodes[0],
                 },
               ],
-              inbound_count: 1,
-              outbound_count: 0,
+              inbound_count: viewingPlant ? 0 : 1,
+              outbound_count: viewingPlant ? 1 : 0,
               required_permissions: ["ontology:read"],
               evidence_refs: ["audit_evt_e2e"],
               data_access: ["MES summary"],
@@ -583,6 +743,7 @@ test.describe("Axis console smoke", () => {
             tenant_id: "tenant_e2e",
             plant_name: "E2E Plant",
             scenario: "E2E mocked scenario",
+            provenance: "reference_scenario",
             as_of: "2026-07-10T09:00:00+02:00",
             nodes,
             relationships,
@@ -609,10 +770,20 @@ test.describe("Axis console smoke", () => {
       },
     );
 
+    // Keep a deterministic pre-explorer entry so the final Close -> Back
+    // assertion can detect a duplicate explorer entry, not only a reopened
+    // entity sheet.
+    await page.goto("/ontology?history_origin=1");
     await page.goto("/ontology");
 
     const graph = page.getByTestId("ontology-graph");
     await expect(graph).toBeVisible();
+    const ontologySource = page.locator('[data-source-state="reference"]');
+    await expect(ontologySource).toBeVisible();
+    await expect(ontologySource).toContainText("ontology: reference scenario");
+    await expect(
+      page.locator('[data-source-state="live"]').filter({ hasText: "ontology" }),
+    ).toHaveCount(0);
 
     // Node-type counts live in the legend; the old metric cards are gone.
     const legend = page.getByLabel("Ontology graph legend");
@@ -639,12 +810,43 @@ test.describe("Axis console smoke", () => {
     );
     await expect(sheet.getByText("Read-only entity context")).toBeVisible();
     expect(new URL(page.url()).pathname).toBe("/ontology");
+    expect(new URL(page.url()).searchParams.get("entity_id")).toBe("asset_line_2");
 
-    // Closing the sheet keeps the zoomed graph state — no reload, no navigation.
+    // Peer traversal is URL-backed. Back walks the entity history in place,
+    // then closes the sheet without leaving the ontology explorer.
+    await sheet.getByRole("button", { name: "E2E Plant" }).click();
+    await expect(sheet.getByRole("heading", { name: "E2E Plant" })).toBeVisible();
+    expect(new URL(page.url()).searchParams.get("entity_id")).toBe("org_e2e_plant");
+
+    await page.goBack();
+    await expect(sheet.getByRole("heading", { name: "Line 2 Packaging" })).toBeVisible();
+    expect(new URL(page.url()).searchParams.get("entity_id")).toBe("asset_line_2");
+
+    await page.goBack();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(new URL(page.url()).pathname).toBe("/ontology");
+    expect(new URL(page.url()).search).toBe("");
+    await expect(graph).toHaveAttribute("viewBox", zoomedViewBox ?? "");
+
+    // Explicit Close collapses the whole peer traversal to the explorer root.
+    // The next Back must reach the entry before that root, not reopen either
+    // entity or visit a duplicate /ontology entry.
+    await graph.getByRole("link", { name: /Line 2 Packaging/ }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    expect(new URL(page.url()).searchParams.get("entity_id")).toBe("asset_line_2");
+    await sheet.getByRole("button", { name: "E2E Plant" }).click();
+    await expect(sheet.getByRole("heading", { name: "E2E Plant" })).toBeVisible();
+    expect(new URL(page.url()).searchParams.get("entity_id")).toBe("org_e2e_plant");
     await sheet.getByRole("button", { name: "Close" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(graph).toHaveAttribute("viewBox", zoomedViewBox ?? "");
     expect(new URL(page.url()).pathname).toBe("/ontology");
+    expect(new URL(page.url()).search).toBe("");
+
+    await page.goBack();
+    await expect.poll(() => new URL(page.url()).searchParams.get("history_origin")).toBe("1");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.has("entity_id")).toBe(false);
 
     expect(pageErrors).toEqual([]);
   });
@@ -669,15 +871,23 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByText("Fallback routing seed")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Quality Risk Agent/ })).toHaveCount(0);
     await page.getByRole("button", { name: "Technical details" }).click();
-    await expect(page.getByText("/demo/manufacturing/model-routing", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText(
+        `${OPERATIONS_API_PREFIX}/model-routing?tenant_id=tenant_demo_manufacturing`,
+        { exact: true },
+      ),
+    ).toBeVisible();
 
     // Live tab: its own API-required states instead of fabricated invocation
     // rows or endpoint cards.
     await page.getByRole("tab", { name: "Live invocations" }).click();
-    await expect(page.getByText("Live executed", { exact: true })).toBeVisible();
+    // The "Live executed" badge must NOT appear while the invocation API is
+    // down — it previously rendered unconditionally, so a green "Live executed"
+    // sat directly above "Model invocation API unavailable".
+    await expect(page.getByText("Live executed", { exact: true })).toHaveCount(0);
     await expect(
       page.getByRole("heading", { name: "Model invocation API unavailable" }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15_000 });
     await expect(
       page.getByRole("heading", { name: "Model endpoint API unavailable" }),
     ).toBeVisible();
@@ -687,12 +897,23 @@ test.describe("Axis console smoke", () => {
     for (let index = 0; index < 2; index += 1) {
       await liveDetailToggles.nth(index).click();
     }
-    await expect(page.getByText("/platform/models/invocations", { exact: true })).toBeVisible();
-    await expect(page.getByText("/platform/models/endpoints", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText(
+        "/platform/models/invocations?tenant_id=tenant_demo_manufacturing&page_size=50",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        "/platform/models/endpoints?tenant_id=tenant_demo_manufacturing&limit=100",
+        { exact: true },
+      ),
+    ).toBeVisible();
     await expect(page.locator("[data-testid='live-invocations-table']")).toHaveCount(0);
     await expect(page.getByText("Execution disabled — flag-gated")).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
   });
 
   test("requires the approval API instead of local approval decisions", async ({ page }) => {
@@ -710,6 +931,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("button", { name: /Expedite supplier batch/ })).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -726,6 +948,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("button", { name: /Supplier Delay Review/ })).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -745,7 +968,11 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("heading", { name: "Policy API unavailable" })).toBeVisible();
     await expect(page.getByText("Local fallback policy records are disabled.")).toBeVisible();
     await page.getByRole("button", { name: "Technical details" }).first().click();
-    await expect(page.getByText("/platform/policies", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("/platform/policies?tenant_id=tenant_demo_manufacturing", {
+        exact: true,
+      }),
+    ).toBeVisible();
     await expect(page.getByText("Fallback policy seed")).toHaveCount(0);
     await expect(page.getByRole("link", { name: /Deny critical actions/ })).toHaveCount(0);
 
@@ -756,11 +983,16 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("heading", { name: "Policy detail" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Policy API unavailable" })).toBeVisible();
     await page.getByRole("button", { name: "Technical details" }).first().click();
-    await expect(page.getByText("/platform/policies/deny_critical_actions")).toBeVisible();
+    await expect(
+      page.getByText(
+        "/platform/policies/deny_critical_actions?tenant_id=tenant_demo_manufacturing",
+      ),
+    ).toBeVisible();
     await expect(page.getByRole("form", { name: "Policy dry-run evaluation" })).toHaveCount(0);
     await expect(page.getByRole("form", { name: "Platform policy revision" })).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -892,6 +1124,7 @@ test.describe("Axis console smoke", () => {
     );
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -939,7 +1172,10 @@ test.describe("Axis console smoke", () => {
     };
 
     await page.route(
-      "http://127.0.0.1:65534/platform/policies/deny_critical_actions",
+      (url) =>
+        url.href.startsWith(
+          "http://127.0.0.1:65534/platform/policies/deny_critical_actions?",
+        ),
       async (route) => {
         await route.fulfill({
           contentType: "application/json",
@@ -985,6 +1221,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByText("− high")).toBeVisible();
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -1002,6 +1239,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("button", { name: /workflow.started/ })).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -1018,6 +1256,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("button", { name: /Supplier Delay Review/ })).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -1037,17 +1276,19 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("button", { name: /Manufacturing assets CSV/ })).toHaveCount(0);
 
     // The registry endpoint stays demoted behind the technical-details expander.
-    await expect(page.getByText("/demo/manufacturing/connectors", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(`${OPERATIONS_API_PREFIX}/connectors`, { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Technical details" }).click();
-    await expect(page.getByText("/demo/manufacturing/connectors", { exact: true })).toBeVisible();
+    await expect(page.getByText(`${OPERATIONS_API_PREFIX}/connectors`, { exact: true })).toBeVisible();
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
   test("requires the identity session APIs on the sessions view", async ({ page }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.unroute(identitySessionUrl);
 
     await page.goto("/settings/sessions");
 
@@ -1059,6 +1300,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("button", { name: "Revoke" })).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -1066,11 +1308,12 @@ test.describe("Axis console smoke", () => {
     context,
     page,
   }) => {
+    await page.unroute(identitySessionUrl);
     await context.addCookies([
       { name: "axis_csrf", value: "csrf-e2e-token", url: "http://127.0.0.1:3100" },
     ]);
 
-    await page.route("http://127.0.0.1:65534/identity/session", async (route) => {
+    await page.route(identitySessionUrl, async (route) => {
       await route.fulfill({
         contentType: "application/json",
         json: {
@@ -1187,6 +1430,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByText("quality-auditor-role")).toBeVisible();
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
   });
 
   test("requires the platform tenant API instead of local tenant data", async ({ page }) => {
@@ -1194,10 +1438,7 @@ test.describe("Axis console smoke", () => {
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
     await page.goto("/");
-    await expect(page.getByRole("link", { name: "Tenants" }).first()).toHaveAttribute(
-      "href",
-      "/tenants",
-    );
+    await expectNavigationDestination(page, "Tenants", "/tenants");
 
     await page.goto("/tenants");
 
@@ -1218,6 +1459,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("form", { name: "Tenant quota update" })).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -1397,6 +1639,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByText(/Tenant suspended\./)).toBeVisible();
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 
@@ -1405,6 +1648,7 @@ test.describe("Axis console smoke", () => {
   }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
+    await page.unroute(identitySessionUrl);
 
     await page.goto("/settings");
 
@@ -1445,6 +1689,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByText("Fallback settings seed")).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
+    await expectNoUndersizedTargets(page);
     expect(pageErrors).toEqual([]);
   });
 });

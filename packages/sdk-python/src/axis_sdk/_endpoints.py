@@ -17,6 +17,7 @@ from axis_sdk import models
 from axis_sdk._transport import RequestSpec
 from axis_sdk.models import ApprovalDecision
 
+OPERATIONS_PREFIX = "/operations"
 DEMO_PREFIX = "/demo/manufacturing"
 
 Endpoint = tuple[RequestSpec, type[BaseModel]]
@@ -51,7 +52,7 @@ def list_approvals(tenant_id: str | None = None) -> Endpoint:
     return (
         RequestSpec(
             "GET",
-            f"{DEMO_PREFIX}/approvals",
+            f"{OPERATIONS_PREFIX}/approvals",
             params={"tenant_id": tenant_id},
             tenant_scoped=True,
             idempotent=True,
@@ -78,7 +79,10 @@ def decide_approval(
     return (
         RequestSpec(
             "POST",
-            _path(f"{DEMO_PREFIX}/approvals/{{approval_id}}/decision", approval_id=approval_id),
+            _path(
+                f"{OPERATIONS_PREFIX}/approvals/{{approval_id}}/decision",
+                approval_id=approval_id,
+            ),
             json_body=body,
         ),
         models.ApprovalDecisionResult,
@@ -92,7 +96,7 @@ def action_catalog(tenant_id: str | None = None) -> Endpoint:
     return (
         RequestSpec(
             "GET",
-            f"{DEMO_PREFIX}/actions",
+            f"{OPERATIONS_PREFIX}/actions",
             params={"tenant_id": tenant_id},
             tenant_scoped=True,
             idempotent=True,
@@ -119,7 +123,7 @@ def create_action_run(
     return (
         RequestSpec(
             "POST",
-            _path(f"{DEMO_PREFIX}/actions/{{action_id}}/runs", action_id=action_id),
+            _path(f"{OPERATIONS_PREFIX}/actions/{{action_id}}/runs", action_id=action_id),
             json_body=body,
             # Idempotency-keyed creates replay the persisted run, so they
             # are safe to retry; keyless creates are not.
@@ -156,7 +160,7 @@ def record_action_run_outcome(
         RequestSpec(
             "POST",
             _path(
-                f"{DEMO_PREFIX}/actions/runs/{{action_run_id}}/outcome",
+                f"{OPERATIONS_PREFIX}/actions/runs/{{action_run_id}}/outcome",
                 action_run_id=action_run_id,
             ),
             json_body=body,
@@ -173,7 +177,7 @@ def workflow_console(tenant_id: str | None = None) -> Endpoint:
     return (
         RequestSpec(
             "GET",
-            f"{DEMO_PREFIX}/workflows",
+            f"{OPERATIONS_PREFIX}/workflows",
             params={"tenant_id": tenant_id},
             tenant_scoped=True,
             idempotent=True,
@@ -191,7 +195,7 @@ def list_workflow_runs(
     return (
         RequestSpec(
             "GET",
-            f"{DEMO_PREFIX}/workflows/runs",
+            f"{OPERATIONS_PREFIX}/workflows/runs",
             params={"tenant_id": tenant_id, "state": state, "limit": limit},
             tenant_scoped=True,
             idempotent=True,
@@ -207,7 +211,7 @@ def audit_explorer(tenant_id: str | None = None) -> Endpoint:
     return (
         RequestSpec(
             "GET",
-            f"{DEMO_PREFIX}/audit",
+            f"{OPERATIONS_PREFIX}/audit",
             params={"tenant_id": tenant_id},
             tenant_scoped=True,
             idempotent=True,
@@ -227,7 +231,7 @@ def query_audit_events(
     return (
         RequestSpec(
             "GET",
-            f"{DEMO_PREFIX}/audit/events",
+            f"{OPERATIONS_PREFIX}/audit/events",
             params={
                 "tenant_id": tenant_id,
                 "event_type": event_type,
@@ -256,7 +260,7 @@ def export_audit_events(
     return (
         RequestSpec(
             "GET",
-            f"{DEMO_PREFIX}/audit/export",
+            f"{OPERATIONS_PREFIX}/audit/export",
             params={
                 "tenant_id": tenant_id,
                 "event_type": event_type,
@@ -281,7 +285,7 @@ def ontology_graph(tenant_id: str | None = None, *, limit: int | None = None) ->
     return (
         RequestSpec(
             "GET",
-            f"{DEMO_PREFIX}/ontology",
+            f"{OPERATIONS_PREFIX}/ontology",
             params={"tenant_id": tenant_id, "limit": limit},
             tenant_scoped=True,
             idempotent=True,
@@ -294,7 +298,7 @@ def ontology_entity(node_id: str, tenant_id: str | None = None) -> Endpoint:
     return (
         RequestSpec(
             "GET",
-            _path(f"{DEMO_PREFIX}/ontology/entities/{{node_id}}", node_id=node_id),
+            _path(f"{OPERATIONS_PREFIX}/ontology/entities/{{node_id}}", node_id=node_id),
             params={"tenant_id": tenant_id},
             tenant_scoped=True,
             idempotent=True,
@@ -310,7 +314,7 @@ def agent_registry(tenant_id: str | None = None) -> Endpoint:
     return (
         RequestSpec(
             "GET",
-            f"{DEMO_PREFIX}/agents",
+            f"{OPERATIONS_PREFIX}/agents",
             params={"tenant_id": tenant_id},
             tenant_scoped=True,
             idempotent=True,

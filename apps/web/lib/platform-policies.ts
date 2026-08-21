@@ -2,7 +2,9 @@ import {
   AxisApiError,
   axisFetch,
   axisFetchParsedJson,
+  axisResponseRequestId,
   decodeAxisJson,
+  type AxisOperatorError,
   type AxisFetchOptions,
 } from "./axis-api";
 import {
@@ -149,8 +151,15 @@ export const platformPolicyPrecedenceSteps = [
   "When no active policy matches the context, the decision is default allow.",
 ];
 
-export function buildPlatformPoliciesPath(filters: PlatformPolicyRegistryFilters): string {
+export function buildPlatformPoliciesPath(
+  filters: PlatformPolicyRegistryFilters,
+  tenantId?: string,
+): string {
   const params = new URLSearchParams();
+
+  if (tenantId) {
+    params.set("tenant_id", tenantId);
+  }
 
   if (filters.scope !== allPolicyFilter) {
     params.set("scope", filters.scope);
@@ -164,8 +173,9 @@ export function buildPlatformPoliciesPath(filters: PlatformPolicyRegistryFilters
   return query ? `${platformPoliciesPath}?${query}` : platformPoliciesPath;
 }
 
-export function buildPlatformPolicyDetailPath(policyId: string): string {
-  return `${platformPoliciesPath}/${encodeURIComponent(policyId)}`;
+export function buildPlatformPolicyDetailPath(policyId: string, tenantId?: string): string {
+  const path = `${platformPoliciesPath}/${encodeURIComponent(policyId)}`;
+  return tenantId ? `${path}?${new URLSearchParams({ tenant_id: tenantId })}` : path;
 }
 
 export function buildPlatformPolicyRevisionsPath(policyId: string): string {
@@ -671,10 +681,39 @@ export function comparePolicyRevisions(
 export type PlatformPolicyWriteResult =
   | { kind: "created"; record: PlatformPolicyRecord }
   | { kind: "replayed"; record: PlatformPolicyRecord }
-  | { kind: "conflict"; reason: string; message: string }
-  | { kind: "invalid"; message: string; fieldErrors: PolicyDraftFieldErrors }
-  | { kind: "forbidden"; message: string; requiredPermission?: string }
-  | { kind: "failed"; status: number; message: string };
+  | { kind: "conflict"; reason: string; message: string; requestId?: string }
+  | {
+      kind: "invalid";
+      message: string;
+      fieldErrors: PolicyDraftFieldErrors;
+      requestId?: string;
+    }
+  | { kind: "forbidden"; message: string; requiredPermission?: string; requestId?: string }
+  | { kind: "failed"; status: number; message: string; requestId?: string };
+
+export type PlatformPolicyWriteFailure = Exclude<
+  PlatformPolicyWriteResult,
+  { kind: "created" | "replayed" }
+>;
+
+/** Creation never produces the revision endpoint's idempotent replay variant. */
+export type PlatformPolicyCreateResult = Exclude<
+  PlatformPolicyWriteResult,
+  { kind: "replayed" }
+>;
+
+/** Project a parsed write result into the same safe mutation-error shape as thrown failures. */
+export function policyWriteOperatorError(
+  result: PlatformPolicyWriteFailure,
+  message: string = result.message,
+): AxisOperatorError {
+  return {
+    code: null,
+    message,
+    requestId: result.requestId ?? null,
+    status: result.kind === "failed" ? result.status : null,
+  };
+}
 
 type PolicyWriteErrorDetail = {
   code?: string;
@@ -732,16 +771,22 @@ function mapValidationIssues(issues: PolicyValidationIssue[]): PolicyDraftFieldE
   return fieldErrors;
 }
 
-export function parsePolicyWriteFailure(status: number, body: unknown): PlatformPolicyWriteResult {
+export function parsePolicyWriteFailure(
+  status: number,
+  body: unknown,
+  requestId?: string | null,
+): PlatformPolicyWriteFailure {
   const detail = extractErrorDetail(body);
   const detailObject = Array.isArray(detail) ? null : detail;
   const message = detailObject?.message ?? `Policy write failed with ${status}.`;
+  const reference = requestId ? { requestId } : {};
 
   if (status === 409) {
     return {
       kind: "conflict",
       reason: detailObject?.reason ?? "conflict",
       message,
+      ...reference,
     };
   }
 
@@ -751,6 +796,7 @@ export function parsePolicyWriteFailure(status: number, body: unknown): Platform
         kind: "invalid",
         message: "The policy request failed API validation.",
         fieldErrors: mapValidationIssues(detail),
+        ...reference,
       };
     }
 
@@ -762,7 +808,7 @@ export function parsePolicyWriteFailure(status: number, body: unknown): Platform
       fieldErrors.policyId = message;
     }
 
-    return { kind: "invalid", message, fieldErrors };
+    return { kind: "invalid", message, fieldErrors, ...reference };
   }
 
   if (status === 403) {
@@ -770,10 +816,11 @@ export function parsePolicyWriteFailure(status: number, body: unknown): Platform
       kind: "forbidden",
       message,
       requiredPermission: detailObject?.required_permission,
+      ...reference,
     };
   }
 
-  return { kind: "failed", status, message };
+  return { kind: "failed", status, message, ...reference };
 }
 
 async function readJsonBody(response: Response): Promise<unknown> {
@@ -784,14 +831,10 @@ async function readJsonBody(response: Response): Promise<unknown> {
   }
 }
 
-function responseRequestId(response: Response): string | null {
-  return response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id");
-}
-
 export async function createPlatformPolicy(
   payload: PlatformPolicyCreateRequestPayload,
   options: AxisFetchOptions = {},
-): Promise<PlatformPolicyWriteResult> {
+): Promise<PlatformPolicyCreateResult> {
   const response = await axisFetch(platformPoliciesPath, {
     ...options,
     method: "POST",
@@ -806,12 +849,12 @@ export async function createPlatformPolicy(
         platformPoliciesPath,
         body,
         parsePlatformPolicyRecord,
-        responseRequestId(response),
+        axisResponseRequestId(response),
       ),
     };
   }
 
-  return parsePolicyWriteFailure(response.status, body);
+  return parsePolicyWriteFailure(response.status, body, axisResponseRequestId(response));
 }
 
 export async function revisePlatformPolicy(
@@ -830,25 +873,36 @@ export async function revisePlatformPolicy(
   if (response.status === 201) {
     return {
       kind: "created",
-      record: decodeAxisJson(path, body, parsePlatformPolicyRecord, responseRequestId(response)),
+      record: decodeAxisJson(
+        path,
+        body,
+        parsePlatformPolicyRecord,
+        axisResponseRequestId(response),
+      ),
     };
   }
 
   if (response.status === 200) {
     return {
       kind: "replayed",
-      record: decodeAxisJson(path, body, parsePlatformPolicyRecord, responseRequestId(response)),
+      record: decodeAxisJson(
+        path,
+        body,
+        parsePlatformPolicyRecord,
+        axisResponseRequestId(response),
+      ),
     };
   }
 
-  return parsePolicyWriteFailure(response.status, body);
+  return parsePolicyWriteFailure(response.status, body, axisResponseRequestId(response));
 }
 
 export async function fetchPlatformPolicyDetail(
   policyId: string,
   options: AxisFetchOptions = {},
+  tenantId?: string,
 ): Promise<PlatformPolicyDetail | null> {
-  const path = buildPlatformPolicyDetailPath(policyId);
+  const path = buildPlatformPolicyDetailPath(policyId, tenantId);
   const response = await axisFetch(path, options);
 
   if (response.status === 404) {
@@ -856,14 +910,16 @@ export async function fetchPlatformPolicyDetail(
   }
 
   if (!response.ok) {
-    throw new AxisApiError(path, response.status);
+    throw new AxisApiError(path, response.status, {
+      requestId: axisResponseRequestId(response),
+    });
   }
 
   return decodeAxisJson(
     path,
     await response.json(),
     parsePlatformPolicyDetail,
-    responseRequestId(response),
+    axisResponseRequestId(response),
   );
 }
 

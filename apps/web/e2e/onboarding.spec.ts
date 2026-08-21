@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 /*
  * Demo story 3 (plan task 6.4): bootstrapping the demo scenario into a fresh
@@ -18,7 +19,11 @@ test.describe("Axis live story: onboarding demo bootstrap", () => {
     "Set AXIS_E2E_LIVE_API=1 when the local Axis API is running.",
   );
 
-  test("bootstraps the demo scenario into a throwaway tenant", async ({ request }) => {
+  // The API story is viewport-independent and writes a shared tenant. Keep it
+  // in the single-worker Chromium lane; the UI story still covers all projects.
+  test("bootstraps the demo scenario into a throwaway tenant", {
+    tag: "@stateful",
+  }, async ({ request }) => {
     const response = await request.post(`${API_BASE_URL}/demo/manufacturing/bootstrap`, {
       data: {
         tenant_id: E2E_TENANT_ID,
@@ -35,7 +40,7 @@ test.describe("Axis live story: onboarding demo bootstrap", () => {
     expect(record.idempotent_replay).toBe(response.status() === 200);
 
     const overview = await request.get(
-      `${API_BASE_URL}/demo/manufacturing/overview?tenant_id=${E2E_TENANT_ID}`,
+      `${API_BASE_URL}${OPERATIONS_API_PREFIX}/overview?tenant_id=${E2E_TENANT_ID}`,
     );
     expect(overview.status()).toBe(200);
     const payload = await overview.json();
@@ -48,10 +53,13 @@ test.describe("Axis live story: onboarding demo bootstrap", () => {
     await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
     const badge = page.locator(".ops-topbar").getByText("Demo", { exact: true });
     await expect(badge).toBeVisible();
-    // The badge carries the explanatory tooltip on focus.
-    await badge.focus();
-    await expect(
-      page.getByText("This tenant runs the demo manufacturing scenario").first(),
-    ).toBeVisible();
+    // The explanation is an accessible description rather than tooltip-only
+    // content: Radix suppresses tooltips on touch, so a phone user would
+    // otherwise never learn what the badge means.
+    const described = await badge.getAttribute("aria-describedby");
+    expect(described).toBeTruthy();
+    await expect(page.locator(`#${described}`)).toHaveText(
+      "This tenant runs the demo manufacturing scenario",
+    );
   });
 });

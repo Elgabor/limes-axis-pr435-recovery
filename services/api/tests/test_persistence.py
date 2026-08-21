@@ -424,6 +424,7 @@ def test_repository_records_connector_manifests_tenant_scoped(session: Session) 
         ConnectorManifestCreate(
             tenant_id="tenant_demo_manufacturing",
             connector_id="external_db_shift_orders",
+            revision_number=1,
             display_name="Shift orders database mirror",
             connector_type="external_db",
             source_type="database",
@@ -443,6 +444,7 @@ def test_repository_records_connector_manifests_tenant_scoped(session: Session) 
         ConnectorManifestCreate(
             tenant_id="tenant_other",
             connector_id="external_db_shift_orders",
+            revision_number=1,
             display_name="Other tenant database mirror",
             connector_type="external_db",
             source_type="database",

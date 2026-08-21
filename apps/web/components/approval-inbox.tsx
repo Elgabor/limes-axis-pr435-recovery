@@ -1,13 +1,14 @@
 "use client";
 
 import { useRef, useState, type KeyboardEvent } from "react";
-import { ChevronDown, ChevronRight, Inbox, RadioTower, ShieldAlert } from "lucide-react";
+import { ChevronDown, ChevronRight, Inbox, ShieldAlert } from "lucide-react";
 
 import {
   ApprovalDecisionCard,
   useApprovalDecisionState,
   type ApprovalDecisionRecord,
 } from "@/components/approvals/approval-decision-card";
+import { ActionFollowThrough } from "@/components/approvals/action-follow-through";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { DetailGrid, KeyValueRow } from "@/components/ui/detail-grid";
@@ -15,31 +16,46 @@ import { Eyebrow } from "@/components/ui/eyebrow";
 import { InspectDrawer } from "@/components/ui/inspect-drawer";
 import { MasterDetail } from "@/components/ui/master-detail";
 import { MetricStrip, type Metric } from "@/components/ui/metric-strip";
+import { SourcePill } from "@/components/ui/source-pill";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
+import type { ActionRunList } from "@/lib/action-demo";
 import {
   approvalDecisionLabel,
   approvalRiskClass,
-  findApprovalById,
   type ApprovalInboxItem,
   type ManufacturingApprovalInbox,
 } from "@/lib/approval-demo";
 import { cn } from "@/lib/cn";
-import {
-  formatOverviewTimestamp,
-  type IdentitySessionReadModel,
-  platformStatusClass,
-} from "@/lib/platform-overview";
+import type { AxisOperatorError } from "@/lib/axis-api";
+import { stringUrlField, useConsoleUrlState } from "@/lib/console-url-state";
+import { formatContextPath, formatNumber, formatTimestamp } from "@/lib/format";
+import { type IdentitySessionReadModel, platformStatusClass } from "@/lib/platform-overview";
+import { deriveSourceState } from "@/lib/source-state";
 import { strings } from "@/lib/strings";
+import { parseActionRunList } from "@/lib/runtime-contracts/actions";
 import { parseManufacturingApprovalInbox } from "@/lib/runtime-contracts/approvals";
+import {
+  parseManufacturingAuditExplorer,
+} from "@/lib/runtime-contracts/audit";
+import type { ManufacturingAuditExplorer } from "@/lib/audit-demo";
 import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
 import {
   buildTenantScopedPath,
   DEMO_TENANT_ID,
   resolveConsoleTenantScope,
+  OPERATIONS_API_PREFIX,
 } from "@/lib/tenant-scope";
 import { useAxisQuery } from "@/lib/use-axis-query";
+import { useConsole } from "@/providers/console-provider";
+import { useTenantVocabulary } from "@/providers/tenant-vocabulary-provider";
 
-const APPROVALS_ENDPOINT = "/demo/manufacturing/approvals";
+const APPROVALS_ENDPOINT = `${OPERATIONS_API_PREFIX}/approvals`;
+const ACTION_RUNS_ENDPOINT = `${OPERATIONS_API_PREFIX}/actions/runs`;
+const AUDIT_EVENTS_ENDPOINT = `${OPERATIONS_API_PREFIX}/audit/events`;
+const approvalUrlSchema = {
+  approvalId: stringUrlField("approval_id"),
+  actionRunId: stringUrlField("action_run_id"),
+};
 
 type RailStageState = "done" | "current" | "pending";
 
@@ -177,7 +193,7 @@ function CollapsibleSection({
 
   return (
     <Collapsible onOpenChange={setOpen} open={open}>
-      <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 bg-transparent p-0">
+      <CollapsibleTrigger className="flex min-h-6 cursor-pointer items-center gap-1.5 bg-transparent p-0">
         <Chevron aria-hidden="true" className="text-muted" size={14} />
         <span className="eyebrow">{label}</span>
       </CollapsibleTrigger>
@@ -200,11 +216,13 @@ function QueueList({
   inbox,
   selectedApproval,
   decisions,
+  labelDomain,
   onSelect,
 }: {
   inbox: ManufacturingApprovalInbox;
   selectedApproval: ApprovalInboxItem;
   decisions: Record<string, ApprovalDecisionRecord>;
+  labelDomain: (domain: string) => string;
   onSelect: (approvalId: string) => void;
 }) {
   const itemRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -264,7 +282,7 @@ function QueueList({
               <span className="grid min-w-0 gap-0.5">
                 <span className="text-sm font-medium text-ink">{approval.action}</span>
                 <span className="text-xs text-muted">
-                  {approval.domain} / {approval.owner_role}
+                  {labelDomain(approval.domain)} / {approval.owner_role}
                 </span>
                 <span className="font-mono text-xs text-muted">Due {approval.due}</span>
               </span>
@@ -287,6 +305,7 @@ function ApprovalDetail({
   approval,
   actor,
   decision,
+  domainLabel,
   error,
   onDecisionChange,
   onErrorChange,
@@ -295,16 +314,17 @@ function ApprovalDetail({
   approval: ApprovalInboxItem;
   actor?: { actorId: string; scopes: string[] };
   decision: ApprovalDecisionRecord | undefined;
-  error: string | undefined;
+  domainLabel: string;
+  error: AxisOperatorError | undefined;
   onDecisionChange: (approvalId: string, record: ApprovalDecisionRecord | null) => void;
-  onErrorChange: (approvalId: string, message: string | null) => void;
+  onErrorChange: (approvalId: string, error: AxisOperatorError | null) => void;
   tenantId: string;
 }) {
   return (
     <Card className="grid content-start gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="grid max-w-xl gap-1">
-          <Eyebrow>{approval.domain}</Eyebrow>
+          <Eyebrow>{domainLabel || approval.domain}</Eyebrow>
           <h2 className="font-display m-0 text-xl text-ink">{approval.action}</h2>
           <p className="m-0 text-sm text-muted">{approval.summary}</p>
         </div>
@@ -382,7 +402,7 @@ function ApprovalDetail({
           title={approval.action}
           trigger={
             <button
-              className="inline-flex w-fit cursor-pointer items-center font-mono text-xs text-muted transition-colors duration-200 hover:text-signal"
+              className="inline-flex min-h-6 w-fit cursor-pointer items-center font-mono text-xs text-muted transition-colors duration-200 hover:text-signal"
               type="button"
             >
               {strings.approvals.sections.inspect}
@@ -394,21 +414,19 @@ function ApprovalDetail({
   );
 }
 
-function sourceLabel(source: "loading" | "api" | "unavailable"): string {
-  if (source === "api") {
-    return "API approval queue";
-  }
-
-  return source === "loading" ? "Loading approval API" : "Approval API unavailable";
-}
-
 export function ApprovalInbox() {
+  const { labelDomain } = useTenantVocabulary();
+  const { triggerRefresh } = useConsole();
   const identity = useAxisQuery<IdentitySessionReadModel>("/identity/session", {
     parse: parseIdentitySessionReadModel,
   });
   const tenantScope = resolveConsoleTenantScope(identity.data);
   const tenantId = tenantScope.tenantId;
-  const { data: inbox, source } = useAxisQuery<ManufacturingApprovalInbox>(
+  const {
+    data: inbox,
+    errorRequestId: inboxErrorRequestId,
+    source,
+  } = useAxisQuery<ManufacturingApprovalInbox>(
     buildTenantScopedPath(APPROVALS_ENDPOINT, tenantId ?? DEMO_TENANT_ID),
     {
       enabled: identity.source === "api" && tenantId !== null,
@@ -416,14 +434,45 @@ export function ApprovalInbox() {
       parse: parseManufacturingApprovalInbox,
     },
   );
-  const [selectedApprovalId, setSelectedApprovalId] = useState("");
+  const actionRunsQuery = useAxisQuery<ActionRunList>(
+    buildTenantScopedPath(ACTION_RUNS_ENDPOINT, tenantId ?? DEMO_TENANT_ID),
+    {
+      enabled: identity.source === "api" && tenantId !== null,
+      expectedTenantId: tenantId ?? undefined,
+      parse: parseActionRunList,
+    },
+  );
+  const [urlState, setUrlState] = useConsoleUrlState(approvalUrlSchema);
+  const actionRunAudit = useAxisQuery<ManufacturingAuditExplorer>(
+    buildTenantScopedPath(
+      AUDIT_EVENTS_ENDPOINT,
+      tenantId ?? DEMO_TENANT_ID,
+      { limit: 100 },
+    ),
+    {
+      enabled: identity.source === "api" && tenantId !== null && Boolean(urlState.actionRunId),
+      expectedTenantId: tenantId ?? undefined,
+      parse: parseManufacturingAuditExplorer,
+    },
+  );
   const { decisions, errors, setDecision, setError } = useApprovalDecisionState();
+
+  function handleDecisionChange(
+    approvalId: string,
+    record: ApprovalDecisionRecord | null,
+  ) {
+    setDecision(approvalId, record);
+    if (record?.storage === "persisted") {
+      triggerRefresh();
+    }
+  }
 
   if (identity.source === "unavailable") {
     return (
       <ErrorPanel
         detail="The approval queue is not loaded until the current actor and tenant are verified."
         endpoint="/identity/session"
+        reference={identity.errorRequestId ?? undefined}
         title="Identity API unavailable"
       />
     );
@@ -456,24 +505,59 @@ export function ApprovalInbox() {
       <ErrorPanel
         detail={strings.approvals.error.detail}
         endpoint={APPROVALS_ENDPOINT}
+        reference={inboxErrorRequestId ?? undefined}
         title={strings.approvals.error.title}
       />
     );
   }
 
-  if (inbox.approvals.length === 0) {
+  const directActionRunApproval = urlState.actionRunId
+    ? inbox.approvals.find((approval) => approval.action_run_id === urlState.actionRunId)
+    : undefined;
+  const linkedApprovalId = urlState.actionRunId
+    ? actionRunAudit.data?.events.find(
+        (event) => event.evidence_refs.includes(urlState.actionRunId),
+      )?.payload_preview.approval_id
+    : undefined;
+  const selectedApproval = urlState.actionRunId
+    ? directActionRunApproval
+      ?? inbox.approvals.find((approval) => approval.approval_id === linkedApprovalId)
+    : urlState.approvalId
+      ? inbox.approvals.find((approval) => approval.approval_id === urlState.approvalId)
+      : inbox.approvals[0];
+
+  if (
+    urlState.actionRunId
+    && !directActionRunApproval
+    && actionRunAudit.source === "loading"
+  ) {
+    return <LoadingPanel layout="detail" />;
+  }
+
+  if (
+    urlState.actionRunId
+    && !directActionRunApproval
+    && actionRunAudit.source === "unavailable"
+  ) {
     return (
-      <EmptyPanel
-        detail={strings.approvals.empty.detail}
-        icon={Inbox}
-        title={strings.approvals.empty.title}
+      <ErrorPanel
+        detail={strings.approvals.lookupError.detail}
+        endpoint={AUDIT_EVENTS_ENDPOINT}
+        reference={actionRunAudit.errorRequestId ?? undefined}
+        title={strings.approvals.lookupError.title}
       />
     );
   }
 
-  // `findApprovalById` falls back to the first approval, so a stale or empty
-  // selection always resolves to a real record.
-  const selectedApproval = findApprovalById(inbox, selectedApprovalId);
+  if (!selectedApproval && (urlState.actionRunId || urlState.approvalId)) {
+    return (
+      <EmptyPanel
+        detail={strings.approvals.requestedMissing.detail}
+        icon={Inbox}
+        title={strings.approvals.requestedMissing.title}
+      />
+    );
+  }
   const decidedCount = inbox.approvals.filter(
     (approval) => decisions[approval.approval_id],
   ).length;
@@ -510,49 +594,68 @@ export function ApprovalInbox() {
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2"
       >
         <p className="m-0 min-w-0 text-sm break-words text-muted">
-          {inbox.plant_name} / {inbox.scenario} / {inbox.tenant_id}
+          {formatContextPath(inbox.plant_name, inbox.scenario, inbox.tenant_id)}
         </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="status-pill signal-ready">
-            <RadioTower size={15} />
-            {sourceLabel(source)}
-          </span>
+          <SourcePill
+            state={deriveSourceState(source, Boolean(inbox), inbox.provenance)}
+            subject="approval queue"
+          />
           <span className={`status-pill ${platformStatusClass(inbox.queue_status)}`}>
             <ShieldAlert size={15} />
-            {pendingCount} pending
+            {formatNumber(pendingCount)} pending
           </span>
           <span className="font-mono text-xs text-muted">
-            {formatOverviewTimestamp(inbox.as_of)}
+            {formatTimestamp(inbox.as_of)}
           </span>
         </div>
       </div>
 
       <MetricStrip metrics={metrics} />
 
-      <MasterDetail
-        detail={
-          <ApprovalDetail
-            actor={
-              identity.data?.actor_id
-                ? { actorId: identity.data.actor_id, scopes: identity.data.scopes }
-                : undefined
-            }
-            approval={selectedApproval}
-            decision={decisions[selectedApproval.approval_id]}
-            error={errors[selectedApproval.approval_id]}
-            onDecisionChange={setDecision}
-            onErrorChange={setError}
-            tenantId={inbox.tenant_id}
-          />
-        }
-        list={
-          <QueueList
-            decisions={decisions}
-            inbox={inbox}
-            onSelect={setSelectedApprovalId}
-            selectedApproval={selectedApproval}
-          />
-        }
+      {selectedApproval ? (
+        <MasterDetail
+          detail={
+            <ApprovalDetail
+              actor={
+                identity.data?.actor_id
+                  ? { actorId: identity.data.actor_id, scopes: identity.data.scopes }
+                  : undefined
+              }
+              approval={selectedApproval}
+              decision={decisions[selectedApproval.approval_id]}
+              domainLabel={labelDomain(selectedApproval.domain)}
+              error={errors[selectedApproval.approval_id]}
+              onDecisionChange={handleDecisionChange}
+              onErrorChange={setError}
+              tenantId={inbox.tenant_id}
+            />
+          }
+          list={
+            <QueueList
+              decisions={decisions}
+              inbox={inbox}
+              labelDomain={labelDomain}
+              onSelect={(approvalId) => setUrlState({
+                actionRunId: "",
+                approvalId,
+              })}
+              selectedApproval={selectedApproval}
+            />
+          }
+        />
+      ) : (
+        <EmptyPanel
+          detail={strings.approvals.empty.detail}
+          icon={Inbox}
+          title={strings.approvals.empty.title}
+        />
+      )}
+
+      <ActionFollowThrough
+        actionRuns={actionRunsQuery.data}
+        errorRequestId={actionRunsQuery.errorRequestId}
+        source={actionRunsQuery.source}
       />
 
       <Card className="grid content-start gap-3">

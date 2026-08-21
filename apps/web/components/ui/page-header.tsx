@@ -27,9 +27,12 @@ export function PageHeader({ eyebrow, title, description, status, actions, meta 
   return (
     <header className="flex min-w-0 flex-wrap items-start justify-between gap-4">
       <div className="min-w-0">
-        <Eyebrow>{eyebrow}</Eyebrow>
+        <Eyebrow accent>{eyebrow}</Eyebrow>
         <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-3">
-          <h1 className="font-display m-0 text-[26px] text-ink">
+          {/* 20px, not 26px: the page title sits above a description, a meta
+              row and status pills — at display size the header became a hero
+              band on every route. */}
+          <h1 className="font-display m-0 text-xl font-[560] text-ink">
             {rest ? (
               <>
                 <span className="text-signal">{lead} </span>

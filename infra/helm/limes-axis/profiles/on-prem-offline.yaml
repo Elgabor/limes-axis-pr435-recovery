@@ -28,6 +28,7 @@ api:
     limes-axis.io/profile: on-prem-offline
   env:
     AXIS_ENV: production
+    AXIS_TENANT_ADMISSION_MODE: registered_only
     AXIS_DEPLOYMENT_TENANCY_MODE: on_prem
     AXIS_DEPLOYMENT_CUSTOMER_ISOLATION_CONFIGURED: "false"
     AXIS_DEPLOYMENT_DATA_RESIDENCY_CONFIGURED: "false"

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/sheet";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import { formatNodeType } from "@/lib/ontology-demo";
+import { buildOntologyEntityRoute } from "@/lib/ontology-routes";
 import { strings } from "@/lib/strings";
 
 type OntologyEntitySheetProps = {
@@ -24,6 +25,8 @@ type OntologyEntitySheetProps = {
   onOpenChange: (open: boolean) => void;
   /** Swap the sheet to a peer entity without navigating away. */
   onNavigateToNode?: (nodeId: string) => void;
+  /** API-verified tenant inherited from the ontology explorer. */
+  tenantId: string;
 };
 
 /**
@@ -35,8 +38,9 @@ export function OntologyEntitySheet({
   nodeId,
   onOpenChange,
   onNavigateToNode,
+  tenantId,
 }: OntologyEntitySheetProps) {
-  const { detail, source } = useOntologyEntity(nodeId);
+  const { detail, endpoint, errorRequestId, source } = useOntologyEntity(nodeId, tenantId);
 
   if (!nodeId) {
     return null;
@@ -57,7 +61,7 @@ export function OntologyEntitySheet({
             {detail ? <PlatformStatusPill status={detail.node.status} /> : null}
             <Link
               className="inline-flex items-center gap-1.5 text-sm font-medium text-signal hover:underline"
-              href={`/ontology/${nodeId}`}
+              href={buildOntologyEntityRoute(nodeId)}
             >
               <ExternalLink aria-hidden="true" size={14} />
               {strings.ontology.sheet.openFullPage}
@@ -70,7 +74,8 @@ export function OntologyEntitySheet({
         ) : source === "unavailable" && !detail ? (
           <ErrorPanel
             detail={strings.ontology.sheet.error.detail}
-            endpoint={`/demo/manufacturing/ontology/entities/${nodeId}`}
+            endpoint={endpoint ?? undefined}
+            reference={errorRequestId ?? undefined}
             title={strings.ontology.sheet.error.title}
           />
         ) : source === "missing" || !detail ? (

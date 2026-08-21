@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import type { ReactNode } from "react";
@@ -10,8 +10,27 @@ import { ThemeProvider } from "@/providers/theme-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Axis Console",
+  /*
+   * Operators keep Approvals, Audit and a policy detail open side by side, so
+   * every tab needs its own name. Pages supply the `%s`.
+   */
+  title: {
+    default: "Axis Console",
+    template: "%s · Axis Console",
+  },
   description: "The sovereign AI control plane for European operations.",
+  // A tenant governance console must never be indexed — staging deploys are
+  // how that leaks.
+  robots: { index: false, follow: false },
+};
+
+export const viewport: Viewport = {
+  // Matches --cloud / --bg in globals.css so mobile browser chrome tracks the
+  // console's own theme.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f7f8fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#04122e" },
+  ],
 };
 
 /**

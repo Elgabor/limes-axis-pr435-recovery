@@ -10,18 +10,21 @@ import {
   reactivateTenant,
   suspendTenant,
   tenantStatusLabel,
+  tenantWriteOperatorError,
   type TenantRecord,
 } from "@/lib/platform-tenants";
+import { toAxisOperatorError, type AxisOperatorError } from "@/lib/axis-api";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { InlineOperatorError } from "@/components/ui/inline-operator-error";
 
 type ActionState =
   | { phase: "idle" }
   | { phase: "saving" }
   | { phase: "done"; message: string }
-  | { phase: "failed"; message: string };
+  | { phase: "failed"; error: AxisOperatorError };
 
 function forbiddenMessage(message: string, requiredPermission?: string): string {
   return requiredPermission
@@ -45,7 +48,10 @@ export function TenantLifecycleActions({ tenant }: { tenant: TenantRecord }) {
 
     const trimmedReason = reason.trim();
     if (trimmedReason.length === 0) {
-      setAction({ phase: "failed", message: "A suspension reason is required." });
+      setAction({
+        phase: "failed",
+        error: toAxisOperatorError(null, "A suspension reason is required."),
+      });
       return;
     }
 
@@ -71,27 +77,39 @@ export function TenantLifecycleActions({ tenant }: { tenant: TenantRecord }) {
       if (result.kind === "forbidden") {
         setAction({
           phase: "failed",
-          message: forbiddenMessage(result.message, result.requiredPermission),
+          error: tenantWriteOperatorError(
+            result,
+            forbiddenMessage(result.message, result.requiredPermission),
+          ),
         });
         return;
       }
 
       if (result.kind === "conflict") {
-        setAction({ phase: "failed", message: `${result.message} (${result.reason})` });
+        setAction({
+          phase: "failed",
+          error: tenantWriteOperatorError(result, `${result.message} (${result.reason})`),
+        });
         return;
       }
 
       if (result.kind === "notFound") {
-        setAction({ phase: "failed", message: result.message });
+        setAction({ phase: "failed", error: tenantWriteOperatorError(result) });
         return;
       }
 
       setAction({
         phase: "failed",
-        message: result.kind === "failed" ? result.message : "Suspend failed.",
+        error: tenantWriteOperatorError(
+          result,
+          result.kind === "failed" ? result.message : "Suspend failed.",
+        ),
       });
-    } catch {
-      setAction({ phase: "failed", message: "Tenant lifecycle API is unavailable." });
+    } catch (caught) {
+      setAction({
+        phase: "failed",
+        error: toAxisOperatorError(caught, "Tenant lifecycle API is unavailable."),
+      });
     }
   }
 
@@ -117,32 +135,44 @@ export function TenantLifecycleActions({ tenant }: { tenant: TenantRecord }) {
       if (result.kind === "forbidden") {
         setAction({
           phase: "failed",
-          message: forbiddenMessage(result.message, result.requiredPermission),
+          error: tenantWriteOperatorError(
+            result,
+            forbiddenMessage(result.message, result.requiredPermission),
+          ),
         });
         return;
       }
 
       if (result.kind === "conflict") {
-        setAction({ phase: "failed", message: `${result.message} (${result.reason})` });
+        setAction({
+          phase: "failed",
+          error: tenantWriteOperatorError(result, `${result.message} (${result.reason})`),
+        });
         return;
       }
 
       if (result.kind === "notFound") {
-        setAction({ phase: "failed", message: result.message });
+        setAction({ phase: "failed", error: tenantWriteOperatorError(result) });
         return;
       }
 
       setAction({
         phase: "failed",
-        message: result.kind === "failed" ? result.message : "Reactivate failed.",
+        error: tenantWriteOperatorError(
+          result,
+          result.kind === "failed" ? result.message : "Reactivate failed.",
+        ),
       });
-    } catch {
-      setAction({ phase: "failed", message: "Tenant lifecycle API is unavailable." });
+    } catch (caught) {
+      setAction({
+        phase: "failed",
+        error: toAxisOperatorError(caught, "Tenant lifecycle API is unavailable."),
+      });
     }
   }
 
   return (
-    <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+    <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-line/60 py-3 first:border-t-0 dark:border-white/10">
         <div>
           <p className="eyebrow m-0">Lifecycle Actions</p>
@@ -216,9 +246,7 @@ export function TenantLifecycleActions({ tenant }: { tenant: TenantRecord }) {
       )}
 
       {action.phase === "failed" ? (
-        <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-danger break-words" role="alert">
-          Lifecycle action failed: {action.message}
-        </p>
+        <InlineOperatorError error={action.error} prefix="Lifecycle action failed" />
       ) : null}
       {action.phase === "done" ? (
         <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words" role="status">

@@ -48,13 +48,123 @@ jobs:
         run: pnpm --filter @limes-axis/web test
 
       - name: Build
+        env:
+          NEXT_PUBLIC_AXIS_API_BASE_URL: http://127.0.0.1:65534
         run: pnpm --filter @limes-axis/web build
 
       - name: Install Playwright browsers
         run: pnpm --filter @limes-axis/web exec playwright install --with-deps chromium
 
       - name: Smoke test
-        run: pnpm --filter @limes-axis/web test:e2e
+        run: pnpm --filter @limes-axis/web test:e2e:smoke
+
+  # The `web` job intentionally selects the API-unavailable smoke spec. This job
+  # runs the four live files against a real API and Postgres. Read-only scenarios
+  # stay parallel; shared-state writes run once in Chromium with one worker.
+  integration:
+    name: Integration (live API)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: axis
+          POSTGRES_PASSWORD: axis
+          POSTGRES_DB: axis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U axis"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      AXIS_ENV: development
+      AXIS_POSTGRES_DSN: postgresql+psycopg://axis:axis@localhost:5432/axis
+      AXIS_OIDC_AUTH_REQUIRED: "false"
+      AXIS_API_RATE_LIMIT_ENABLED: "false"
+      AXIS_WORKFLOW_SIGNALS_ENABLED: "false"
+      AXIS_API_BASE_URL: http://127.0.0.1:8000
+      AXIS_PUBLIC_BASE_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_AXIS_API_BASE_URL: http://127.0.0.1:8000
+      AXIS_E2E_LIVE_API: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install API dependencies
+        working-directory: services/api
+        run: uv sync --locked
+
+      # Migrations are Postgres-only (JSONB columns), which is why this job cannot
+      # fall back to SQLite the way local development can.
+      - name: Migrate database
+        working-directory: services/api
+        run: uv run alembic upgrade head
+
+      - name: Start API
+        working-directory: services/api
+        run: |
+          uv run uvicorn axis_api.main:create_app --factory \
+            --host 127.0.0.1 --port 8000 > "${RUNNER_TEMP}/api.log" 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null 2>&1; then
+              echo "API ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "API failed to become ready"; cat "${RUNNER_TEMP}/api.log"; exit 1
+
+      # tenant_id and requested_by go in the body, and the actor needs the
+      # demo:scenario:bootstrap scope — a query parameter with an empty body
+      # answers 422, and a body without the scope answers 403.
+      - name: Seed demo scenario
+        run: |
+          curl -fsS -X POST "http://127.0.0.1:8000/demo/manufacturing/bootstrap" \
+            -H "content-type: application/json" \
+            -d '{"tenant_id":"tenant_demo_manufacturing","requested_by":"ci","actor_scopes":["demo:scenario:bootstrap"]}' \
+            > /dev/null
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @limes-axis/web exec playwright install --with-deps chromium
+
+      - name: Build live console
+        run: pnpm --filter @limes-axis/web build
+
+      - name: Live read-only overview and story specs
+        run: pnpm --filter @limes-axis/web test:e2e:live:read
+
+      - name: Live state-mutating specs (Chromium, serial)
+        run: pnpm --filter @limes-axis/web test:e2e:live:stateful
+
+      - name: API log on failure
+        if: failure()
+        run: cat "${RUNNER_TEMP}/api.log" || true
 
   python:
     name: Python

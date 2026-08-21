@@ -1,6 +1,7 @@
 import type { AuditLedgerEvent } from "./audit-demo";
-import type { PlatformStatus } from "./platform-overview";
+import type { ManufacturingProvenance, PlatformStatus } from "./platform-overview";
 import type { WorkflowTimelineEvent } from "./workflow-demo";
+import { OPERATIONS_API_PREFIX } from "./tenant-scope";
 
 export type PolicySimulationResult = {
   policy_id: string;
@@ -89,8 +90,9 @@ export type ReplayRetentionWindow = {
 
 export type ManufacturingReplaySimulation = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   simulation_status: PlatformStatus;
   metrics: {
@@ -106,7 +108,7 @@ export type ManufacturingReplaySimulation = {
 };
 
 /**
- * Parameters of GET /demo/manufacturing/simulation/replay, verified against
+ * Parameters of GET /operations/simulation/replay, verified against
  * `ReplaySimulationQuery` in services/api/src/axis_api/replay_simulation.py.
  */
 export type ReplayRunParams = {
@@ -147,7 +149,7 @@ export function buildReplaySimulationPath(params: ReplayRunParams): string {
   if (connector) {
     query.set("connector_id", connector);
   }
-  return `/demo/manufacturing/simulation/replay?${query.toString()}`;
+  return `${OPERATIONS_API_PREFIX}/simulation/replay?${query.toString()}`;
 }
 
 export function countArtifactPolicyDecisions(artifacts: ReplayArtifact[]): {

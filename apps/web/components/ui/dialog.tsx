@@ -39,14 +39,22 @@ export function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4",
-          "rounded-2xl border border-line bg-surface p-6 shadow-[0_24px_60px_rgb(4_18_46/0.35)]",
+          "fixed top-1/2 left-1/2 z-50 grid w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2",
+          // Without a height cap, tall content (the connector wizard's CSV step
+          // is a select + file field + issue list + a 5-row preview table) runs
+          // off both edges of a phone viewport and takes the footer buttons —
+          // Next/Register — out of reach entirely. The body scrolls rather than
+          // the whole panel, so the close button stays pinned.
+          "max-h-[calc(100dvh-2rem)] grid-rows-[minmax(0,1fr)]",
+          "rounded-2xl border border-line bg-surface p-6 shadow-[var(--shadow-modal)]",
           "dark:border-white/10 dark:shadow-[0_24px_60px_rgb(0_0_0/0.5)]",
           className,
         )}
         {...props}
       >
-        {children}
+        <div className="grid min-h-0 content-start gap-4 overflow-y-auto overscroll-contain">
+          {children}
+        </div>
         {/* `absolute!`: .icon-button sets position: relative and would otherwise win. */}
         <DialogPrimitive.Close aria-label="Close" className="icon-button absolute! top-3 right-3">
           <X aria-hidden="true" size={16} />

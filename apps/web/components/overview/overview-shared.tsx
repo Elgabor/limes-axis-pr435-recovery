@@ -1,10 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, CircleAlert, CircleCheck, Clock3 } from "lucide-react";
 
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { cn } from "@/lib/cn";
-import type { PlatformStatus } from "@/lib/platform-overview";
+import { platformStatusLabel, type PlatformStatus } from "@/lib/platform-overview";
 import type { AxisQuerySource } from "@/lib/use-axis-query";
 
 /*
@@ -16,8 +16,19 @@ import type { AxisQuerySource } from "@/lib/use-axis-query";
 /** The subset of a `useAxisQuery` result the overview sections consume. */
 export type OverviewQuery<T> = {
   data: T | null;
+  errorRequestId?: string | null;
   source: AxisQuerySource;
 };
+
+/** Combine request ids when a section depends on more than one failed query. */
+export function overviewErrorReference(
+  ...queries: Array<OverviewQuery<unknown>>
+): string | undefined {
+  const requestIds = Array.from(
+    new Set(queries.flatMap((query) => query.errorRequestId ? [query.errorRequestId] : [])),
+  );
+  return requestIds.length > 0 ? requestIds.join(", ") : undefined;
+}
 
 export function normalizeLabel(value: string): string {
   return value
@@ -35,15 +46,23 @@ export function shortTime(value: string): string {
 }
 
 export function StatusDot({ status }: { status: PlatformStatus }) {
+  const Icon = status === "ready"
+    ? CircleCheck
+    : status === "watch"
+      ? Clock3
+      : CircleAlert;
+
   return (
-    <span
-      aria-hidden="true"
+    <Icon
+      aria-label={`Status: ${platformStatusLabel(status)}`}
       className={cn(
-        "inline-block size-2 shrink-0 rounded-full",
-        status === "ready" && "bg-positive",
-        status === "watch" && "bg-warning",
-        status === "action_required" && "bg-danger",
+        "size-3.5 shrink-0",
+        status === "ready" && "text-positive",
+        status === "watch" && "text-warning",
+        status === "action_required" && "text-danger",
       )}
+      data-status={status}
+      role="img"
     />
   );
 }
@@ -51,7 +70,7 @@ export function StatusDot({ status }: { status: PlatformStatus }) {
 export function PanelLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link
-      className="mt-auto inline-flex items-center gap-1.5 pt-1 font-mono text-xs tracking-[0.12em] text-signal uppercase hover:underline"
+      className="mt-auto inline-flex min-h-6 items-center gap-1.5 pt-1 font-mono text-xs tracking-[0.12em] text-signal uppercase hover:underline"
       href={href}
     >
       {children}

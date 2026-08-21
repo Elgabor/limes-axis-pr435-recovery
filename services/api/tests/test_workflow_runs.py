@@ -12,6 +12,7 @@ from axis_api.main import create_app
 from axis_api.models import Base
 from axis_api.persistence import (
     AxisPersistenceRepository,
+    TenantCreate,
     WorkflowRunCreate,
     WorkflowTimelineEventCreate,
 )
@@ -27,6 +28,15 @@ def session_factory() -> sessionmaker[Session]:
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with session_scope(factory) as session:
+        AxisPersistenceRepository(session).create_tenant(
+            TenantCreate(
+                tenant_id="tenant_demo_manufacturing",
+                display_name="Ravenna Works",
+                description="Plant Operations Cockpit",
+                created_by="test",
+            )
+        )
     yield factory
     engine.dispose()
 
@@ -246,6 +256,7 @@ def test_persisted_workflow_runs_endpoint_returns_tenant_scoped_history(
     assert response.status_code == 200
     body = response.json()
     assert body["tenant_id"] == "tenant_demo_manufacturing"
+    assert body["provenance"] == "live"
     assert body["metrics"][0]["value"] == "2"
     assert body["workflow_runs"][0]["workflow_id"] == "wf_supplier_delay_review"
     assert body["workflow_runs"][0]["timeline"][1]["event"] == "workflow.signal.awaiting"
@@ -259,10 +270,14 @@ def test_persisted_workflow_runs_endpoint_returns_empty_console_for_empty_query(
     app.state.session_factory = session_factory
     client = TestClient(app)
 
-    response = client.get("/demo/manufacturing/workflows/runs")
+    response = client.get(
+        "/demo/manufacturing/workflows/runs",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
 
     assert response.status_code == 200
     body = response.json()
+    assert body["provenance"] == "empty"
     assert body["workflow_runs"] == []
     assert body["runtime_status"] == "watch"
     assert body["metrics"][0]["value"] == "0"

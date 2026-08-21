@@ -6,10 +6,16 @@ from pydantic import BaseModel, Field
 
 from axis_api.audit import AuditEventCreate
 from axis_api.demo import OverviewMetric, OverviewStatus
+from axis_api.manufacturing_metadata import (
+    ManufacturingResponseProvenance,
+    get_manufacturing_tenant_metadata,
+    operational_provenance,
+)
 from axis_api.models import (
     ManufacturingDailyBrief,
     ManufacturingOperationRecord,
     ManufacturingRiskScenario,
+    PlatformNotificationAcknowledgement,
     utc_now,
 )
 from axis_api.permissions import PermissionDecision, PermissionRequest, evaluate_permission
@@ -29,6 +35,11 @@ MAINTENANCE_RISK_REQUIRED_SCOPES = [
 ]
 SUPPLIER_DELAY_REQUIRED_SCOPES = ["supply:read", "workflows:read", "audit:read"]
 NOTIFICATION_ACKNOWLEDGEMENT_REQUIRED_SCOPES = ["notifications:acknowledge"]
+_NOTIFICATION_ACKNOWLEDGEMENT_STATE_ORDER = {
+    "unread": 0,
+    "read": 1,
+    "acknowledged": 2,
+}
 
 
 class DailyPlantBriefPermissionDenied(PermissionError):
@@ -107,6 +118,22 @@ class SupplierDelayScenarioIdempotencyConflict(ValueError):
         self.scenario_id = scenario_id
 
 
+class ManufacturingNotificationAcknowledgementConflict(ValueError):
+    def __init__(
+        self,
+        notification_id: str,
+        *,
+        reason: str,
+        current_state: str,
+        requested_state: str,
+    ) -> None:
+        super().__init__("Notification acknowledgement conflicts with persisted state")
+        self.notification_id = notification_id
+        self.reason = reason
+        self.current_state = current_state
+        self.requested_state = requested_state
+
+
 class ManufacturingNotificationAcknowledgementPermissionDenied(PermissionError):
     def __init__(self, decision: PermissionDecision) -> None:
         super().__init__(decision.reason)
@@ -136,8 +163,9 @@ class ManufacturingOperationRecordView(BaseModel):
 
 class ManufacturingOperationsDataset(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     as_of: str = Field(min_length=1)
     metrics: list[OverviewMetric]
     domains: list[str]
@@ -220,8 +248,9 @@ class ManufacturingAuditEventSummary(BaseModel):
 
 class ManufacturingOperationsSnapshot(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     as_of: str = Field(min_length=1)
     metrics: list[OverviewMetric]
     domain_snapshots: list[ManufacturingDomainSnapshot]
@@ -251,8 +280,8 @@ class ManufacturingDemoReadinessCheck(BaseModel):
 
 class ManufacturingDemoReadinessReport(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
     as_of: str = Field(min_length=1)
     readiness_status: OverviewStatus
     summary: str = Field(min_length=1)
@@ -291,8 +320,9 @@ class ManufacturingPlatformNotification(BaseModel):
 
 class ManufacturingNotificationCenter(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     as_of: str = Field(min_length=1)
     unread_count: int = Field(ge=0)
     action_required_count: int = Field(ge=0)
@@ -531,6 +561,7 @@ def query_manufacturing_operations_dataset(
     repository: AxisPersistenceRepository,
     query: ManufacturingOperationQuery,
 ) -> ManufacturingOperationsDataset:
+    tenant_metadata = get_manufacturing_tenant_metadata(repository, query.tenant_id)
     records = [
         _operation_record_to_public(record)
         for record in repository.list_manufacturing_operation_records(
@@ -542,11 +573,23 @@ def query_manufacturing_operations_dataset(
             limit=query.limit,
         )
     ]
-    as_of = records[0].occurred_at if records else "2026-06-22T00:00:00+00:00"
+    has_persisted_records = bool(records)
+    if not has_persisted_records and any(
+        value is not None
+        for value in (query.domain, query.status, query.record_type, query.source_system)
+    ):
+        has_persisted_records = bool(
+            repository.list_manufacturing_operation_records(
+                tenant_id=query.tenant_id,
+                limit=1,
+            )
+        )
+    as_of = records[0].occurred_at if records else tenant_metadata.as_of
     return ManufacturingOperationsDataset(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(has_persisted_records),
         as_of=as_of,
         metrics=_metrics(records),
         domains=sorted({record.domain for record in records}),
@@ -755,6 +798,7 @@ def build_manufacturing_operations_snapshot(
     repository: AxisPersistenceRepository,
     query: ManufacturingOperationsSnapshotQuery,
 ) -> ManufacturingOperationsSnapshot:
+    tenant_metadata = get_manufacturing_tenant_metadata(repository, query.tenant_id)
     records = [
         _operation_record_to_public(record)
         for record in repository.list_manufacturing_operation_records(
@@ -787,12 +831,16 @@ def build_manufacturing_operations_snapshot(
         *[_isoformat_utc(workflow.started_at) for workflow in workflows],
         *[_isoformat_utc(event.created_at) for event in audit_events],
     ]
-    as_of = max(as_of_candidates) if as_of_candidates else "2026-06-22T00:00:00+00:00"
+    as_of = max(as_of_candidates) if as_of_candidates else tenant_metadata.as_of
+    has_persisted_records = any(
+        (records, workflows, approvals, briefs, scenarios, audit_events)
+    )
 
     return ManufacturingOperationsSnapshot(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(has_persisted_records),
         as_of=as_of,
         metrics=_snapshot_metrics(
             records=records,
@@ -1047,6 +1095,7 @@ def build_manufacturing_notification_center(
         tenant_id=snapshot.tenant_id,
         plant_name=snapshot.plant_name,
         scenario=snapshot.scenario,
+        provenance=snapshot.provenance,
         as_of=snapshot.as_of,
         unread_count=len(notifications) - _acknowledged_notification_count(notifications),
         action_required_count=sum(
@@ -1119,6 +1168,23 @@ def _notification_acknowledgement_payload(
     }
 
 
+def _notification_acknowledgement_result(
+    acknowledgement: PlatformNotificationAcknowledgement,
+) -> ManufacturingNotificationAcknowledgementResult:
+    return ManufacturingNotificationAcknowledgementResult(
+        tenant_id=acknowledgement.tenant_id,
+        notification_id=acknowledgement.notification_id,
+        actor_id=acknowledgement.actor_id,
+        state=acknowledgement.state,
+        reason=acknowledgement.reason,
+        audit_event_id=acknowledgement.audit_event_id,
+        audit_event_type=acknowledgement.audit_event_type,
+        read_state=acknowledgement.state,
+        acknowledged_at=_isoformat_utc(acknowledgement.acknowledged_at),
+        generation_boundary="persisted_platform_notification_acknowledgement",
+    )
+
+
 def record_manufacturing_notification_acknowledgement(
     repository: AxisPersistenceRepository,
     notification_id: str,
@@ -1146,6 +1212,42 @@ def record_manufacturing_notification_acknowledgement(
     decision = _notification_acknowledgement_permission(request, notification)
     if not decision.allowed:
         raise ManufacturingNotificationAcknowledgementPermissionDenied(decision)
+
+    repository.acquire_platform_notification_acknowledgement_lock(
+        tenant_id=request.tenant_id,
+        notification_id=notification.notification_id,
+        actor_id=request.actor_id,
+    )
+    existing_acknowledgement = repository.get_platform_notification_acknowledgement(
+        tenant_id=request.tenant_id,
+        notification_id=notification.notification_id,
+        actor_id=request.actor_id,
+    )
+    if existing_acknowledgement is not None:
+        if existing_acknowledgement.state == request.state:
+            if existing_acknowledgement.reason == request.reason:
+                return _notification_acknowledgement_result(existing_acknowledgement)
+            raise ManufacturingNotificationAcknowledgementConflict(
+                notification.notification_id,
+                reason="acknowledgement_replay_payload_conflict",
+                current_state=existing_acknowledgement.state,
+                requested_state=request.state,
+            )
+        current_state_order = _NOTIFICATION_ACKNOWLEDGEMENT_STATE_ORDER.get(
+            existing_acknowledgement.state
+        )
+        requested_state_order = _NOTIFICATION_ACKNOWLEDGEMENT_STATE_ORDER[request.state]
+        if current_state_order is None or requested_state_order < current_state_order:
+            raise ManufacturingNotificationAcknowledgementConflict(
+                notification.notification_id,
+                reason=(
+                    "acknowledgement_current_state_invalid"
+                    if current_state_order is None
+                    else "acknowledgement_state_regression"
+                ),
+                current_state=existing_acknowledgement.state,
+                requested_state=request.state,
+            )
 
     event_type = _notification_acknowledgement_event_type(request.state)
     acknowledged_at = utc_now()
@@ -1176,18 +1278,7 @@ def record_manufacturing_notification_acknowledgement(
         )
     )
 
-    return ManufacturingNotificationAcknowledgementResult(
-        tenant_id=acknowledgement.tenant_id,
-        notification_id=acknowledgement.notification_id,
-        actor_id=acknowledgement.actor_id,
-        state=acknowledgement.state,
-        reason=acknowledgement.reason,
-        audit_event_id=acknowledgement.audit_event_id,
-        audit_event_type=acknowledgement.audit_event_type,
-        read_state=acknowledgement.state,
-        acknowledged_at=_isoformat_utc(acknowledgement.acknowledged_at),
-        generation_boundary="persisted_platform_notification_acknowledgement",
-    )
+    return _notification_acknowledgement_result(acknowledgement)
 
 
 def build_manufacturing_demo_readiness_report(

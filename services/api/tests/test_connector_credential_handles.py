@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from runpy import run_path
 
@@ -135,6 +135,8 @@ def seed_active_connector_manifest(
 
 
 def seed_connector_credential_handles(repository: AxisPersistenceRepository) -> None:
+    last_rotated_at = datetime.now(UTC) - timedelta(days=7)
+    next_rotation_due_at = last_rotated_at + timedelta(days=30)
     repository.create_connector_credential_handle(
         ConnectorCredentialHandleCreate(
             tenant_id="tenant_demo_manufacturing",
@@ -146,8 +148,8 @@ def seed_connector_credential_handles(repository: AxisPersistenceRepository) -> 
             secret_ref="vault://axis/demo/connectors/file-csv-readonly",
             purpose="preview_import_readonly",
             rotation_interval_days=30,
-            last_rotated_at=datetime(2026, 6, 1, tzinfo=UTC),
-            next_rotation_due_at=datetime(2026, 7, 1, tzinfo=UTC),
+            last_rotated_at=last_rotated_at,
+            next_rotation_due_at=next_rotation_due_at,
             created_by="plant-operations-owner-role",
             labels={"environment": "demo"},
             notes=["Metadata-only handle; no raw credential value is stored."],
@@ -158,7 +160,7 @@ def seed_connector_credential_handles(repository: AxisPersistenceRepository) -> 
             tenant_id="tenant_demo_manufacturing",
             handle_id="cred_file_csv_readonly",
             rotated_by="security-operations-role",
-            rotated_at=datetime(2026, 6, 22, tzinfo=UTC),
+            rotated_at=last_rotated_at,
             evidence_ref="change-window-2026-06-22",
             status="rotated",
             notes=["Reference rotated in external vault; Axis stored metadata only."],
@@ -175,8 +177,8 @@ def seed_connector_credential_handles(repository: AxisPersistenceRepository) -> 
             secret_ref="vault://axis/demo/connectors/other",
             purpose="preview_import_readonly",
             rotation_interval_days=30,
-            last_rotated_at=datetime(2026, 6, 1, tzinfo=UTC),
-            next_rotation_due_at=datetime(2026, 7, 1, tzinfo=UTC),
+            last_rotated_at=last_rotated_at,
+            next_rotation_due_at=next_rotation_due_at,
             created_by="other-owner-role",
         )
     )

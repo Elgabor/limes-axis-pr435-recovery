@@ -15,6 +15,13 @@ const toneClasses: Record<NonNullable<Metric["tone"]>, string> = {
   action: "text-danger",
 };
 
+/** Tone must never be conveyed by the dot's color alone. */
+const toneText: Record<NonNullable<Metric["tone"]>, string> = {
+  ready: "Ready:",
+  watch: "Needs watching:",
+  action: "Action required:",
+};
+
 /**
  * Horizontal strip of page metrics. Hard cap: renders the first five and
  * warns in development if given more — metrics must describe user-relevant
@@ -41,9 +48,12 @@ export function MetricStrip({ metrics }: { metrics: Metric[] }) {
           role="listitem"
         >
           <p className="eyebrow m-0">{metric.label}</p>
-          <p className="font-display mx-0 mt-3 mb-0 flex items-center gap-2 text-2xl text-ink">
+          <p className="font-display mx-0 mt-3 mb-0 flex items-center gap-2 text-2xl tabular-nums text-ink">
             {metric.tone ? (
-              <span aria-hidden="true" className={cn("status-dot", toneClasses[metric.tone])} />
+              <>
+                <span aria-hidden="true" className={cn("status-dot", toneClasses[metric.tone])} />
+                <span className="sr-only">{toneText[metric.tone]} </span>
+              </>
             ) : null}
             {metric.value}
           </p>

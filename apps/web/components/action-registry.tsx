@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { FileText, Filter, RadioTower, RotateCcw, Send, ShieldCheck } from "lucide-react";
+import { useMemo, useState } from "react";
+import { FileText, Filter, RotateCcw, Send, ShieldCheck } from "lucide-react";
 
-import { axisFetchParsedJson } from "@/lib/axis-api";
+import {
+  axisFetchParsedJson,
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
 import {
   parseActionRunPersistenceResult,
   parseManufacturingActionRegistry,
@@ -22,12 +26,13 @@ import {
   type ActionRunPersistenceResult,
   type ManufacturingActionRegistry,
 } from "@/lib/action-demo";
+import { formatContextPath, formatNumber, formatTimestamp } from "@/lib/format";
 import {
-  formatOverviewTimestamp,
   type IdentitySessionReadModel,
   platformStatusClass,
   platformStatusLabel,
 } from "@/lib/platform-overview";
+import { deriveSourceState } from "@/lib/source-state";
 import { useAxisQuery } from "@/lib/use-axis-query";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
@@ -35,9 +40,11 @@ import {
   buildTenantScopedPath,
   DEMO_TENANT_ID,
   resolveConsoleTenantScope,
+  OPERATIONS_API_PREFIX,
 } from "@/lib/tenant-scope";
 import { Field } from "@/components/ui/field";
 import { Select } from "@/components/ui/select";
+import { SourcePill } from "@/components/ui/source-pill";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
 
 type ActionRunSource = "api";
@@ -59,14 +66,6 @@ const defaultFilters: ActionFilters = {
   approvalMode: allActionFilter,
   status: allActionFilter,
 };
-
-function sourceLabel(source: "loading" | "api" | "unavailable"): string {
-  if (source === "api") {
-    return "API action registry";
-  }
-
-  return source === "loading" ? "Loading action API" : "Action API unavailable";
-}
 
 function riskClass(action: ActionRegistryEntry): string {
   if (action.definition.risk_level === "critical" || action.definition.risk_level === "high") {
@@ -99,9 +98,13 @@ export function ActionRegistry() {
   });
   const tenantScope = resolveConsoleTenantScope(identity.data);
   const tenantId = tenantScope.tenantId;
-  const { data: registry, source } = useAxisQuery<ManufacturingActionRegistry>(
+  const {
+    data: registry,
+    errorRequestId: registryErrorRequestId,
+    source,
+  } = useAxisQuery<ManufacturingActionRegistry>(
     buildTenantScopedPath(
-      "/demo/manufacturing/actions",
+      `${OPERATIONS_API_PREFIX}/actions`,
       tenantId ?? DEMO_TENANT_ID,
     ),
     {
@@ -115,15 +118,9 @@ export function ActionRegistry() {
   const [actionRunResults, setActionRunResults] = useState<Record<string, LocalActionRunResult>>(
     {},
   );
-  const [actionRunErrors, setActionRunErrors] = useState<Record<string, string>>({});
+  const [actionRunErrors, setActionRunErrors] = useState<Record<string, AxisOperatorError>>({});
   const [submittingActionId, setSubmittingActionId] = useState<string | null>(null);
   const { session } = useOidcConsoleSession();
-
-  useEffect(() => {
-    if (registry?.actions[0]) {
-      setSelectedActionId(registry.actions[0].definition.action_id);
-    }
-  }, [registry]);
 
   const filteredActions = useMemo(
     () => (registry ? filterActions(registry, filters) : []),
@@ -180,7 +177,7 @@ export function ActionRegistry() {
     try {
       const result = await axisFetchParsedJson<ActionRunPersistenceResult>(
         buildTenantScopedPath(
-          `/demo/manufacturing/actions/${action.definition.action_id}/runs`,
+          `${OPERATIONS_API_PREFIX}/actions/${action.definition.action_id}/runs`,
           registry.tenant_id,
         ),
         parseActionRunPersistenceResult,
@@ -205,13 +202,13 @@ export function ActionRegistry() {
           workflowSignalDetail: actionRunWorkflowSignalLabel(result),
         },
       }));
-    } catch (error) {
+    } catch (caught) {
       setActionRunErrors((current) => ({
         ...current,
-        [action.definition.action_id]:
-          error instanceof Error
-            ? error.message
-            : "Action run API persistence is unavailable.",
+        [action.definition.action_id]: toAxisOperatorError(
+          caught,
+          "Action run API persistence is unavailable.",
+        ),
       }));
     } finally {
       setSubmittingActionId(null);
@@ -223,6 +220,7 @@ export function ActionRegistry() {
       <ErrorPanel
         detail="The action registry is not loaded until the current actor and tenant are verified."
         endpoint="/identity/session"
+        reference={identity.errorRequestId ?? undefined}
         title="Identity API unavailable"
       />
     );
@@ -246,9 +244,28 @@ export function ActionRegistry() {
     return (
       <ErrorPanel
         detail="Axis did not receive API-backed action records. Local fallback action records are disabled."
-        endpoint="/demo/manufacturing/actions"
+        endpoint={`${OPERATIONS_API_PREFIX}/actions`}
+        reference={registryErrorRequestId ?? undefined}
         title="Action API unavailable"
       />
+    );
+  }
+
+  if (registry.actions.length === 0) {
+    return (
+      <div className="grid gap-3">
+        <div className="flex justify-end">
+          <SourcePill
+            state={deriveSourceState(source, true, registry.provenance)}
+            subject="action registry"
+          />
+        </div>
+        <EmptyPanel
+          detail="Governed actions will appear here after they are registered for this tenant."
+          icon={FileText}
+          title="No actions registered yet"
+        />
+      </div>
     );
   }
 
@@ -256,7 +273,7 @@ export function ActionRegistry() {
     return (
       <ErrorPanel
         detail="The action API responded without registry records for this tenant."
-        endpoint="/demo/manufacturing/actions"
+        endpoint={`${OPERATIONS_API_PREFIX}/actions`}
         title="Action API returned no records"
       />
     );
@@ -269,37 +286,41 @@ export function ActionRegistry() {
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2"
       >
         <p className="m-0 min-w-0 text-sm leading-snug break-words text-muted">
-          {registry.plant_name} / {registry.scenario} / schema {registry.schema_version}
+          {formatContextPath(
+            registry.plant_name,
+            registry.scenario,
+            `schema ${registry.schema_version}`,
+          )}
         </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="status-pill signal-ready">
-            <RadioTower size={15} />
-            {sourceLabel(source)}
-          </span>
+          <SourcePill
+            state={deriveSourceState(source, Boolean(registry), registry.provenance)}
+            subject="action registry"
+          />
           <span className={`status-pill ${platformStatusClass(registry.registry_status)}`}>
             <FileText size={15} />
             {platformStatusLabel(registry.registry_status)}
           </span>
-          <span className="font-mono text-[13px] break-words text-muted">{formatOverviewTimestamp(registry.as_of)}</span>
+          <span className="font-mono text-[13px] break-words text-muted">{formatTimestamp(registry.as_of)}</span>
         </div>
       </div>
 
       <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
         {registry.metrics.map((metric) => (
-          <article className="min-w-0 rounded-3xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]" key={metric.label}>
+          <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]" key={metric.label}>
             <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-line/60 py-3 first:border-t-0 dark:border-white/10">
               <p className="eyebrow m-0">{metric.label}</p>
               <span className={`status-pill ${platformStatusClass(metric.status)}`}>
                 {platformStatusLabel(metric.status)}
               </span>
             </div>
-            <p className="font-display mx-0 mt-4 mb-2 text-3xl text-ink">{metric.value}</p>
+            <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{metric.value}</p>
             <p className="m-0 text-xs leading-relaxed text-muted break-words">{metric.detail}</p>
           </article>
         ))}
       </div>
 
-      <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-end justify-between gap-4">
+      <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow m-0">Filters</p>
           <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">Action registry</h2>
@@ -364,15 +385,15 @@ export function ActionRegistry() {
       </section>
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(310px,0.46fr)_minmax(0,1fr)] [&>*]:min-w-0">
-        <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
             <div>
               <p className="eyebrow m-0">Actions</p>
-              <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{filteredActions.length} visible</h2>
+              <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{formatNumber(filteredActions.length)} visible</h2>
             </div>
             <span className="status-pill signal-watch">
               <Filter size={15} />
-              {gatedActions} gated
+              {formatNumber(gatedActions)} gated
             </span>
           </div>
           {filteredActions.length === 0 ? (
@@ -411,7 +432,7 @@ export function ActionRegistry() {
           </div>
         </section>
 
-        <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
+        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
             <div>
               <p className="eyebrow m-0">{selectedAction.definition.domain}</p>
@@ -635,19 +656,19 @@ export function ActionRegistry() {
               </section>
             ) : null}
             {selectedRunError ? (
-              <section className="grid gap-4 border-t border-line/60 pt-3.5 dark:border-white/10 lg:grid-cols-[minmax(220px,0.4fr)_minmax(0,1fr)] [&>*]:min-w-0" aria-label="Action run persistence error">
-                <div>
-                  <p className="eyebrow m-0">Action Run Error</p>
-                  <h3 className="font-display mx-0 mt-1 mb-0 text-lg text-ink">Persistence unavailable</h3>
-                  <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{selectedRunError}</p>
-                </div>
+              <section className="border-t border-line/60 pt-3.5 dark:border-white/10" aria-label="Action run persistence error">
+                <ErrorPanel
+                  detail={selectedRunError.message}
+                  reference={selectedRunError.requestId ?? undefined}
+                  title="Action run persistence unavailable"
+                />
               </section>
             ) : null}
           </section>
         </section>
       </div>
 
-      <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+      <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
         <p className="eyebrow m-0">Registry Notes</p>
         <div className="grid min-w-0 gap-2.5">
           {registry.registry_notes.map((note) => (

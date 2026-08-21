@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   useAxisQuery: vi.fn(),
 }));
 
-vi.mock("@/lib/axis-api", () => ({
+vi.mock("@/lib/axis-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/axis-api")>()),
   axisFetchParsedJson: mocks.axisFetchParsedJson,
 }));
 
@@ -37,16 +38,24 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { PlatformOverview } from "./platform-overview";
+import { AxisApiError } from "@/lib/axis-api";
 import {
   approvalInboxFixture,
   auditEventsFixture,
+  emptyActionRunsFixture,
   identitySessionFixture,
   modelRoutingFixture,
   overviewFixture,
   policyRegistryFixture,
   snapshotFixture,
 } from "./overview/overview-fixtures";
-import type { IdentitySessionReadModel } from "@/lib/platform-overview";
+import type {
+  IdentitySessionReadModel,
+  ManufacturingOverview,
+} from "@/lib/platform-overview";
+import { parseManufacturingOverview } from "@/lib/runtime-contracts/overview";
+import { strings } from "@/lib/strings";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 type Source = "loading" | "api" | "unavailable";
 
@@ -66,10 +75,10 @@ function queryResult(data: unknown, source: Source, errorStatus: number | null =
 function onboardingRegistryFixtures(count: number): [string, unknown][] {
   const items = (key: string) => Array.from({ length: count }, (_, i) => ({ [key]: `${key}${i}` }));
   return [
-    ["/demo/manufacturing/connectors", { connectors: items("connector_id") }],
-    ["/demo/manufacturing/ontology", { nodes: items("node_id") }],
-    ["/demo/manufacturing/agents", { agents: items("agent_id") }],
-    ["/demo/manufacturing/workflows", { workflow_runs: items("workflow_id") }],
+    [`${OPERATIONS_API_PREFIX}/connectors`, { connectors: items("connector_id") }],
+    [`${OPERATIONS_API_PREFIX}/ontology`, { nodes: items("node_id") }],
+    [`${OPERATIONS_API_PREFIX}/agents`, { agents: items("agent_id") }],
+    [`${OPERATIONS_API_PREFIX}/workflows`, { workflow_runs: items("workflow_id") }],
   ];
 }
 
@@ -79,6 +88,7 @@ type MockOptions = {
   /** Overrides every checklist registry count, including /platform/policies. */
   onboardingCount?: number;
   identity?: IdentitySessionReadModel;
+  overview?: ManufacturingOverview;
 };
 
 /** Route the per-path mock so each endpoint can succeed or fail independently. */
@@ -96,11 +106,12 @@ function mockQueriesByPath(unavailablePaths: string[] = [], options: MockOptions
           ],
         ] as [string, unknown][])
       : []),
-    ["/demo/manufacturing/overview", overviewFixture],
-    ["/demo/manufacturing/operations/snapshot", snapshotFixture],
-    ["/demo/manufacturing/model-routing", modelRoutingFixture],
-    ["/demo/manufacturing/audit/events", auditEventsFixture],
-    ["/demo/manufacturing/approvals", approvalInboxFixture],
+    [`${OPERATIONS_API_PREFIX}/overview`, options.overview ?? overviewFixture],
+    [`${OPERATIONS_API_PREFIX}/operations/snapshot`, snapshotFixture],
+    [`${OPERATIONS_API_PREFIX}/model-routing`, modelRoutingFixture],
+    [`${OPERATIONS_API_PREFIX}/audit/events`, auditEventsFixture],
+    [`${OPERATIONS_API_PREFIX}/approvals`, approvalInboxFixture],
+    [`${OPERATIONS_API_PREFIX}/actions/runs`, emptyActionRunsFixture],
     ["/platform/policies", policyRegistryFixture],
     ["/identity/session", options.identity ?? identitySessionFixture],
     ...onboardingRegistryFixtures(options.onboardingCount ?? 1),
@@ -144,15 +155,71 @@ describe("PlatformOverview hero", () => {
     expect(screen.queryByText(/Operations Plant Operations Cockpit/)).not.toBeInTheDocument();
   });
 
+  it("parses and renders a tenant whose scenario is null without empty path segments", () => {
+    const overview = parseManufacturingOverview({
+      ...overviewFixture,
+      plant_name: "Northwind Press",
+      scenario: null,
+      provenance: "empty",
+    });
+    mockQueriesByPath([], { overview });
+
+    renderOverview();
+
+    // Vertical-neutral: this console is not manufacturing-only, and a tenant
+    // with no scenario of its own must not be labelled as one.
+    expect(
+      screen.getByRole("heading", { name: strings.overview.hero.fallbackTitle }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Manufacturing overview/)).not.toBeInTheDocument();
+    expect(screen.getByTestId("hero-audit-count")).toBeInTheDocument();
+    expect(screen.getByText(/Northwind Press/)).not.toHaveTextContent(/null|^\s*\//);
+  });
+
   it("shows the same audit registry count in the hero and the evidence feed", () => {
     mockQueriesByPath();
     renderOverview();
 
     const heroCount = screen.getByTestId("hero-audit-count");
     expect(heroCount).toHaveTextContent(/^4$/);
-    expect(screen.getByText("4 recent events")).toBeInTheDocument();
+    expect(screen.getByText("Showing 4 of 4")).toBeInTheDocument();
     // The static seeded "Audit" metric string never renders anywhere.
     expect(screen.queryByText(/128 events/)).not.toBeInTheDocument();
+  });
+
+  it("labels mixed source provenance instead of collapsing the overview into a live claim", () => {
+    mockQueriesByPath([], {
+      overview: { ...overviewFixture, provenance: "reference_scenario" },
+    });
+    renderOverview();
+
+    const sources = screen.getByLabelText("Overview data sources");
+    expect(within(sources).getByText("scenario context: reference scenario"))
+      .toBeInTheDocument();
+    expect(within(sources).getByText("operations snapshot: live")).toBeInTheDocument();
+    expect(within(sources).getByText("audit window: live")).toBeInTheDocument();
+
+    const posture = screen.getByLabelText("Platform posture");
+    const cards = within(posture).getAllByRole("listitem");
+    const agentsCard = cards.find((card) => within(card).queryByText("Agents"));
+    const connectorsCard = cards.find((card) => within(card).queryByText("Connector activity"));
+    const modelsCard = cards.find((card) => within(card).queryByText("Models"));
+
+    expect(agentsCard).toBeDefined();
+    expect(connectorsCard).toBeDefined();
+    expect(modelsCard).toBeDefined();
+    expect(within(agentsCard as HTMLElement).getByText("agents: reference scenario"))
+      .toBeInTheDocument();
+    expect(within(connectorsCard as HTMLElement).getByText("connector activity: live"))
+      .toBeInTheDocument();
+    expect(within(modelsCard as HTMLElement).getByText("models: reference scenario"))
+      .toBeInTheDocument();
+
+    const attentionSources = screen.getByLabelText("Needs attention data sources");
+    expect(within(attentionSources).getByText("approval queue: reference scenario"))
+      .toBeInTheDocument();
+    expect(within(attentionSources).getByText("action follow-through: live"))
+      .toBeInTheDocument();
   });
 
   it("scopes every overview request to the API-verified authenticated tenant", () => {
@@ -168,13 +235,13 @@ describe("PlatformOverview hero", () => {
     renderOverview();
 
     const paths = mocks.useAxisQuery.mock.calls.map(([path]) => path);
-    expect(paths).toContain("/demo/manufacturing/overview?tenant_id=tenant_acme");
+    expect(paths).toContain(`${OPERATIONS_API_PREFIX}/overview?tenant_id=tenant_acme`);
     expect(paths).toContain(
-      "/demo/manufacturing/operations/snapshot?tenant_id=tenant_acme",
+      `${OPERATIONS_API_PREFIX}/operations/snapshot?tenant_id=tenant_acme`,
     );
-    expect(paths).toContain("/demo/manufacturing/model-routing?tenant_id=tenant_acme");
+    expect(paths).toContain(`${OPERATIONS_API_PREFIX}/model-routing?tenant_id=tenant_acme`);
     expect(paths).toContain(
-      "/demo/manufacturing/audit/events?tenant_id=tenant_acme&limit=25",
+      `${OPERATIONS_API_PREFIX}/audit/events?tenant_id=tenant_acme&limit=25`,
     );
     expect(paths.filter((path) => path.includes("tenant_demo_manufacturing"))).toHaveLength(0);
   });
@@ -182,11 +249,11 @@ describe("PlatformOverview hero", () => {
 
 describe("PlatformOverview per-section degradation", () => {
   it("keeps the evidence feed and posture cards when the overview endpoint fails", () => {
-    mockQueriesByPath(["/demo/manufacturing/overview"]);
+    mockQueriesByPath([`${OPERATIONS_API_PREFIX}/overview`]);
     renderOverview();
 
     expect(
-      screen.getByRole("heading", { name: "Operations API unavailable" }),
+      screen.getByRole("heading", { name: strings.overview.hero.error.title }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: /Approval Decision Recorded/ }),
@@ -199,7 +266,7 @@ describe("PlatformOverview per-section degradation", () => {
   });
 
   it("keeps the hero and needs-attention strip when the audit endpoint fails", () => {
-    mockQueriesByPath(["/demo/manufacturing/audit/events"]);
+    mockQueriesByPath([`${OPERATIONS_API_PREFIX}/audit/events`]);
     renderOverview();
 
     expect(screen.getByText("Plant Operations Cockpit")).toBeInTheDocument();
@@ -211,7 +278,7 @@ describe("PlatformOverview per-section degradation", () => {
 
   it("fails closed at identity before loading any tenant-scoped data", () => {
     mockQueriesByPath([
-      "/demo/manufacturing",
+      `${OPERATIONS_API_PREFIX}`,
       "/platform/policies",
       "/identity/session",
     ]);
@@ -249,7 +316,7 @@ describe("PlatformOverview per-section degradation", () => {
 describe("PlatformOverview onboarding checklist", () => {
   it("replaces the control room with the setup checklist when the overview 404s on a healthy API", () => {
     mockQueriesByPath([], {
-      notFoundPaths: ["/demo/manufacturing/overview"],
+      notFoundPaths: [`${OPERATIONS_API_PREFIX}/overview`],
       onboardingCount: 0,
     });
     renderOverview();
@@ -270,7 +337,7 @@ describe("PlatformOverview onboarding checklist", () => {
 
   it("keeps the error wall when the API is down instead of showing the checklist", () => {
     mockQueriesByPath([
-      "/demo/manufacturing",
+      `${OPERATIONS_API_PREFIX}`,
       "/platform/policies",
       "/identity/session",
     ]);
@@ -284,7 +351,7 @@ describe("PlatformOverview onboarding checklist", () => {
   });
 
   it("shows the compact setup strip on the control room when onboarding is partial", () => {
-    mockQueriesByPath(["/demo/manufacturing/ontology"]);
+    mockQueriesByPath([`${OPERATIONS_API_PREFIX}/ontology`]);
     renderOverview();
 
     expect(screen.getByText("4 of 5 setup steps complete")).toBeInTheDocument();
@@ -303,7 +370,7 @@ describe("PlatformOverview onboarding checklist", () => {
 describe("PlatformOverview demo bootstrap CTA", () => {
   function renderEmptyTenant() {
     mockQueriesByPath([], {
-      notFoundPaths: ["/demo/manufacturing/overview"],
+      notFoundPaths: [`${OPERATIONS_API_PREFIX}/overview`],
       onboardingCount: 0,
     });
     return renderOverview();
@@ -343,13 +410,20 @@ describe("PlatformOverview demo bootstrap CTA", () => {
   });
 
   it("renders the bootstrap failure inline on the checklist without refreshing", async () => {
-    mocks.axisFetchParsedJson.mockRejectedValue(new Error("Axis API request failed with 403"));
+    mocks.axisFetchParsedJson.mockRejectedValue(
+      new AxisApiError("/demo/manufacturing/bootstrap", 403, {
+        body: { detail: { message: "Demo bootstrap forbidden", debug: "secret-debug" } },
+        requestId: "req-demo-bootstrap-403",
+      }),
+    );
     const user = userEvent.setup();
     renderEmptyTenant();
 
     await user.click(screen.getByRole("button", { name: "Explore with demo data" }));
 
-    expect(await screen.findByText("Axis API request failed with 403")).toBeInTheDocument();
+    expect(await screen.findByText("Demo bootstrap forbidden")).toBeInTheDocument();
+    expect(screen.getByText("req-demo-bootstrap-403")).toBeInTheDocument();
+    expect(screen.queryByText(/secret-debug/)).not.toBeInTheDocument();
     expect(mocks.triggerRefresh).not.toHaveBeenCalled();
     expect(screen.queryByText("Demo data loaded")).not.toBeInTheDocument();
     // The checklist stays actionable for a retry.

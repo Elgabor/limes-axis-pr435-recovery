@@ -44,6 +44,7 @@ from axis_api.models import Base
 from axis_api.persistence import (
     AxisPersistenceRepository,
     DemoReferenceRecordCreate,
+    TenantCreate,
 )
 from axis_api.platform_tenants import TenantProvisionRequest, provision_tenant
 
@@ -305,6 +306,14 @@ def test_persisted_audit_ledger_events_match_audit_event_schema(
     validator = build_validator("audit-event.schema.json")
     with session_scope(session_factory) as session:
         repository = AxisPersistenceRepository(session)
+        repository.create_tenant(
+            TenantCreate(
+                tenant_id=TENANT_ID,
+                display_name="Ravenna Works",
+                description="Plant Operations Cockpit",
+                created_by="test",
+            )
+        )
         record_model_endpoint(repository, model_endpoint_request())
         record_demo_connector_manifest(repository, connector_manifest_request())
         explorer = query_persisted_audit_events(

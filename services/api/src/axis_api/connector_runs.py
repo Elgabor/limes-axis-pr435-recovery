@@ -35,8 +35,13 @@ from axis_api.connector_execution import (
     DeferredConnectorSyncExecutionRuntime,
     DeferredConnectorSyncSchedulerRuntime,
 )
-from axis_api.connector_reference import get_persisted_manufacturing_connector_registry
+from axis_api.connector_reference import require_persisted_manufacturing_connector_registry
 from axis_api.demo import OverviewMetric, OverviewStatus
+from axis_api.manufacturing_metadata import (
+    ManufacturingResponseProvenance,
+    find_manufacturing_tenant_metadata,
+    operational_provenance,
+)
 from axis_api.models import ConnectorSyncCheckpointClaim, utc_now
 from axis_api.persistence import (
     AxisPersistenceRepository,
@@ -283,8 +288,9 @@ class ConnectorSyncCheckpointClaimEvidenceInvariant(BaseModel):
 
 class ManufacturingConnectorRunRegistry(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     registry_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
     runs: list[ConnectorRunRecord] = Field(default_factory=list)
@@ -293,8 +299,9 @@ class ManufacturingConnectorRunRegistry(BaseModel):
 
 class ManufacturingConnectorSyncCheckpointRegistry(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     registry_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
     checkpoints: list[ConnectorSyncCheckpointRecord] = Field(default_factory=list)
@@ -306,8 +313,9 @@ class ManufacturingConnectorSyncCheckpointRegistry(BaseModel):
 
 class ManufacturingConnectorSyncCheckpointClaimRegistry(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     registry_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
     claims: list[ConnectorSyncCheckpointClaimRecord] = Field(default_factory=list)
@@ -485,6 +493,7 @@ def build_connector_run_registry(
     repository: AxisPersistenceRepository,
     query: ConnectorRunQuery,
 ) -> ManufacturingConnectorRunRegistry:
+    tenant_metadata = find_manufacturing_tenant_metadata(repository, query.tenant_id)
     records = repository.list_connector_runs(
         tenant_id=query.tenant_id,
         connector_id=query.connector_id,
@@ -495,8 +504,9 @@ def build_connector_run_registry(
     audit_writes = sum(1 for run in runs if run.audit_event_id is not None)
     return ManufacturingConnectorRunRegistry(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(bool(records)),
         registry_status=OverviewStatus.READY if runs else OverviewStatus.WATCH,
         metrics=[
             OverviewMetric(
@@ -532,6 +542,7 @@ def build_connector_sync_checkpoint_registry(
     repository: AxisPersistenceRepository,
     query: ConnectorSyncCheckpointQuery,
 ) -> ManufacturingConnectorSyncCheckpointRegistry:
+    tenant_metadata = find_manufacturing_tenant_metadata(repository, query.tenant_id)
     _validate_checkpoint_time_window(query)
     records = repository.list_connector_sync_checkpoints(
         tenant_id=query.tenant_id,
@@ -551,8 +562,9 @@ def build_connector_sync_checkpoint_registry(
     audit_refs = sum(1 for checkpoint in checkpoints if checkpoint.audit_event_id is not None)
     return ManufacturingConnectorSyncCheckpointRegistry(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(bool(records)),
         registry_status=OverviewStatus.READY if checkpoints else OverviewStatus.WATCH,
         metrics=[
             OverviewMetric(
@@ -634,6 +646,7 @@ def build_connector_sync_checkpoint_claim_registry(
     repository: AxisPersistenceRepository,
     query: ConnectorSyncCheckpointClaimQuery,
 ) -> ManufacturingConnectorSyncCheckpointClaimRegistry:
+    tenant_metadata = find_manufacturing_tenant_metadata(repository, query.tenant_id)
     _validate_checkpoint_claim_time_window(query)
     cursor_created_at, cursor_row_id = _decode_checkpoint_claim_cursor(query.cursor)
     records = repository.list_connector_sync_checkpoint_claims(
@@ -666,8 +679,9 @@ def build_connector_sync_checkpoint_claim_registry(
     ]
     return ManufacturingConnectorSyncCheckpointClaimRegistry(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(bool(page_records)),
         registry_status=OverviewStatus.READY if claims else OverviewStatus.WATCH,
         metrics=[
             OverviewMetric(
@@ -2709,7 +2723,9 @@ def _manifest_for_connector(
     tenant_id: str,
     connector_id: str,
 ):
-    registry = get_persisted_manufacturing_connector_registry(repository, tenant_id=tenant_id)
+    registry = require_persisted_manufacturing_connector_registry(
+        repository, tenant_id=tenant_id
+    )
     for connector in registry.connectors:
         if connector.manifest.connector_id == connector_id:
             return connector.manifest

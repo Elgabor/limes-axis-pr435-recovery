@@ -72,6 +72,11 @@ const nav = {
   dataAndModels: "Data & Models",
   governance: "Governance",
   platform: "Platform",
+  help: "Help",
+  /* Shown in the sidebar account row when the identity API has not named an
+     actor or tenant — never a blank line, which reads as a rendering fault. */
+  signedOut: "Not signed in",
+  noTenant: "No tenant selected",
 } as const;
 
 /** Per-route header copy, keyed by route segment (`overview` for `/`). */
@@ -86,7 +91,7 @@ const pages = {
     eyebrow: nav.operate,
     title: "Approvals",
     description:
-      "Review and decide on actions agents have proposed. Every decision is recorded as audit evidence.",
+      "Review proposed actions, record decisions, and see what external executors report afterward.",
   },
   workflows: {
     eyebrow: nav.operate,
@@ -151,6 +156,33 @@ const pages = {
 
 export type PageKey = keyof typeof pages;
 
+/** Route-level boundaries: render error, unmatched URL, root-layout failure. */
+const routeError = {
+  eyebrow: "Console",
+  title: "Something went wrong",
+  subtitle: "This screen stopped responding. The rest of the console still works.",
+  panelTitle: "This screen could not be displayed",
+  detail:
+    "Axis stopped rendering this page to avoid showing an incomplete or misleading view. Retrying reloads just this screen.",
+} as const;
+
+const notFound = {
+  eyebrow: "Console",
+  title: "Page not found",
+  subtitle: "That address does not match anything on this deployment.",
+  panelTitle: "Nothing lives at this address",
+  detail:
+    "The link may be out of date, or the record may belong to a different tenant. Start again from the overview.",
+  action: "Go to overview",
+} as const;
+
+const globalError = {
+  title: "Axis Console could not start",
+  detail:
+    "The console failed before it could load. Reload the page; if this keeps happening, quote the reference below to your platform team.",
+  action: "Reload the console",
+} as const;
+
 const commandMenu = {
   placeholder: "Search pages, entities, actions",
   empty: "No matching command.",
@@ -214,6 +246,62 @@ const approvals = {
     title: "No approvals waiting",
     detail:
       "When an agent proposes an action that needs a human decision, it will appear here for review.",
+  },
+  requestedMissing: {
+    title: "Requested approval is not in this queue",
+    detail:
+      "The linked action run does not have an approval in the current queue. It may have already been decided or belongs to another tenant.",
+  },
+  lookupError: {
+    title: "Linked approval could not be verified",
+    detail:
+      "Axis could not resolve the action run through the audit ledger, so the console will not show a different approval.",
+  },
+  followThrough: {
+    eyebrow: "Follow-through",
+    title: "After the decision",
+    detail:
+      "Axis records the decision and displays what external executors report. Axis does not execute or retry approved actions.",
+    sourceSubject: "action follow-through",
+    awaiting: {
+      title: "Awaiting external execution",
+      detail:
+        "Approved actions with no reported outcome, longest wait first. Each remains here until an external executor reports back.",
+      status: "Waiting for external executor",
+      waited: (duration: string) => `Waiting ${duration}`,
+      emptyTitle: "Nothing awaiting external execution",
+      emptyDetail: "No approved action is currently waiting for an external executor to report back.",
+    },
+    reported: {
+      title: "Reported outcomes",
+      detail: "What external executors reported to Axis after an approval.",
+      emptyTitle: "No outcomes reported",
+      emptyDetail: "No external executor has reported an outcome for an approved action yet.",
+    },
+    empty: {
+      title: "No approved actions yet",
+      detail:
+        "Approved action runs and executor-reported outcomes will appear here after a decision is recorded.",
+    },
+    error: {
+      title: "Action run API unavailable",
+      detail:
+        "Axis could not load approved action runs or executor-reported outcomes. No follow-through state is inferred.",
+    },
+    stale: "Live refresh failed. Showing the last validated action follow-through data.",
+    links: {
+      approval: "Open authorising approval",
+      auditEvidence: "Open audit evidence",
+    },
+    fields: {
+      approved: "Approved",
+      reported: "Reported",
+      workflow: "Workflow",
+      run: "Run",
+      noWorkflow: "No workflow recorded",
+      noApproval: "No authorising approval recorded",
+      noAuditEvidence: "No audit evidence references reported",
+    },
   },
 } as const;
 
@@ -367,16 +455,123 @@ const workflows = {
 const connectors = {
   list: {
     eyebrow: "Registry",
-    registeredPill: "Registered",
+    neverSampled: "Never sampled",
+    previewSample: "Preview sample",
+    observedRecords: (count: number) => `${count.toLocaleString("en")} records observed`,
+    successfulSync: (completedAt: string, runId: string) =>
+      `Successful sync · ${completedAt} · run ${runId}`,
   },
   header: {
     addConnector: "Add connector",
     updated: "Updated",
   },
-  pendingActivation: {
-    title: "Sync activation pending",
+  manifestImport: {
+    eyebrow: "Manifest portability",
+    title: "Import connector manifests",
+    description:
+      "Paste one registration document or an array, or upload a JSON file. Check the whole batch before anything is written.",
+    access:
+      "Required scope: none. The API instead requires the tenant and registered actor to match your signed-in session.",
+    validationEndpoint: "Dry run endpoint",
+    applyEndpoint: "Apply endpoints",
+    applyEndpointPaths: (endpoint: string) =>
+      `POST ${endpoint}; PUT ${endpoint}/{connector_id}`,
+    inputLabel: "Registration document JSON",
+    inputPlaceholder: "Paste one registration document or an array of documents",
+    fileLabel: "Upload JSON file",
+    fileReadError: "The selected JSON file could not be read.",
+    check: "Check",
+    checking: "Checking…",
+    reviewApply: "Review apply",
+    apply: "Apply manifests",
+    applying: "Applying…",
+    cancel: "Cancel",
+    confirmation: (count: number) =>
+      `Apply ${count} checked ${count === 1 ? "manifest" : "manifests"} sequentially? Writes cannot be rolled back as a batch.`,
+    ssoGate: "Sign in with SSO to check or apply connector manifests.",
+    errors: {
+      malformed: "This is not valid JSON. Fix the syntax before checking.",
+      shape: "Provide one JSON object or a non-empty array of JSON objects.",
+      tooMany: (count: number, maximum: number) =>
+        `${count} documents were provided. Check at most ${maximum} at a time.`,
+      validationRequest: "The manifest dry run could not be completed.",
+      replacementRevisionRequest:
+        "The current connector revision could not be verified, so replacement stays disabled.",
+      tenantMismatch: "The dry-run response belongs to a different tenant.",
+      resultCountMismatch: "The dry-run response did not include one result per document.",
+    },
+    summary: {
+      title: "Dry-run summary",
+      wouldRegister: "Would register",
+      wouldReplace: "Would replace",
+      invalid: "Invalid",
+    },
+    table: {
+      document: "Document",
+      connector: "Connector id",
+      outcome: "Outcome",
+      applyResult: "Apply result",
+      unknownConnector: "Not available",
+      replacesRevision: (revision: number) => `Replaces revision ${revision}`,
+    },
+    outcomes: {
+      would_register: "Would register",
+      would_replace: "Would replace",
+      invalid: "Invalid",
+    },
+    applyResults: {
+      landed: "Applied",
+      failed: "Failed",
+      conflict: "Concurrent change",
+      notAttempted: "Not applied",
+      pending: "Pending",
+    },
+    applyability: (invalid: number, total: number) => invalid === 0
+      ? `0 of ${total} will be rejected. Every checked document can be applied.`
+      : `${invalid} of ${total} will be rejected as invalid. Apply stays disabled until every document is valid.`,
+    applySuccess: (count: number) =>
+      `${count} of ${count} manifests were applied.`,
+    applyFailure: (landed: number, total: number) =>
+      `${landed} of ${total} manifests were applied. The remaining documents were not applied.`,
+    concurrentConflict: (connectorId: string) =>
+      `Apply stopped because someone else changed ${connectorId}. Check the batch again before replacing it.`,
+    toast: {
+      success: "Connector manifests applied",
+      partial: "Connector manifest apply stopped",
+    },
+  },
+  manifestExport: {
+    action: "Export manifest",
+    title: "Registration document",
+    description:
+      "This formatted JSON includes the manifest, runtime policy, optional preview sample and notes required for replay.",
+    jsonLabel: "Registration document JSON",
+    copy: "Copy JSON",
+    copied: "Registration document copied",
+    copyFailed: "The registration document could not be copied.",
+    download: "Download JSON",
+    close: "Close export",
+  },
+  requestedMissing: {
+    title: "Requested connector is not in this registry",
     detail:
-      "This connector was just registered. Its data previews and governed sync runs become available once the platform activates the manifest.",
+      "The connector named in the URL is not present in the current tenant registry.",
+  },
+  snapshot: {
+    eyebrow: "Evidence snapshot",
+    title: "Requested evidence snapshot",
+    id: "Snapshot",
+    connector: "Connector",
+    findings: "Invariant findings",
+    reason: "Reason",
+    digest: "Report digest",
+    inspect: "Inspect snapshot record",
+    missingTitle: "Requested snapshot is not available",
+    missingDetail:
+      "The snapshot named in the URL is not in this tenant and connector result set. It may have been removed or the link may target another tenant.",
+    errorTitle: "Snapshot history unavailable",
+    errorDetail:
+      "Axis could not verify the evidence snapshot named in the URL, so the console will not show a different record.",
   },
   metrics: {
     connectors: { label: "Connectors", detail: "Registered data sources" },
@@ -415,6 +610,20 @@ const connectors = {
     manifest: "Registered manifest",
     manifestMissing: "No manifest registered yet — registering one records audit evidence.",
     manifestRegisteredBy: "Registered by",
+    manifestStatus: "Status",
+    currentRevision: "Current revision",
+    revisionHistory: "Revision history",
+    revisionHistoryDetail: "Ordered record of every manifest version recorded for this connector.",
+    revisionHistoryUnavailable: "Revision history unavailable",
+    revisionHistoryUnavailableDetail:
+      "Axis could not verify which manifest revision is live for this connector.",
+    revisionColumns: {
+      revision: "Revision",
+      version: "Manifest version",
+      status: "Status",
+      registeredBy: "Registered by",
+      createdAt: "Recorded at",
+    },
   },
   schema: {
     mappingTitle: "Field mapping",
@@ -430,6 +639,7 @@ const connectors = {
     requiredNo: "Optional",
     sampleTitle: "Sample rows",
     sampleDetail: "Reference sample used for preview and validation.",
+    neverSampled: "This connector has never been sampled.",
     sampleEmpty: "No sample rows are recorded for this connector.",
   },
   governance: {
@@ -591,10 +801,21 @@ const connectors = {
 /** Overview control-room copy: hero, needs-attention strip, posture, feed. */
 const overview = {
   hero: {
+    /* Used when the tenant has recorded no scenario name. Must stay
+       vertical-neutral: this console is not manufacturing-only. */
+    fallbackTitle: "Operations overview",
     error: {
-      title: "Operations API unavailable",
+      title: "Operations data could not be loaded",
       detail:
-        "Axis did not receive API-backed overview records. Local fallback overview records are disabled.",
+        "Axis only shows records it has actually recorded, so nothing is displayed until the connection to the platform recovers.",
+    },
+    /* Each label names the persisted dataset the number is read from, so an
+       operator can tell what is being counted without opening the page. */
+    facts: {
+      openWorkflows: "Open workflows",
+      pendingApprovals: "Pending approvals",
+      operationRecords: "Operation records",
+      recentAudit: "Audit events (latest)",
     },
   },
   needsAttention: {
@@ -602,11 +823,20 @@ const overview = {
     review: "Review & decide",
     openWorkflows: "Open workflows",
     openAudit: "Open audit",
+    openApproval: "Open approval",
     approvalsUnavailable: "Pending approvals could not be loaded from the approval API.",
     overviewUnavailable: "Workflow and risk signals could not be loaded from the overview API.",
+    actionRunsUnavailable:
+      "Approved actions awaiting an external executor could not be loaded from the action run API.",
+    stalledAction: {
+      /* Names the party that has not reported. Axis records the approval and
+         waits: it never executes an approved action and never retries one. */
+      noOutcome: "No outcome reported by an external executor",
+    },
     allClear: {
       title: "All clear — nothing waiting on you",
-      detail: "No pending approvals, blocked workflows, or active risk signals right now.",
+      detail:
+        "No pending approvals, blocked workflows, risk signals, or approved actions waiting on an external executor right now.",
     },
     error: {
       title: "Attention items unavailable",
@@ -617,7 +847,11 @@ const overview = {
   posture: {
     agents: { label: "Agents", link: "Manage agents" },
     workflows: { label: "Workflows", link: "Open workflows" },
-    connectors: { label: "Connectors", link: "Manage connectors" },
+    connectors: {
+      label: "Connector activity",
+      link: "Manage connectors",
+      detail: "Connector events in the latest audit window",
+    },
     policies: { label: "Policies", link: "Review policies" },
     models: { label: "Models", link: "View routing" },
     unavailable: "Unavailable",
@@ -720,8 +954,13 @@ const models = {
         "Axis did not receive API-backed model routing records. Local fallback routing records are disabled.",
     },
     noRecords: {
-      title: "Routing API returned no records",
-      detail: "The model routing API responded without route records for this tenant.",
+      title: "No model routes yet",
+      detail: "Governed model routes will appear here after they are configured for this tenant.",
+    },
+    noMatch: {
+      title: "No routes match the current filters",
+      detail: "Adjust or reset the domain, provider and decision filters to see routing telemetry.",
+      reset: "Reset filters",
     },
   },
   live: {
@@ -810,9 +1049,10 @@ const simulation = {
       "Axis did not receive API-backed replay artifacts. Local fallback replay records are disabled.",
   },
   noArtifacts: {
-    title: "Replay API returned no artifacts",
-    detail: "The replay API responded without simulation artifacts for this tenant.",
+    title: "No replay history yet",
+    detail: "Replay previews will appear after this tenant has governed workflow history.",
   },
+  noPolicyResult: "No policy result recorded for this replay.",
 } as const;
 
 /** Guided-setup checklist copy for empty and partially onboarded tenants. */
@@ -875,8 +1115,11 @@ const settings = {
   source: {
     live: "Live system status",
     loading: "Loading system status",
+    stale: "Stale system status",
     required: "API required",
   },
+  stale:
+    "Live refresh failed. Showing the last validated system status for this panel.",
   tabs: {
     readiness: "Readiness",
     identity: "Identity",
@@ -1070,9 +1313,74 @@ const demoBadge = {
   tooltip: "This tenant runs the demo manufacturing scenario",
 } as const;
 
+const tenantVocabulary = {
+  eyebrow: "Tenant vocabulary",
+  title: "Console terminology",
+  description:
+    "Choose the words this tenant sees for locations, its workspace and operational domains.",
+  requiredScope: (scope: string) => `Saving requires the ${scope} scope.`,
+  endpoint: "Vocabulary API endpoint",
+  source: {
+    loading: "Loading tenant vocabulary",
+    api: "Vocabulary API",
+    missing: "Tenant not found",
+    unavailable: "Vocabulary API unavailable",
+  },
+  mode: {
+    defaults: "Using defaults",
+    defaultsDetail:
+      "This tenant has not configured vocabulary yet. Saving creates tenant-specific terminology.",
+    configured: "Tenant configured",
+    configuredDetail: "These values override the industry-neutral defaults for this tenant.",
+  },
+  fields: {
+    siteSingular: "Location singular",
+    siteSingularDetail: "The singular word used for one operational location.",
+    sitePlural: "Location plural",
+    sitePluralDetail: "The plural word used for operational locations.",
+    workspaceLabel: "Workspace label",
+    workspaceLabelDetail: "The tenant-specific name for its operational workspace.",
+    domainLabels: "Domain labels",
+    domainLabelsDetail:
+      "Map each domain key stored on operational records to the label operators should see.",
+    domainKey: "Domain key",
+    domainKeyPlaceholder: "supply",
+    domainLabel: "Display label",
+    domainLabelPlaceholder: "Pharmacy supply",
+  },
+  actions: {
+    addDomain: "Add domain label",
+    removeDomain: "Remove domain label",
+    review: "Review vocabulary update",
+    saving: "Saving",
+    confirm: "Confirm vocabulary update",
+    cancel: "Cancel",
+  },
+  validation: {
+    fix: "Fix the highlighted fields; nothing was sent.",
+    labelTooLong: (limit: number) => `Must be at most ${limit} characters.`,
+    domainLimit: (limit: number) => `This API accepts at most ${limit} domain labels.`,
+    missingDomainKey: "Enter a domain key or remove this row.",
+    duplicateDomainKey: "Each domain key can appear only once.",
+  },
+  confirmation:
+    "Confirm this tenant vocabulary update. Existing operational records keep their stored domain keys.",
+  errors: {
+    prefix: "Vocabulary update failed:",
+    unavailable: "Tenant vocabulary API is unavailable.",
+    generic: "Vocabulary update failed.",
+    requiredPermission: (message: string, permission: string) =>
+      `${message} Required permission: ${permission}.`,
+  },
+  success: "Vocabulary update applied.",
+} as const;
+
 export const strings = {
   nav,
   commandMenu,
+  routeError,
+  notFound,
+  globalError,
   demoBadge,
   agents,
   approvals,
@@ -1085,9 +1393,14 @@ export const strings = {
   policyDetail,
   settings,
   simulation,
+  tenantVocabulary,
   workflows,
   states: {
     loading: "Loading…",
+    retry: "Try again",
+    technicalDetails: "Technical details",
+    /** Correlation id an operator can quote to support. */
+    reference: "Reference",
     error: {
       title: "This data could not be loaded",
       detail: "The console could not reach the platform API. Check your connection and try again.",
@@ -1096,6 +1409,11 @@ export const strings = {
     empty: {
       title: "Nothing here yet",
       detail: "Records will appear here as soon as they exist.",
+    },
+    requestedRecord: {
+      title: "Requested record is not in this view",
+      detail:
+        "The record named in the URL is not present in the current result set. Clear the selection or adjust the filters.",
     },
   },
   pages,

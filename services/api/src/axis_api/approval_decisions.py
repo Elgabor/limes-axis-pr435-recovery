@@ -6,10 +6,10 @@ from pydantic import BaseModel, Field, ValidationError
 from axis_api.action_reference import (
     ActionReferenceRecordInvalid,
     ActionReferenceRecordNotFound,
-    get_persisted_manufacturing_action_registry,
+    require_persisted_manufacturing_action_registry,
 )
 from axis_api.action_runs import payload_requested_amount, registry_action_entry
-from axis_api.approval_reference import get_persisted_manufacturing_approval_inbox
+from axis_api.approval_reference import require_persisted_manufacturing_approval_inbox
 from axis_api.audit import AuditEventCreate
 from axis_api.demo import ApprovalDecision, ApprovalInboxItem
 from axis_api.permissions import PermissionDecision, PermissionRequest, evaluate_permission
@@ -115,7 +115,9 @@ def _approval_action_id(
     approval_id: str,
 ) -> str:
     try:
-        registry = get_persisted_manufacturing_action_registry(repository, tenant_id=tenant_id)
+        registry = require_persisted_manufacturing_action_registry(
+            repository, tenant_id=tenant_id
+        )
     except (ActionReferenceRecordNotFound, ActionReferenceRecordInvalid) as exc:
         if tenant_id == "tenant_demo_manufacturing":
             return _APPROVAL_ACTION_IDS.get(approval_id, approval_id)
@@ -331,7 +333,9 @@ def _find_approval(
     approval_id: str,
     tenant_id: str,
 ) -> tuple[str, ApprovalInboxItem]:
-    inbox = get_persisted_manufacturing_approval_inbox(repository, tenant_id=tenant_id)
+    inbox = require_persisted_manufacturing_approval_inbox(
+        repository, tenant_id=tenant_id
+    )
     for approval in inbox.approvals:
         if approval.approval_id == approval_id:
             return inbox.tenant_id, approval

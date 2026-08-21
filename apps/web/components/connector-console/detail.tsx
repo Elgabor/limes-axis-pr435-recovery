@@ -1,24 +1,30 @@
 "use client";
 
-import { FileClock } from "lucide-react";
-
 import { Card } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { DetailGrid, KeyValueRow } from "@/components/ui/detail-grid";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { InspectDrawer } from "@/components/ui/inspect-drawer";
-import { EmptyPanel } from "@/components/ui/states";
+import { ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { formatConnectorLabel, type ConnectorRegistryItem } from "@/lib/connectors-demo";
 import {
-  manifestRecordForConnector,
-  type ConnectorListEntry,
-} from "@/lib/connectors-console";
+  formatConnectorLabel,
+  type ConnectorManifestDetail,
+  type ConnectorRegistryItem,
+} from "@/lib/connectors-demo";
+import { connectorWithCurrentManifest } from "@/lib/connectors-console";
 import { strings } from "@/lib/strings";
+import { formatNumber, formatTimestamp } from "@/lib/format";
+import type { IdentitySessionReadModel } from "@/lib/platform-overview";
+import { parseConnectorManifestDetail } from "@/lib/runtime-contracts/connectors";
+import { buildTenantScopedPath } from "@/lib/tenant-scope";
+import { useAxisQuery, type AxisQuerySource } from "@/lib/use-axis-query";
 import type { ConnectorRegistries } from "@/lib/use-connector-registries";
+import { CONNECTOR_ENDPOINTS } from "@/lib/use-connector-registries";
 
 import { ConnectorGovernance } from "./governance";
 import { ConnectorRuns } from "./runs";
+import { ManifestExportPanel } from "./manifest-export-panel";
 
 /*
  * Connector detail pane: Overview / Data & Schema / Runs / Governance &
@@ -47,19 +53,21 @@ function ChipList({ items, emptyLabel }: { items: string[]; emptyLabel?: string 
 
 function OverviewTab({
   connector,
-  registries,
+  manifestDetail,
+  manifestDetailErrorRequestId,
+  manifestDetailPath,
+  manifestDetailSource,
 }: {
   connector: ConnectorRegistryItem;
-  registries: ConnectorRegistries;
+  manifestDetail: ConnectorManifestDetail | null;
+  manifestDetailErrorRequestId: string | null;
+  manifestDetailPath: string;
+  manifestDetailSource: AxisQuerySource;
 }) {
   const copy = strings.connectors.overview;
   const { manifest, runtime_policy: runtimePolicy } = connector;
-  const manifestRecord = registries.manifests.data
-    ? manifestRecordForConnector(
-        registries.manifests.data.manifests,
-        manifest.connector_id,
-      )
-    : null;
+  const persistedManifest = connector.persisted_manifest;
+  const currentManifest = manifestDetail?.current_revision ?? null;
 
   return (
     <div className="grid content-start gap-5">
@@ -101,15 +109,61 @@ function OverviewTab({
 
       <div className="grid gap-2 border-t border-line/60 pt-4 dark:border-white/10">
         <Eyebrow>{copy.manifest}</Eyebrow>
-        {manifestRecord ? (
-          <DetailGrid>
-            <KeyValueRow label="Status">
-              {formatConnectorLabel(manifestRecord.status)}
-            </KeyValueRow>
-            <KeyValueRow label={copy.manifestRegisteredBy}>
-              {manifestRecord.registered_by}
-            </KeyValueRow>
-          </DetailGrid>
+        {persistedManifest ? (
+          <div className="grid gap-4">
+            <DetailGrid>
+              <KeyValueRow label={copy.manifestStatus}>
+                {formatConnectorLabel(currentManifest?.status ?? persistedManifest.status)}
+              </KeyValueRow>
+              <KeyValueRow label={copy.manifestRegisteredBy}>
+                {currentManifest?.registered_by ?? persistedManifest.registered_by}
+              </KeyValueRow>
+              <KeyValueRow label={copy.currentRevision}>
+                {formatNumber(
+                  currentManifest?.revision_number ?? persistedManifest.revision_number,
+                )}
+              </KeyValueRow>
+            </DetailGrid>
+            {manifestDetailSource === "loading" ? <LoadingPanel rows={2} /> : null}
+            {manifestDetailSource === "unavailable" ? (
+              <ErrorPanel
+                detail={copy.revisionHistoryUnavailableDetail}
+                endpoint={manifestDetailPath}
+                reference={manifestDetailErrorRequestId ?? undefined}
+                title={copy.revisionHistoryUnavailable}
+              />
+            ) : null}
+            {manifestDetail ? (
+              <section className="grid gap-2">
+                <div className="grid gap-1">
+                  <Eyebrow>{copy.revisionHistory}</Eyebrow>
+                  <p className="m-0 text-sm text-muted">{copy.revisionHistoryDetail}</p>
+                </div>
+                <DataTable aria-label={copy.revisionHistory} minWidth={680}>
+                  <thead>
+                    <tr>
+                      <th>{copy.revisionColumns.revision}</th>
+                      <th>{copy.revisionColumns.version}</th>
+                      <th>{copy.revisionColumns.status}</th>
+                      <th>{copy.revisionColumns.registeredBy}</th>
+                      <th>{copy.revisionColumns.createdAt}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {manifestDetail.revisions.map((revision) => (
+                      <tr key={revision.revision_number}>
+                        <td>{formatNumber(revision.revision_number)}</td>
+                        <td className="font-mono text-xs">{revision.version}</td>
+                        <td>{formatConnectorLabel(revision.status)}</td>
+                        <td>{revision.registered_by}</td>
+                        <td>{formatTimestamp(revision.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </DataTable>
+              </section>
+            ) : null}
+          </div>
         ) : (
           <p className="m-0 text-sm text-muted">{copy.manifestMissing}</p>
         )}
@@ -159,12 +213,16 @@ function DataSchemaTab({ connector }: { connector: ConnectorRegistryItem }) {
       <section className="grid gap-2">
         <div className="grid gap-1">
           <Eyebrow>{copy.sampleTitle}</Eyebrow>
-          <p className="m-0 text-sm text-muted">
-            {copy.sampleDetail}{" "}
-            <span className="font-mono text-xs">{sample.file_name}</span>
-          </p>
+          {sample ? (
+            <p className="m-0 text-sm text-muted">
+              {copy.sampleDetail}{" "}
+              <span className="font-mono text-xs">{sample.file_name}</span>
+            </p>
+          ) : (
+            <p className="m-0 text-sm text-muted">{copy.neverSampled}</p>
+          )}
         </div>
-        {sample.sample_rows.length === 0 ? (
+        {!sample ? null : sample.sample_rows.length === 0 ? (
           <p className="m-0 text-sm text-muted">{copy.sampleEmpty}</p>
         ) : (
           <DataTable aria-label={copy.sampleTitle} minWidth={420}>
@@ -193,46 +251,65 @@ function DataSchemaTab({ connector }: { connector: ConnectorRegistryItem }) {
   );
 }
 
-/** Placeholder for sync surfaces of a just-registered, not-yet-activated manifest. */
-function PendingActivationPanel() {
-  return (
-    <EmptyPanel
-      detail={strings.connectors.pendingActivation.detail}
-      icon={FileClock}
-      title={strings.connectors.pendingActivation.title}
-    />
-  );
-}
-
 export function ConnectorDetail({
-  entry,
+  activeTab,
+  connector,
+  identitySession,
+  onTabChange,
   registries,
+  tenantId,
 }: {
-  entry: ConnectorListEntry;
+  activeTab: ConnectorDetailTab;
+  connector: ConnectorRegistryItem;
+  identitySession: IdentitySessionReadModel | null;
+  onTabChange: (tab: ConnectorDetailTab) => void;
   registries: ConnectorRegistries;
+  tenantId: string;
 }) {
   const tabs = strings.connectors.tabs;
-  const { connector } = entry;
   const { manifest } = connector;
-  // Manifest-only entries (wizard registrations the reference registry does
-  // not know yet) cannot preview or run syncs, so those tabs explain the
-  // pending activation instead of offering actions that would 404/422.
-  const activationPending = entry.source === "manifest";
+  const manifestDetailPath = buildTenantScopedPath(
+    `${CONNECTOR_ENDPOINTS.manifests}/${encodeURIComponent(manifest.connector_id)}`,
+    tenantId,
+  );
+  const manifestDetail = useAxisQuery<ConnectorManifestDetail>(manifestDetailPath, {
+    enabled: connector.persisted_manifest !== null,
+    expectedTenantId: tenantId,
+    parse: (value) => {
+      const detail = parseConnectorManifestDetail(value);
+      if (detail.connector_id !== manifest.connector_id) {
+        throw new Error("Connector manifest detail response does not match the selected connector.");
+      }
+      return detail;
+    },
+  });
+  const effectiveConnector = connectorWithCurrentManifest(
+    connector,
+    manifestDetail.data,
+  );
+  const effectiveManifest = effectiveConnector.manifest;
 
   return (
     <Card className="grid content-start gap-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="grid max-w-xl gap-1">
-          <Eyebrow>{formatConnectorLabel(manifest.connector_type)}</Eyebrow>
-          <h2 className="font-display m-0 text-xl text-ink">{manifest.display_name}</h2>
+          <Eyebrow>{formatConnectorLabel(effectiveManifest.connector_type)}</Eyebrow>
+          <h2 className="font-display m-0 text-xl text-ink">
+            {effectiveManifest.display_name}
+          </h2>
           <p className="m-0 font-mono text-xs break-words text-muted">
-            {manifest.connector_id}
+            {effectiveManifest.connector_id}
           </p>
         </div>
-        <InspectDrawer record={connector} title={manifest.display_name} />
+        <InspectDrawer record={effectiveConnector} title={effectiveManifest.display_name} />
+        <ManifestExportPanel connector={effectiveConnector} />
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={activeTab} onValueChange={(value) => {
+        if (isConnectorDetailTab(value)) {
+          onTabChange(value);
+        }
+      }}>
         <TabsList>
           <TabsTrigger value="overview">{tabs.overview}</TabsTrigger>
           <TabsTrigger value="schema">{tabs.dataSchema}</TabsTrigger>
@@ -240,22 +317,39 @@ export function ConnectorDetail({
           <TabsTrigger value="governance">{tabs.governance}</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
-          <OverviewTab connector={connector} registries={registries} />
+          <OverviewTab
+            connector={effectiveConnector}
+            manifestDetail={manifestDetail.data}
+            manifestDetailErrorRequestId={manifestDetail.errorRequestId}
+            manifestDetailPath={manifestDetailPath}
+            manifestDetailSource={manifestDetail.source}
+          />
         </TabsContent>
         <TabsContent value="schema">
-          {activationPending ? <PendingActivationPanel /> : <DataSchemaTab connector={connector} />}
+          <DataSchemaTab connector={effectiveConnector} />
         </TabsContent>
         <TabsContent value="runs">
-          {activationPending ? (
-            <PendingActivationPanel />
-          ) : (
-            <ConnectorRuns connector={connector} registries={registries} />
-          )}
+          <ConnectorRuns
+            connector={effectiveConnector}
+            identitySession={identitySession}
+            registries={registries}
+            tenantId={tenantId}
+          />
         </TabsContent>
         <TabsContent value="governance">
-          <ConnectorGovernance connectorId={manifest.connector_id} registries={registries} />
+          <ConnectorGovernance
+            connectorId={effectiveManifest.connector_id}
+            registries={registries}
+          />
         </TabsContent>
       </Tabs>
     </Card>
   );
+}
+
+export const connectorDetailTabs = ["overview", "schema", "runs", "governance"] as const;
+export type ConnectorDetailTab = typeof connectorDetailTabs[number];
+
+function isConnectorDetailTab(value: string): value is ConnectorDetailTab {
+  return connectorDetailTabs.some((tab) => tab === value);
 }

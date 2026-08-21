@@ -1,3 +1,4 @@
+import type { ActionRunList } from "@/lib/action-demo";
 import type { ManufacturingApprovalInbox } from "@/lib/approval-demo";
 import type { ManufacturingAuditExplorer } from "@/lib/audit-demo";
 import type { ManufacturingModelRouting } from "@/lib/model-routing-demo";
@@ -17,6 +18,7 @@ export const overviewFixture: ManufacturingOverview = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Works",
   scenario: "Plant Operations Cockpit",
+  provenance: "reference_scenario",
   as_of: "2026-07-10T09:00:00+02:00",
   metrics: [
     {
@@ -122,6 +124,7 @@ export const snapshotFixture: ManufacturingOperationsSnapshot = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Works",
   scenario: "Plant Operations Cockpit",
+  provenance: "live",
   as_of: "2026-07-10T10:30:00+02:00",
   metrics: [
     {
@@ -188,6 +191,7 @@ export const modelRoutingFixture: ManufacturingModelRouting = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Works",
   scenario: "Plant Operations Cockpit",
+  provenance: "reference_scenario",
   as_of: "2026-07-10T09:00:00+02:00",
   routing_status: "watch",
   metrics: [],
@@ -290,6 +294,7 @@ export const auditEventsFixture: ManufacturingAuditExplorer = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Works",
   scenario: "Plant Operations Cockpit",
+  provenance: "live",
   as_of: "2026-07-10T10:30:00+02:00",
   ledger_status: "ready",
   metrics: [],
@@ -322,6 +327,7 @@ export const approvalInboxFixture: ManufacturingApprovalInbox = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Works",
   scenario: "Plant Operations Cockpit",
+  provenance: "reference_scenario",
   as_of: "2026-07-10T09:00:00+02:00",
   queue_status: "action_required",
   policy_notes: [],
@@ -475,6 +481,91 @@ export const approvalInboxFixture: ManufacturingApprovalInbox = {
       ],
     },
   ],
+};
+
+/*
+ * Approved action runs at every state the strip must distinguish: three waits
+ * past the eight-hour threshold, one below it, one outcome already reported,
+ * and one run with no authorising approval.
+ */
+export const actionRunsFixture: ActionRunList = {
+  tenant_id: "tenant_fixture",
+  runs: [
+    {
+      action_run_id: "run_fixture_expedite",
+      action_id: "request_supplier_expedite",
+      status: "approved_for_execution",
+      approval_id: "appr_fixture_expedite",
+      workflow_id: "wf_supplier_delay_review",
+      created_at: "2026-07-24T19:05:18Z",
+      updated_at: "2026-07-24T19:05:18Z",
+      waiting_duration_seconds: 102_368,
+      outcome: null,
+    },
+    {
+      action_run_id: "run_fixture_quality",
+      action_id: "place_quality_hold",
+      status: "approved_for_execution",
+      approval_id: "appr_fixture_quality",
+      workflow_id: "wf_quality_hold",
+      created_at: "2026-07-25T04:20:00Z",
+      updated_at: "2026-07-25T04:20:00Z",
+      waiting_duration_seconds: 78_183,
+      outcome: null,
+    },
+    {
+      action_run_id: "run_fixture_maintenance",
+      action_id: "shift_maintenance_window",
+      status: "approved_for_execution",
+      approval_id: "appr_fixture_maintenance",
+      workflow_id: "wf_maintenance_window",
+      created_at: "2026-07-25T15:00:00Z",
+      updated_at: "2026-07-25T15:00:00Z",
+      waiting_duration_seconds: 30_000,
+      outcome: null,
+    },
+    {
+      action_run_id: "run_fixture_recent",
+      action_id: "reorder_packaging_film",
+      status: "approved_for_execution",
+      approval_id: "appr_fixture_fourth",
+      workflow_id: "wf_fourth",
+      created_at: "2026-07-25T15:41:13Z",
+      updated_at: "2026-07-25T15:41:13Z",
+      waiting_duration_seconds: 28_213,
+      outcome: null,
+    },
+    {
+      action_run_id: "run_fixture_reported",
+      action_id: "release_finished_batch",
+      status: "execution_completed",
+      approval_id: "appr_fixture_release",
+      workflow_id: "wf_release_batch",
+      created_at: "2026-07-23T08:00:00Z",
+      updated_at: "2026-07-23T09:30:00Z",
+      waiting_duration_seconds: 90_000,
+      outcome: {
+        result_summary: "External executor released the finished batch.",
+        evidence_refs: ["audit_release_execution"],
+      },
+    },
+    {
+      action_run_id: "run_fixture_unauthorised",
+      action_id: "generate_daily_brief",
+      status: "approved_for_execution",
+      approval_id: null,
+      workflow_id: null,
+      created_at: "2026-07-23T07:00:00Z",
+      updated_at: "2026-07-23T07:00:00Z",
+      waiting_duration_seconds: 120_000,
+      outcome: null,
+    },
+  ],
+};
+
+export const emptyActionRunsFixture: ActionRunList = {
+  tenant_id: "tenant_fixture",
+  runs: [],
 };
 
 export const policyRegistryFixture: PlatformPolicyRegistry = {

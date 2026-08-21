@@ -94,6 +94,7 @@ api:
     port: 8000
   env:
     AXIS_ENV: production
+    AXIS_TENANT_ADMISSION_MODE: registered_only
     AXIS_PUBLIC_BASE_URL: https://axis.example.com
     AXIS_API_BASE_URL: https://api.axis.example.com
     AXIS_CORS_ORIGINS:

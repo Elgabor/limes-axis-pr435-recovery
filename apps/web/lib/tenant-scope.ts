@@ -1,5 +1,16 @@
 import type { IdentitySessionReadModel } from "./platform-overview";
 
+/**
+ * Prefix for every operational API call. These routes were served under
+ * `/demo/manufacturing` — a path no customer should call, naming a vertical the
+ * product does not only serve. The API still answers there as a deprecated
+ * alias; the console does not. Kept as one constant so the next move is a
+ * one-line change rather than another sweep of call sites.
+ *
+ * `/demo/manufacturing/bootstrap` is deliberately excluded: it seeds the
+ * demonstration scenario and has no operational equivalent.
+ */
+export const OPERATIONS_API_PREFIX = "/operations";
 export const DEMO_TENANT_ID = "tenant_demo_manufacturing";
 
 export type ConsoleTenantScope =

@@ -4,18 +4,26 @@ import type {
   ApprovalDecisionPersistenceResult,
   ManufacturingApprovalInbox,
 } from "../approval-demo";
-import { parseContract, platformStatusSchema, stringArraySchema } from "./shared";
+import {
+  manufacturingProvenanceSchema,
+  nullableStringSchema,
+  parseContract,
+  platformStatusSchema,
+  stringArraySchema,
+} from "./shared";
 
 const approvalDecision = z.enum(["approve", "reject", "request_changes"]);
 const approvalInbox = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   queue_status: platformStatusSchema,
   policy_notes: stringArraySchema,
   approvals: z.array(z.object({
     approval_id: z.string(),
+    action_run_id: z.string().nullable().optional(),
     action: z.string(),
     risk_level: z.enum(["high", "medium", "low"]),
     status: z.string(),

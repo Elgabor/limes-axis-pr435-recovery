@@ -36,7 +36,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from axis_api.action_reference import (
     ActionReferenceRecordInvalid,
     ActionReferenceRecordNotFound,
-    get_persisted_manufacturing_action_registry,
+    require_persisted_manufacturing_action_registry,
 )
 from axis_api.action_runs import (
     ActionPayloadValidationError,
@@ -46,7 +46,7 @@ from axis_api.action_runs import (
     ActionRunRequest,
     record_demo_action_run,
 )
-from axis_api.agent_reference import get_persisted_manufacturing_agent_registry
+from axis_api.agent_reference import require_persisted_manufacturing_agent_registry
 from axis_api.audit import AuditEventCreate
 from axis_api.demo import ActionRegistryEntry, AgentRegistryEntry
 from axis_api.model_invocations import (
@@ -420,7 +420,9 @@ def _resolve_agent(
     tenant_id: str,
     agent_id: str,
 ) -> AgentRegistryEntry:
-    registry = get_persisted_manufacturing_agent_registry(repository, tenant_id=tenant_id)
+    registry = require_persisted_manufacturing_agent_registry(
+        repository, tenant_id=tenant_id
+    )
     agent = next(
         (entry for entry in registry.agents if entry.agent_id == agent_id),
         None,
@@ -1144,7 +1146,9 @@ def _allowed_registry_actions(
     agent: AgentRegistryEntry,
 ) -> list[ActionRegistryEntry]:
     try:
-        registry = get_persisted_manufacturing_action_registry(repository, tenant_id=tenant_id)
+        registry = require_persisted_manufacturing_action_registry(
+            repository, tenant_id=tenant_id
+        )
     except (ActionReferenceRecordNotFound, ActionReferenceRecordInvalid):
         return []
     return [
@@ -1162,7 +1166,9 @@ def _registry_action(
 ) -> ActionRegistryEntry | str:
     """Resolve the proposed action or return a fail-closed block reason."""
     try:
-        registry = get_persisted_manufacturing_action_registry(repository, tenant_id=tenant_id)
+        registry = require_persisted_manufacturing_action_registry(
+            repository, tenant_id=tenant_id
+        )
     except (ActionReferenceRecordNotFound, ActionReferenceRecordInvalid):
         return "action_registry_unavailable"
     action = next(

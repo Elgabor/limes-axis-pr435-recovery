@@ -35,6 +35,7 @@ from axis_api.persistence import (
     ConnectorCredentialHandleCreate,
     ConnectorCredentialLeaseCreate,
     DemoReferenceRecordCreate,
+    TenantCreate,
 )
 
 
@@ -47,6 +48,15 @@ def session_factory() -> sessionmaker[Session]:
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with session_scope(factory) as session:
+        AxisPersistenceRepository(session).create_tenant(
+            TenantCreate(
+                tenant_id="tenant_demo_manufacturing",
+                display_name="Ravenna Works",
+                description="Plant Operations Cockpit",
+                created_by="test",
+            )
+        )
     seed_connector_registry_reference(factory)
     yield factory
     engine.dispose()
@@ -61,6 +71,15 @@ def empty_session_factory() -> sessionmaker[Session]:
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with session_scope(factory) as session:
+        AxisPersistenceRepository(session).create_tenant(
+            TenantCreate(
+                tenant_id="tenant_demo_manufacturing",
+                display_name="Ravenna Works",
+                description="Plant Operations Cockpit",
+                created_by="test",
+            )
+        )
     yield factory
     engine.dispose()
 
@@ -217,6 +236,7 @@ def test_build_connector_credential_lease_registry_maps_persisted_records(
         )
 
     assert registry.tenant_id == "tenant_demo_manufacturing"
+    assert registry.provenance == "live"
     assert registry.metrics[0].label == "Credential Leases"
     assert registry.metrics[0].value == "1"
     assert registry.leases[0].lease_id == created.lease_id
@@ -230,6 +250,31 @@ def test_build_connector_credential_lease_registry_maps_persisted_records(
     assert "api_key" not in serialized
     assert "credential_value" not in serialized
     assert "secret_value" not in serialized
+
+
+def test_empty_connector_credential_lease_registry_uses_tenant_metadata(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        repository.create_tenant(
+            TenantCreate(
+                tenant_id="tenant_customer_leases",
+                display_name="Genoa Logistics",
+                description="",
+                created_by="test",
+            )
+        )
+        registry = build_connector_credential_lease_registry(
+            repository,
+            ConnectorCredentialLeaseQuery(tenant_id="tenant_customer_leases"),
+        )
+
+    assert registry.plant_name == "Genoa Logistics"
+    assert registry.scenario is None
+    assert registry.provenance == "empty"
+    assert registry.leases == []
+    assert "Ravenna" not in registry.model_dump_json()
 
 
 def test_connector_credential_leases_endpoint_returns_tenant_scoped_records(
@@ -251,6 +296,7 @@ def test_connector_credential_leases_endpoint_returns_tenant_scoped_records(
     assert response.status_code == 200
     body = response.json()
     assert body["tenant_id"] == "tenant_demo_manufacturing"
+    assert body["provenance"] == "live"
     assert body["metrics"][0]["value"] == "1"
     assert body["leases"][0]["lease_id"] == "lease_file_csv_readonly_20260622"
     assert body["leases"][0]["renewal_due_at"] == "2026-06-22T09:40:00Z"

@@ -1,6 +1,11 @@
 from pydantic import ValidationError
 
 from axis_api.demo import ManufacturingWorkflowConsole
+from axis_api.manufacturing_empty import empty_manufacturing_workflow_console
+from axis_api.manufacturing_metadata import (
+    ManufacturingResponseProvenance,
+    get_manufacturing_tenant_metadata,
+)
 from axis_api.persistence import AxisPersistenceRepository
 
 MANUFACTURING_WORKFLOW_CONSOLE_REFERENCE_ID = "manufacturing-workflow-console"
@@ -17,17 +22,16 @@ class WorkflowReferenceRecordInvalid(ValueError):
 
 def get_persisted_manufacturing_workflow_console(
     repository: AxisPersistenceRepository,
-    tenant_id: str = "tenant_demo_manufacturing",
+    tenant_id: str,
 ) -> ManufacturingWorkflowConsole:
+    tenant_metadata = get_manufacturing_tenant_metadata(repository, tenant_id)
     record = repository.get_demo_reference_record(
         tenant_id=tenant_id,
         surface=WORKFLOW_CONSOLE_SURFACE,
         reference_id=MANUFACTURING_WORKFLOW_CONSOLE_REFERENCE_ID,
     )
     if record is None:
-        raise WorkflowReferenceRecordNotFound(
-            "Manufacturing workflow console reference record not found"
-        )
+        return empty_manufacturing_workflow_console(tenant_id, tenant_metadata)
 
     try:
         console = ManufacturingWorkflowConsole.model_validate(record.payload)
@@ -41,4 +45,6 @@ def get_persisted_manufacturing_workflow_console(
             "Manufacturing workflow console tenant does not match record tenant"
         )
 
-    return console
+    return console.model_copy(
+        update={"provenance": ManufacturingResponseProvenance.REFERENCE_SCENARIO}
+    )

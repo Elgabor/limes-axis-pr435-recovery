@@ -294,6 +294,7 @@ def test_ontology_endpoint_uses_query_runtime_and_oidc_principal(
     response = client.get(
         "/demo/manufacturing/ontology",
         headers={"Authorization": "Bearer valid-token"},
+        params={"tenant_id": "tenant_demo_manufacturing"},
     )
 
     assert response.status_code == 200
@@ -322,6 +323,7 @@ def test_ontology_endpoint_filters_graph_when_oidc_auth_required(
     response = client.get(
         "/demo/manufacturing/ontology",
         headers={"Authorization": "Bearer valid-token"},
+        params={"tenant_id": "tenant_demo_manufacturing"},
     )
 
     assert response.status_code == 200
@@ -374,6 +376,7 @@ def test_ontology_endpoint_allows_empty_filtered_graph(
     response = client.get(
         "/demo/manufacturing/ontology",
         headers={"Authorization": "Bearer valid-token"},
+        params={"tenant_id": "tenant_demo_manufacturing"},
     )
 
     assert response.status_code == 200

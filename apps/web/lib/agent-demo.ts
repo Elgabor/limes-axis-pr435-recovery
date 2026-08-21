@@ -1,4 +1,4 @@
-import type { PlatformStatus } from "./platform-overview";
+import type { ManufacturingProvenance, PlatformStatus } from "./platform-overview";
 
 export type AgentActionProposal = {
   proposal_id: string;
@@ -47,8 +47,9 @@ export type AgentRegistryFilterOptions = {
 
 export type ManufacturingAgentRegistry = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   registry_status: PlatformStatus;
   metrics: {

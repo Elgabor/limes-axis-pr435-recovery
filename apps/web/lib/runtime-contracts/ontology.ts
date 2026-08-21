@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { ManufacturingOntology, ManufacturingOntologyEntityDetail } from "../ontology-demo";
 import {
+  manufacturingProvenanceSchema,
   nullableStringSchema,
   parseContract,
   platformStatusSchema,
@@ -40,8 +41,9 @@ const ontologyRelationship = z.object({
 });
 const ontology = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   nodes: z.array(ontologyNode),
   relationships: z.array(ontologyRelationship),
@@ -67,8 +69,9 @@ const ontology = z.object({
 
 const ontologyEntityDetail = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   node: ontologyNode,
   connected_relationships: z.array(z.object({

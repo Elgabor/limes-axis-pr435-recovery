@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import type { ManufacturingModelRouting } from "../model-routing-demo";
 import {
+  manufacturingProvenanceSchema,
+  nullableStringSchema,
   overviewMetricSchema,
   parseContract,
   platformStatusSchema,
@@ -10,8 +12,9 @@ import {
 
 const modelRouting = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   routing_status: platformStatusSchema,
   metrics: z.array(overviewMetricSchema),

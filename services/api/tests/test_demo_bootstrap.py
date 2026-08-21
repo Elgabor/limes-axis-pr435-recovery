@@ -281,3 +281,34 @@ def test_bootstrap_requires_canonical_scenario_records(
     client.close()
     assert response.status_code == 422
     assert response.json()["detail"]["reason"] == "demo_scenario_reference_missing"
+
+
+def test_bootstrap_registers_the_tenant_in_the_platform_registry(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """A bootstrapped tenant must exist to the rest of the platform.
+
+    Seeding reference records alone left the tenant invisible to
+    /platform/tenants and to every registry-backed resource (vocabulary,
+    quotas, usage), so a bootstrapped tenant could not be administered like any
+    other.
+    """
+    seed_canonical_reference_records(session_factory)
+    client = build_client(session_factory)
+
+    response = client.post(
+        "/demo/manufacturing/bootstrap",
+        json=bootstrap_request_payload("tenant_bootstrap_registry"),
+    )
+    assert response.status_code in (200, 201), response.text
+
+    with session_scope(session_factory) as session:
+        tenant = AxisPersistenceRepository(session).get_tenant("tenant_bootstrap_registry")
+        assert tenant is not None
+        # `conftest` back-fills a Tenant row for any reference record a test
+        # inserts, using the tenant id as the name — so a bare "row exists"
+        # assertion passes even without bootstrap registering anything. The
+        # scenario's own plant name is what only bootstrap can supply.
+        assert tenant.name != "tenant_bootstrap_registry"
+        assert tenant.name == "Ravenna Works"
+    client.close()

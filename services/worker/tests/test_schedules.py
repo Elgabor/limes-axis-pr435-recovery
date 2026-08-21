@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 from axis_api.config import Settings
 from temporalio.client import Schedule, ScheduleAlreadyRunningError
+from temporalio.service import RPCError, RPCStatusCode
 
 from axis_worker.schedules import (
     AUDIT_RETENTION_SCHEDULE_ID,
@@ -28,12 +29,22 @@ class FakeScheduleHandle:
         self._store = store
         self._schedule_id = schedule_id
         self.update_calls = 0
+        self.pause_calls = 0
 
     async def update(self, updater) -> None:
         self.update_calls += 1
         current = self._store[self._schedule_id]
         update = await updater(_FakeUpdateInput(_FakeDescription(current)))
         self._store[self._schedule_id] = update.schedule
+
+    async def pause(self, *, note: str | None = None) -> None:
+        self.pause_calls += 1
+        try:
+            schedule = self._store[self._schedule_id]
+        except KeyError as exc:
+            raise RPCError("schedule not found", RPCStatusCode.NOT_FOUND, b"") from exc
+        schedule.state.paused = True
+        schedule.state.note = note
 
 
 class _FakeDescription:
@@ -64,8 +75,10 @@ class FakeScheduleClient:
         return self.get_schedule_handle(id)
 
     def get_schedule_handle(self, id: str) -> FakeScheduleHandle:
-        handle = FakeScheduleHandle(self.schedules, id)
-        self.handles[id] = handle
+        handle = self.handles.get(id)
+        if handle is None:
+            handle = FakeScheduleHandle(self.schedules, id)
+            self.handles[id] = handle
         return handle
 
 
@@ -116,9 +129,7 @@ async def test_schedules_paused_when_disabled_and_active_when_enabled() -> None:
         _settings(AXIS_SCHEDULED_JOBS_ENABLED="false"),
         task_queue="axis-foundation",
     )
-    assert all(
-        schedule.state.paused for schedule in disabled_client.schedules.values()
-    )
+    assert all(schedule.state.paused for schedule in disabled_client.schedules.values())
 
     enabled_client = FakeScheduleClient()
     await register_maintenance_schedules(
@@ -126,9 +137,7 @@ async def test_schedules_paused_when_disabled_and_active_when_enabled() -> None:
         _settings(AXIS_SCHEDULED_JOBS_ENABLED="true"),
         task_queue="axis-foundation",
     )
-    assert all(
-        not schedule.state.paused for schedule in enabled_client.schedules.values()
-    )
+    assert all(not schedule.state.paused for schedule in enabled_client.schedules.values())
 
 
 async def test_disabled_master_switch_repauses_manually_unpaused_schedule() -> None:
@@ -207,9 +216,7 @@ async def test_connector_live_sync_schedule_registered_behind_flag() -> None:
         AXIS_CONNECTOR_SCHEDULED_LIVE_SYNC_INTERVAL_SECONDS="600",
         AXIS_SCHEDULED_JOBS_ENABLED="true",
     )
-    outcomes = await register_maintenance_schedules(
-        client, settings, task_queue="axis-foundation"
-    )
+    outcomes = await register_maintenance_schedules(client, settings, task_queue="axis-foundation")
 
     assert set(outcomes) == ALL_IDS | {CONNECTOR_LIVE_SYNC_SCHEDULE_ID}
     schedule = client.schedules[CONNECTOR_LIVE_SYNC_SCHEDULE_ID]
@@ -227,3 +234,45 @@ async def test_connector_live_sync_schedule_created_paused_without_master_flag()
 
     # The master scheduled-jobs flag still seeds the created paused state.
     assert client.schedules[CONNECTOR_LIVE_SYNC_SCHEDULE_ID].state.paused is True
+
+
+async def test_disabling_connector_live_sync_pauses_existing_schedule() -> None:
+    client = FakeScheduleClient()
+    enabled = _settings(
+        AXIS_CONNECTOR_SCHEDULED_LIVE_SYNC_ENABLED="true",
+        AXIS_SCHEDULED_JOBS_ENABLED="true",
+    )
+    await register_maintenance_schedules(client, enabled, task_queue="axis-foundation")
+    assert client.schedules[CONNECTOR_LIVE_SYNC_SCHEDULE_ID].state.paused is False
+
+    disabled = _settings(
+        AXIS_CONNECTOR_SCHEDULED_LIVE_SYNC_ENABLED="false",
+        AXIS_SCHEDULED_JOBS_ENABLED="true",
+    )
+    outcomes = await register_maintenance_schedules(client, disabled, task_queue="axis-foundation")
+
+    assert outcomes[CONNECTOR_LIVE_SYNC_SCHEDULE_ID] == "paused"
+    assert client.schedules[CONNECTOR_LIVE_SYNC_SCHEDULE_ID].state.paused is True
+    assert all(not client.schedules[schedule_id].state.paused for schedule_id in ALL_IDS)
+
+
+async def test_disabled_connector_live_sync_reconciliation_is_idempotent() -> None:
+    client = FakeScheduleClient()
+    enabled = _settings(
+        AXIS_CONNECTOR_SCHEDULED_LIVE_SYNC_ENABLED="true",
+        AXIS_SCHEDULED_JOBS_ENABLED="true",
+    )
+    await register_maintenance_schedules(client, enabled, task_queue="axis-foundation")
+
+    disabled = _settings(
+        AXIS_CONNECTOR_SCHEDULED_LIVE_SYNC_ENABLED="false",
+        AXIS_SCHEDULED_JOBS_ENABLED="true",
+    )
+    first = await register_maintenance_schedules(client, disabled, task_queue="axis-foundation")
+    second = await register_maintenance_schedules(client, disabled, task_queue="axis-foundation")
+
+    assert first[CONNECTOR_LIVE_SYNC_SCHEDULE_ID] == "paused"
+    assert second[CONNECTOR_LIVE_SYNC_SCHEDULE_ID] == "paused"
+    assert set(client.schedules) == ALL_IDS | {CONNECTOR_LIVE_SYNC_SCHEDULE_ID}
+    assert client.schedules[CONNECTOR_LIVE_SYNC_SCHEDULE_ID].state.paused is True
+    assert client.handles[CONNECTOR_LIVE_SYNC_SCHEDULE_ID].pause_calls == 2

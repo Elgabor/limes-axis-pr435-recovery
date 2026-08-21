@@ -24,7 +24,7 @@ from axis_api.config import Settings
 from axis_api.db import session_scope
 from axis_api.identity import StaticJwksOidcVerifier
 from axis_api.main import create_app
-from axis_api.models import AuditEvent, Base, OidcBrowserSession
+from axis_api.models import AuditEvent, Base, OidcBrowserSession, Tenant
 from axis_api.oidc_code_flow import (
     OidcCodeFlowConfigurationError,
     OidcTokenExchangeError,
@@ -42,6 +42,10 @@ from axis_api.persistence import (
     TenantQuotaUpsert,
 )
 from axis_api.platform_tenants import TenantQuotaKey
+from axis_api.tenant_admission import (
+    TENANT_ADMISSION_REGISTERED_ONLY,
+    UNREGISTERED_REQUEST_DENIED_AUDIT_EVENT_TYPE,
+)
 from axis_api.workflow_runtime import WorkflowSignalResult
 
 TOKEN_SECRET = "axis-test-secret"
@@ -573,6 +577,26 @@ def test_login_callback_rejects_suspended_tenant_fail_closed() -> None:
     assert client.cookies.get("axis_session") is None
 
 
+def test_login_callback_rejects_unregistered_tenant_in_registered_only_mode() -> None:
+    settings = _settings(tenant_admission_mode=TENANT_ADMISSION_REGISTERED_ONLY)
+    client, factory, token_endpoint = _build_app(settings)
+
+    authorize = client.get("/identity/oidc/authorize?return_to=/")
+    params = parse_qs(urlparse(authorize.headers["location"]).query)
+    token_endpoint.nonce = params["nonce"][0]
+    state = params["state"][0]
+    callback = client.get(f"/identity/oidc/callback?code=valid-code&state={state}")
+
+    assert callback.status_code == 403
+    assert callback.json()["detail"]["reason"] == "tenant_not_registered"
+    with factory() as session:
+        assert _sessions(session) == []
+        assert _audit_event_types(session) == [
+            UNREGISTERED_REQUEST_DENIED_AUDIT_EVENT_TYPE
+        ]
+    assert client.cookies.get("axis_session") is None
+
+
 def test_session_refresh_rejects_suspended_tenant_and_revokes_session() -> None:
     settings = _settings()
     client, factory, token_endpoint = _build_app(settings)
@@ -591,6 +615,29 @@ def test_session_refresh_rejects_suspended_tenant_and_revokes_session() -> None:
         assert stored[0].revocation_reason == "tenant_suspended"
         assert "identity.oidc_session.revoked" in _audit_event_types(session)
     # No refresh_token grant was attempted against the IdP.
+    assert all(form.get("grant_type") != "refresh_token" for form in token_endpoint.forms)
+
+
+def test_session_refresh_rejects_tenant_removed_after_login() -> None:
+    settings = _settings(tenant_admission_mode=TENANT_ADMISSION_REGISTERED_ONLY)
+    client, factory, token_endpoint = _build_app(settings)
+    _persist_tenant(factory, status="active")
+    _login(client, token_endpoint)
+    with session_scope(factory) as session:
+        tenant = session.get(Tenant, DEFAULT_TENANT)
+        assert tenant is not None
+        session.delete(tenant)
+
+    refresh = client.post("/identity/session/refresh", headers=_csrf_headers(client))
+
+    assert refresh.status_code == 403
+    assert refresh.json()["detail"]["reason"] == "tenant_not_registered"
+    with factory() as session:
+        stored = _sessions(session)
+        assert len(stored) == 1
+        assert stored[0].status == "revoked"
+        assert stored[0].revocation_reason == "tenant_not_registered"
+        assert "identity.oidc_session.revoked" in _audit_event_types(session)
     assert all(form.get("grant_type") != "refresh_token" for form in token_endpoint.forms)
 
 

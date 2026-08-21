@@ -6,6 +6,8 @@ import type { AuditExportBundle, ManufacturingAuditExplorer } from "@/lib/audit-
 
 const mocks = vi.hoisted(() => ({
   axisFetchParsedJson: vi.fn(),
+  useAxisQuery: vi.fn(),
+  useConsoleTenantScope: vi.fn(),
   session: {
     accessToken: "fixture-token",
     actorId: "fixture-actor",
@@ -32,12 +34,23 @@ vi.mock("@/lib/use-oidc-session", () => ({
   useOidcConsoleSession: () => ({ session: mocks.session }),
 }));
 
+vi.mock("@/lib/use-axis-query", () => ({
+  useAxisQuery: mocks.useAxisQuery,
+}));
+
+vi.mock("@/lib/use-console-tenant-scope", () => ({
+  IDENTITY_SESSION_ENDPOINT: "/identity/session",
+  useConsoleTenantScope: mocks.useConsoleTenantScope,
+}));
+
 import { AuditExplorer } from "./audit-explorer";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 const explorerFixture: ManufacturingAuditExplorer = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Plant",
   scenario: "Component fixture",
+  provenance: "live",
   as_of: "2026-07-09T09:00:00+02:00",
   ledger_status: "ready",
   metrics: [],
@@ -132,19 +145,35 @@ const exportBundleFixture: AuditExportBundle = {
 
 function mockAuditApi() {
   mocks.axisFetchParsedJson.mockImplementation((path: string) => {
-    if (path.startsWith("/demo/manufacturing/audit/export")) {
+    if (path.startsWith(`${OPERATIONS_API_PREFIX}/audit/export`)) {
       return Promise.resolve(exportBundleFixture);
-    }
-    if (path.startsWith("/demo/manufacturing/audit/events")) {
-      return Promise.resolve(explorerFixture);
     }
     return Promise.reject(new Error(`Unexpected path ${path}`));
   });
 }
 
+function queryResult(data: unknown, source: "loading" | "api" | "unavailable") {
+  return {
+    data,
+    source,
+    error: source === "unavailable" ? "Axis API request failed." : null,
+    isRefreshing: false,
+    isLoading: source === "loading",
+    isUnavailable: source === "unavailable",
+  };
+}
+
 describe("AuditExplorer integrity and export", () => {
   beforeEach(() => {
     mocks.axisFetchParsedJson.mockReset();
+    mocks.useAxisQuery.mockReset();
+    mocks.useConsoleTenantScope.mockReset();
+    mocks.useConsoleTenantScope.mockReturnValue({
+      identity: queryResult({ authenticated: true, tenant_id: "tenant_fixture" }, "api"),
+      tenantId: "tenant_fixture",
+      tenantQueriesEnabled: true,
+    });
+    mocks.useAxisQuery.mockReturnValue(queryResult(explorerFixture, "api"));
     mockAuditApi();
   });
 
@@ -212,9 +241,69 @@ describe("AuditExplorer integrity and export", () => {
     render(<AuditExplorer />);
 
     await screen.findByText("Ledger verified — hash chain intact");
-    expect(mocks.axisFetchParsedJson).toHaveBeenCalledTimes(2);
-    for (const [, , options] of mocks.axisFetchParsedJson.mock.calls) {
-      expect(options).toMatchObject({ session: mocks.session });
-    }
+    expect(mocks.axisFetchParsedJson).toHaveBeenCalledTimes(1);
+    expect(mocks.axisFetchParsedJson.mock.calls[0]?.[2]).toMatchObject({
+      session: mocks.session,
+    });
+    expect(mocks.useAxisQuery).toHaveBeenCalledWith(
+      `${OPERATIONS_API_PREFIX}/audit/events?tenant_id=tenant_fixture&limit=100`,
+      expect.objectContaining({ enabled: true, expectedTenantId: "tenant_fixture" }),
+    );
+  });
+
+  it("renders the empty state instead of an excluded record's details when filters match nothing", async () => {
+    // Two events whose tenant/event/scope combinations do not overlap, so a
+    // tenant+event filter pair that each individually matches a real event
+    // can still match zero events in combination.
+    const twoEventExplorer: ManufacturingAuditExplorer = {
+      ...explorerFixture,
+      filter_options: {
+        tenants: ["tenant_a", "tenant_b"],
+        event_types: ["agent.proposal.created", "policy.egress.blocked"],
+        scopes: ["wf_a", "wf_b"],
+        actors: ["agent_a", "model-router"],
+        categories: ["agent", "policy"],
+      },
+      events: [
+        {
+          ...explorerFixture.events[0],
+          audit_event_id: "audit_evt_a",
+          tenant_id: "tenant_a",
+          event_type: "agent.proposal.created",
+          scope: "wf_a",
+        },
+        {
+          ...explorerFixture.events[0],
+          audit_event_id: "audit_evt_b",
+          tenant_id: "tenant_b",
+          event_type: "policy.egress.blocked",
+          scope: "wf_b",
+          actor_id: "model-router",
+        },
+      ],
+    };
+    mocks.useAxisQuery.mockReturnValue(queryResult(twoEventExplorer, "api"));
+
+    const user = userEvent.setup();
+    render(<AuditExplorer />);
+
+    // Each value exists individually, but tenant_a never co-occurs with
+    // policy.egress.blocked — the combination matches zero events.
+    await user.selectOptions(screen.getByLabelText("Tenant"), "tenant_a");
+    await user.selectOptions(screen.getByLabelText("Event"), "policy.egress.blocked");
+    expect(window.location.search).toContain("tenant=tenant_a");
+    expect(window.location.search).toContain("event_type=policy.egress.blocked");
+
+    expect(
+      screen.getByRole("heading", { name: "No matching audit evidence" }),
+    ).toBeInTheDocument();
+    // The unfiltered fallback previously rendered audit_evt_a's raw id here.
+    expect(screen.queryByText("audit_evt_a")).not.toBeInTheDocument();
+    expect(screen.queryByText("audit_evt_b")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(
+      screen.queryByRole("heading", { name: "No matching audit evidence" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -8,6 +8,7 @@ import { Reveal } from "@/components/reveal";
 import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { formatNodeType, type ManufacturingOntologyEntityDetail } from "@/lib/ontology-demo";
+import { buildOntologyEntityRoute } from "@/lib/ontology-routes";
 
 /*
  * Presentational core of the ontology entity detail, shared by the full
@@ -80,7 +81,7 @@ function PeerNodeChip({
   }
 
   return (
-    <Link className={className} href={`/ontology/${nodeId}`}>
+    <Link className={className} href={buildOntologyEntityRoute(nodeId)}>
       {label}
     </Link>
   );

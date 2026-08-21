@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, CircleCheckBig, GitBranch, TriangleAlert } from "lucide-react";
+import { AlertTriangle, CircleCheckBig, Clock3, GitBranch, TriangleAlert } from "lucide-react";
 
 import {
   ApprovalDecisionCard,
@@ -11,21 +11,38 @@ import {
 import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { SourcePill } from "@/components/ui/source-pill";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
+import {
+  formatActionLabel,
+  partitionActionRuns,
+  type ActionRunList,
+  type ActionRunRecord,
+} from "@/lib/action-demo";
 import {
   approvalDecisionLabel,
   approvalRiskClass,
+  buildApprovalHref,
   type ApprovalInboxItem,
   type ManufacturingApprovalInbox,
 } from "@/lib/approval-demo";
 import { cn } from "@/lib/cn";
+import { formatElapsedDuration } from "@/lib/format";
 import type { ManufacturingOverview, RiskSignal, WorkflowSummary } from "@/lib/platform-overview";
 import { strings } from "@/lib/strings";
-import { buildTenantScopedPath, DEMO_TENANT_ID } from "@/lib/tenant-scope";
+import { deriveSourceState, PROVENANCE_NOT_APPLICABLE } from "@/lib/source-state";
+import { buildTenantScopedPath, DEMO_TENANT_ID, OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
+import { parseActionRunList } from "@/lib/runtime-contracts/actions";
 import { parseManufacturingApprovalInbox } from "@/lib/runtime-contracts/approvals";
 import { useAxisQuery } from "@/lib/use-axis-query";
 
-import { normalizeLabel, PanelHeader, StatusDot, type OverviewQuery } from "./overview-shared";
+import {
+  normalizeLabel,
+  overviewErrorReference,
+  PanelHeader,
+  StatusDot,
+  type OverviewQuery,
+} from "./overview-shared";
 
 /*
  * The needs-attention strip: everything currently waiting on a human, each
@@ -34,9 +51,29 @@ import { normalizeLabel, PanelHeader, StatusDot, type OverviewQuery } from "./ov
  * taken here follows the same governed persistence path.
  */
 
-export const APPROVALS_ENDPOINT = "/demo/manufacturing/approvals";
+export const APPROVALS_ENDPOINT = `${OPERATIONS_API_PREFIX}/approvals`;
+const ACTION_RUNS_ENDPOINT = `${OPERATIONS_API_PREFIX}/actions/runs`;
 
 const APPROVAL_LIMIT = 3;
+
+/*
+ * An approved action is carried out by an external executor and only reaches
+ * Axis again when that executor reports back, so some wait is normal and does
+ * not belong on a triage surface. Eight hours is one full production shift: a
+ * run approved during a shift that still has no reported outcome by the end of
+ * it has outlived the crew that authorised it, and is now something to chase.
+ * The row states the actual wait, so an operator judges the age rather than
+ * this threshold.
+ */
+const STALLED_ACTION_THRESHOLD_SECONDS = 8 * 60 * 60;
+
+/*
+ * A stalled run is a chase, not a decision, so it may never crowd out the
+ * approvals and blocked workflows above it. Two lines are enough to show that
+ * executors have stopped reporting; the full queue stays on the approvals
+ * follow-through panel.
+ */
+const STALLED_ACTION_LIMIT = 2;
 
 function isBlockedWorkflow(workflow: WorkflowSummary): boolean {
   return workflow.blocker !== null || workflow.state.includes("waiting");
@@ -44,6 +81,23 @@ function isBlockedWorkflow(workflow: WorkflowSummary): boolean {
 
 function pendingRiskSignals(overview: ManufacturingOverview): RiskSignal[] {
   return overview.risk_signals.filter((signal) => signal.severity !== "ready");
+}
+
+/** Approved runs past the threshold, longest wait first. */
+function stalledActionRuns(actionRuns: ActionRunList | null): ActionRunRecord[] {
+  // `partitionActionRuns` already drops runs without an authorising approval
+  // and orders the awaiting queue longest wait first.
+  return partitionActionRuns(actionRuns?.runs ?? [])
+    .awaiting.filter((run) => run.waiting_duration_seconds >= STALLED_ACTION_THRESHOLD_SECONDS)
+    .slice(0, STALLED_ACTION_LIMIT);
+}
+
+function stalledActionDetail(run: ActionRunRecord): string {
+  const waited = strings.approvals.followThrough.awaiting.waited(
+    formatElapsedDuration(run.waiting_duration_seconds),
+  );
+
+  return `${waited} / ${strings.overview.needsAttention.stalledAction.noOutcome}`;
 }
 
 function AttentionRow({
@@ -153,6 +207,48 @@ function SourceUnavailableNote({ message }: { message: string }) {
   );
 }
 
+function AttentionSources({
+  actionRuns,
+  approvals,
+  overview,
+}: {
+  actionRuns: OverviewQuery<ActionRunList>;
+  approvals: OverviewQuery<ManufacturingApprovalInbox>;
+  overview: OverviewQuery<ManufacturingOverview>;
+}) {
+  return (
+    <div
+      aria-label="Needs attention data sources"
+      className="flex min-w-0 flex-wrap items-center justify-end gap-1.5"
+    >
+      <SourcePill
+        state={deriveSourceState(
+          overview.source,
+          Boolean(overview.data),
+          overview.data?.provenance,
+        )}
+        subject="risk context"
+      />
+      <SourcePill
+        state={deriveSourceState(
+          approvals.source,
+          Boolean(approvals.data),
+          approvals.data?.provenance,
+        )}
+        subject="approval queue"
+      />
+      <SourcePill
+        state={deriveSourceState(
+          actionRuns.source,
+          Boolean(actionRuns.data),
+          PROVENANCE_NOT_APPLICABLE,
+        )}
+        subject="action follow-through"
+      />
+    </div>
+  );
+}
+
 export function NeedsAttention({
   actor,
   overview,
@@ -166,17 +262,31 @@ export function NeedsAttention({
     buildTenantScopedPath(APPROVALS_ENDPOINT, tenantId),
     { expectedTenantId: tenantId, parse: parseManufacturingApprovalInbox },
   );
+  // Best effort: this source adds stalled runs to the strip, it never gates it.
+  const actionRunsQuery = useAxisQuery<ActionRunList>(
+    buildTenantScopedPath(ACTION_RUNS_ENDPOINT, tenantId),
+    { expectedTenantId: tenantId, parse: parseActionRunList },
+  );
   const copy = strings.overview.needsAttention;
 
+  /*
+   * "Nothing is waiting on you" is a governance claim, so it may only be made
+   * once BOTH sources have reported. The gate used to require both to be
+   * dataless: if the overview resolved empty while approvals was still in
+   * flight, the panel announced "All clear" and then flipped to three pending
+   * approvals a moment later.
+   */
+  if (overview.source === "loading" || approvalsQuery.source === "loading") {
+    return <LoadingPanel rows={3} />;
+  }
+
   if (!overview.data && !approvalsQuery.data) {
-    if (overview.source === "loading" || approvalsQuery.source === "loading") {
-      return <LoadingPanel rows={3} />;
-    }
 
     return (
       <ErrorPanel
         detail={copy.error.detail}
-        endpoint={`${APPROVALS_ENDPOINT} + /demo/manufacturing/overview`}
+        endpoint={`${APPROVALS_ENDPOINT} + ${OPERATIONS_API_PREFIX}/overview`}
+        reference={overviewErrorReference(overview, approvalsQuery)}
         title={copy.error.title}
       />
     );
@@ -184,22 +294,53 @@ export function NeedsAttention({
 
   const approvals = approvalsQuery.data?.approvals.slice(0, APPROVAL_LIMIT) ?? [];
   const blockedWorkflows = overview.data?.workflows.filter(isBlockedWorkflow) ?? [];
+  const stalledRuns = stalledActionRuns(actionRunsQuery.data);
   const riskSignals = overview.data ? pendingRiskSignals(overview.data) : [];
   const approvalsFailed = !approvalsQuery.data && approvalsQuery.source === "unavailable";
   const overviewFailed = !overview.data && overview.source === "unavailable";
-  const itemCount = approvals.length + blockedWorkflows.length + riskSignals.length;
+  const actionRunsFailed = !actionRunsQuery.data && actionRunsQuery.source === "unavailable";
+  const itemCount =
+    approvals.length + blockedWorkflows.length + stalledRuns.length + riskSignals.length;
 
-  if (itemCount === 0 && !approvalsFailed && !overviewFailed) {
+  if (itemCount === 0 && !approvalsFailed && !overviewFailed && !actionRunsFailed) {
+    // "All clear" now also claims that no approved action is stuck, so it waits
+    // for the action-run source too. Only this claim waits: with items to show,
+    // the strip renders while that source is still in flight.
+    if (actionRunsQuery.source === "loading") {
+      return <LoadingPanel rows={3} />;
+    }
+
     return (
-      <EmptyPanel detail={copy.allClear.detail} icon={CircleCheckBig} title={copy.allClear.title} />
+      <div className="grid gap-3">
+        <AttentionSources
+          actionRuns={actionRunsQuery}
+          approvals={approvalsQuery}
+          overview={overview}
+        />
+        <EmptyPanel
+          detail={copy.allClear.detail}
+          icon={CircleCheckBig}
+          title={copy.allClear.title}
+        />
+      </div>
     );
   }
 
   return (
     <section aria-label={copy.eyebrow} className="grid gap-3">
-      <PanelHeader eyebrow={copy.eyebrow} />
+      <PanelHeader
+        aside={
+          <AttentionSources
+            actionRuns={actionRunsQuery}
+            approvals={approvalsQuery}
+            overview={overview}
+          />
+        }
+        eyebrow={copy.eyebrow}
+      />
       {approvalsFailed ? <SourceUnavailableNote message={copy.approvalsUnavailable} /> : null}
       {overviewFailed ? <SourceUnavailableNote message={copy.overviewUnavailable} /> : null}
+      {actionRunsFailed ? <SourceUnavailableNote message={copy.actionRunsUnavailable} /> : null}
       <Card className="grid gap-2 p-4">
         {approvals.map((approval) => (
           <ApprovalAttentionRow
@@ -220,6 +361,19 @@ export function NeedsAttention({
             key={workflow.workflow_id}
             title={workflow.name}
             tone={<GitBranch aria-hidden="true" className="shrink-0 text-warning" size={16} />}
+          />
+        ))}
+        {stalledRuns.map((run) => (
+          <AttentionRow
+            action={
+              <Link className={rowLinkClass()} href={buildApprovalHref(run.approval_id)}>
+                {copy.openApproval}
+              </Link>
+            }
+            detail={stalledActionDetail(run)}
+            key={run.action_run_id}
+            title={formatActionLabel(run.action_id)}
+            tone={<Clock3 aria-hidden="true" className="shrink-0 text-warning" size={16} />}
           />
         ))}
         {riskSignals.map((signal) => (

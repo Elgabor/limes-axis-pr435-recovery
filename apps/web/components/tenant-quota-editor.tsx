@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Gauge } from "lucide-react";
 
 import {
@@ -10,16 +10,20 @@ import {
   platformTenantQuotaScope,
   quotaFormFromQuotaSet,
   tenantQuotaFields,
+  tenantWriteOperatorError,
   updateTenantQuotas,
   validateQuotaForm,
   type TenantQuotaFieldError,
   type TenantQuotaFormState,
   type TenantQuotaSet,
 } from "@/lib/platform-tenants";
+import { toAxisOperatorError, type AxisOperatorError } from "@/lib/axis-api";
+import { pluralize } from "@/lib/format";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { InlineOperatorError } from "@/components/ui/inline-operator-error";
 
 type QuotaSource = "loading" | "api" | "unavailable" | "missing";
 
@@ -28,7 +32,7 @@ type SaveState =
   | { phase: "confirming" }
   | { phase: "saving" }
   | { phase: "done"; changeCount: number }
-  | { phase: "failed"; message: string };
+  | { phase: "failed"; error: AxisOperatorError };
 
 function sourceLabel(source: QuotaSource): string {
   if (source === "api") {
@@ -42,6 +46,11 @@ function sourceLabel(source: QuotaSource): string {
   return source === "loading" ? "Loading quota API" : "Quota API unavailable";
 }
 
+/** True when every field of `a` matches `b` — used to detect unsaved edits. */
+function formsEqual(a: TenantQuotaFormState, b: TenantQuotaFormState): boolean {
+  return tenantQuotaFields.every((descriptor) => a[descriptor.field] === b[descriptor.field]);
+}
+
 export function TenantQuotaEditor({ tenantId }: { tenantId: string }) {
   const { session } = useOidcConsoleSession();
   const { refreshNonce } = useConsole();
@@ -50,6 +59,19 @@ export function TenantQuotaEditor({ tenantId }: { tenantId: string }) {
   const [form, setForm] = useState<TenantQuotaFormState>(() => quotaFormFromQuotaSet(null));
   const [fieldErrors, setFieldErrors] = useState<TenantQuotaFieldError>({});
   const [save, setSave] = useState<SaveState>({ phase: "idle" });
+  // The last form values loaded from (or saved to) the API. A reload compares
+  // the live form against this baseline to detect unsaved edits, without
+  // making the load effect depend on — and re-run for — every keystroke.
+  const formBaselineRef = useRef<TenantQuotaFormState>(form);
+  const formRef = useRef(form);
+  const saveRef = useRef(save);
+
+  // Latest-value refs are synced in an effect, not during render: assigning to
+  // a ref while rendering is not safe under concurrent rendering.
+  useEffect(() => {
+    formRef.current = form;
+    saveRef.current = save;
+  }, [form, save]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -74,8 +96,22 @@ export function TenantQuotaEditor({ tenantId }: { tenantId: string }) {
         }
 
         setQuotaSet(result);
-        setForm(quotaFormFromQuotaSet(result));
         setSource("api");
+
+        // A background refresh (e.g. another operator action elsewhere on
+        // the page triggering a console-wide refresh) must not silently
+        // overwrite unsaved edits, or a save already confirmed but not yet
+        // submitted, and must never race an in-flight PUT.
+        if (!formsEqual(formRef.current, formBaselineRef.current) || saveRef.current.phase === "saving") {
+          return;
+        }
+
+        const nextForm = quotaFormFromQuotaSet(result);
+        formBaselineRef.current = nextForm;
+        setForm(nextForm);
+        // The values behind any pending confirmation just changed under it;
+        // drop back to idle so a stale confirm can't submit them.
+        setSave((current) => (current.phase === "idle" ? current : { phase: "idle" }));
       } catch {
         if (!controller.signal.aborted) {
           setQuotaSet(null);
@@ -103,7 +139,10 @@ export function TenantQuotaEditor({ tenantId }: { tenantId: string }) {
     setFieldErrors(errors);
 
     if (Object.keys(errors).length > 0) {
-      setSave({ phase: "failed", message: "Fix the highlighted fields; nothing was sent." });
+      setSave({
+        phase: "failed",
+        error: toAxisOperatorError(null, "Fix the highlighted fields; nothing was sent."),
+      });
       return;
     }
 
@@ -123,7 +162,9 @@ export function TenantQuotaEditor({ tenantId }: { tenantId: string }) {
       if (result.kind === "updated") {
         setFieldErrors({});
         setQuotaSet(result.record);
-        setForm(quotaFormFromQuotaSet(result.record));
+        const savedForm = quotaFormFromQuotaSet(result.record);
+        formBaselineRef.current = savedForm;
+        setForm(savedForm);
         setSave({ phase: "done", changeCount: result.record.changes?.length ?? 0 });
         return;
       }
@@ -131,36 +172,45 @@ export function TenantQuotaEditor({ tenantId }: { tenantId: string }) {
       if (result.kind === "forbidden") {
         setSave({
           phase: "failed",
-          message: result.requiredPermission
-            ? `${result.message} Required permission: ${result.requiredPermission}.`
-            : result.message,
+          error: tenantWriteOperatorError(
+            result,
+            result.requiredPermission
+              ? `${result.message} Required permission: ${result.requiredPermission}.`
+              : result.message,
+          ),
         });
         return;
       }
 
       if (result.kind === "invalid") {
-        setSave({ phase: "failed", message: result.message });
+        setSave({ phase: "failed", error: tenantWriteOperatorError(result) });
         return;
       }
 
       if (result.kind === "notFound") {
-        setSave({ phase: "failed", message: result.message });
+        setSave({ phase: "failed", error: tenantWriteOperatorError(result) });
         return;
       }
 
       setSave({
         phase: "failed",
-        message: result.kind === "failed" ? result.message : "Quota update failed.",
+        error: tenantWriteOperatorError(
+          result,
+          result.kind === "failed" ? result.message : "Quota update failed.",
+        ),
       });
-    } catch {
-      setSave({ phase: "failed", message: "Tenant quota API is unavailable." });
+    } catch (caught) {
+      setSave({
+        phase: "failed",
+        error: toAxisOperatorError(caught, "Tenant quota API is unavailable."),
+      });
     }
   }
 
   const quotaNotes = quotaSet?.quota_notes ?? [];
 
   return (
-    <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+    <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-line/60 py-3 first:border-t-0 dark:border-white/10">
         <div>
           <p className="eyebrow m-0">Per-Tenant Quotas</p>
@@ -240,14 +290,12 @@ export function TenantQuotaEditor({ tenantId }: { tenantId: string }) {
       )}
 
       {save.phase === "failed" ? (
-        <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-danger break-words" role="alert">
-          Quota update failed: {save.message}
-        </p>
+        <InlineOperatorError error={save.error} prefix="Quota update failed" />
       ) : null}
       {save.phase === "done" ? (
         <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words" role="status">
-          Quota update applied with {save.changeCount}{" "}
-          {save.changeCount === 1 ? "change" : "changes"}. Unchanged keys write no audit event.
+          Quota update applied with {pluralize(save.changeCount, "change")}. Unchanged keys write
+          no audit event.
         </p>
       ) : null}
 

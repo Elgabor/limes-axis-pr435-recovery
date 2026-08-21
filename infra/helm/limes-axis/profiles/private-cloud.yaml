@@ -27,6 +27,7 @@ api:
     limes-axis.io/profile: private-cloud
   env:
     AXIS_ENV: production
+    AXIS_TENANT_ADMISSION_MODE: registered_only
     AXIS_DEPLOYMENT_TENANCY_MODE: private_cloud
     AXIS_DEPLOYMENT_CUSTOMER_ISOLATION_CONFIGURED: "false"
     AXIS_DEPLOYMENT_DATA_RESIDENCY_CONFIGURED: "false"

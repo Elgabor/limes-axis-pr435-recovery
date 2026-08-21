@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Database, FileText, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -15,16 +15,24 @@ import {
 } from "@/components/ui/dialog";
 import { DetailGrid, KeyValueRow } from "@/components/ui/detail-grid";
 import { Field, FieldError } from "@/components/ui/field";
+import { InlineOperatorError } from "@/components/ui/inline-operator-error";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
-import { axisFetch, decodeAxisJson } from "@/lib/axis-api";
+import {
+  AxisApiDecodeError,
+  AxisApiError,
+  axisFetch,
+  axisResponseRequestId,
+  decodeAxisJson,
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
 import { cn } from "@/lib/cn";
 import {
   buildExternalDbPreviewRequest,
   buildManifestCreateRequest,
   CONNECTOR_CONSOLE_ACTOR,
-  CONNECTOR_TENANT_ID,
   deriveConnectorId,
   parseCsvText,
   type ParsedCsv,
@@ -34,15 +42,15 @@ import type {
   ConnectorExternalDbPreviewResult,
   ConnectorRegistryItem,
 } from "@/lib/connectors-demo";
+import { formatNumber } from "@/lib/format";
 import type { IdentitySessionReadModel } from "@/lib/platform-overview";
 import {
   parseConnectorCsvPreviewResult,
   parseConnectorExternalDbPreviewResult,
 } from "@/lib/runtime-contracts/connectors";
 import { strings } from "@/lib/strings";
-import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
-import { useAxisQuery } from "@/lib/use-axis-query";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 /*
  * Add Connector wizard. The Axis preview endpoints validate real content
@@ -56,14 +64,13 @@ type WizardStep = "type" | "source" | "review";
 type ConnectorChoice = "file_csv" | "external_db";
 type SubmitErrorKind = "conflict" | "forbidden" | "validation" | "generic";
 
-const CSV_PREVIEW_ENDPOINT = "/demo/manufacturing/connectors/file-csv/preview";
-const DB_PREVIEW_ENDPOINT = "/demo/manufacturing/connectors/external-db/preview";
-const MANIFESTS_ENDPOINT = "/demo/manufacturing/connectors/manifests";
+const CSV_PREVIEW_ENDPOINT = `${OPERATIONS_API_PREFIX}/connectors/file-csv/preview`;
+const DB_PREVIEW_ENDPOINT = `${OPERATIONS_API_PREFIX}/connectors/external-db/preview`;
+const MANIFESTS_ENDPOINT = `${OPERATIONS_API_PREFIX}/connectors/manifests`;
 
 type SubmitError = {
   kind: SubmitErrorKind;
-  /** Raw API reason/permission string, rendered as secondary mono text. */
-  technicalDetail?: string;
+  error: AxisOperatorError;
 };
 
 type DbForm = {
@@ -80,19 +87,32 @@ const DEFAULT_DB_FORM: DbForm = {
   credentialHandleId: "cred_external_db_readonly",
 };
 
-async function readErrorDetail(response: Response): Promise<string | undefined> {
-  try {
-    const payload = (await response.json()) as {
-      detail?: { reason?: string; message?: string; required_permission?: string };
-    };
-    return (
-      payload.detail?.required_permission
-      ?? payload.detail?.reason
-      ?? payload.detail?.message
-    );
-  } catch {
-    return undefined;
+async function readAxisResponseBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text.trim()) {
+    return null;
   }
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
+}
+
+function operatorErrorWithMessage(caught: unknown, message: string): AxisOperatorError {
+  return { ...toAxisOperatorError(caught, message), message };
+}
+
+async function responseOperatorError(
+  path: string,
+  response: Response,
+  message: string,
+): Promise<AxisOperatorError> {
+  const error = new AxisApiError(path, response.status, {
+    body: await readAxisResponseBody(response),
+    requestId: axisResponseRequestId(response),
+  });
+  return operatorErrorWithMessage(error, message);
 }
 
 function IssueList({ title, issues }: { title: string; issues: string[] }) {
@@ -112,22 +132,22 @@ function IssueList({ title, issues }: { title: string; issues: string[] }) {
 
 export function AddConnectorWizard({
   connectors,
+  identitySession,
   open,
   onOpenChange,
   onCreated,
+  tenantId,
 }: {
   connectors: ConnectorRegistryItem[];
+  identitySession: IdentitySessionReadModel | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
+  tenantId: string;
 }) {
   const copy = strings.connectors.wizard;
   const { push } = useToast();
   const { session } = useOidcConsoleSession();
-  const { data: identitySession } = useAxisQuery<IdentitySessionReadModel>(
-    "/identity/session",
-    { parse: parseIdentitySessionReadModel },
-  );
 
   const [step, setStep] = useState<WizardStep>("type");
   const [choice, setChoice] = useState<ConnectorChoice>("file_csv");
@@ -147,7 +167,8 @@ export function AddConnectorWizard({
 
   // Shared preview/submit lifecycle
   const [previewing, setPreviewing] = useState(false);
-  const [previewFailed, setPreviewFailed] = useState(false);
+  const [previewError, setPreviewError] = useState<AxisOperatorError | null>(null);
+  const previewGeneration = useRef(0);
 
   // Review state
   const [connectorId, setConnectorId] = useState("");
@@ -183,7 +204,24 @@ export function AddConnectorWizard({
       ? csvPreview?.preview_status === "ready" && parsedCsv !== null
       : dbPreview?.preview_status === "ready";
 
+  function invalidatePreviewState(): number {
+    previewGeneration.current += 1;
+    setCsvPreview(null);
+    setDbPreview(null);
+    setPreviewError(null);
+    setPreviewing(false);
+    return previewGeneration.current;
+  }
+
+  function beginPreview(): number {
+    previewGeneration.current += 1;
+    setPreviewing(true);
+    setPreviewError(null);
+    return previewGeneration.current;
+  }
+
   function resetAll() {
+    previewGeneration.current += 1;
     setStep("type");
     setChoice("file_csv");
     setCsvTemplateId("");
@@ -196,7 +234,7 @@ export function AddConnectorWizard({
     setDbForm(DEFAULT_DB_FORM);
     setDbPreview(null);
     setPreviewing(false);
-    setPreviewFailed(false);
+    setPreviewError(null);
     setConnectorId("");
     setDisplayName("");
     setSubmitting(false);
@@ -212,25 +250,29 @@ export function AddConnectorWizard({
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    setCsvPreview(null);
-    setPreviewFailed(false);
+    const fileGeneration = invalidatePreviewState();
     setFileReadError(false);
+    setCsvFileName("");
+    setCsvText("");
+    setParsedCsv(null);
     if (!file) {
-      setCsvFileName("");
-      setCsvText("");
-      setParsedCsv(null);
       return;
     }
 
     const reader = new FileReader();
     reader.onload = () => {
+      if (previewGeneration.current !== fileGeneration) {
+        return;
+      }
       const text = typeof reader.result === "string" ? reader.result : "";
       setCsvFileName(file.name);
       setCsvText(text);
       setParsedCsv(parseCsvText(text));
     };
     reader.onerror = () => {
-      setFileReadError(true);
+      if (previewGeneration.current === fileGeneration) {
+        setFileReadError(true);
+      }
     };
     reader.readAsText(file);
   }
@@ -239,33 +281,47 @@ export function AddConnectorWizard({
     if (!template || !csvText) {
       return;
     }
-    setPreviewing(true);
-    setPreviewFailed(false);
+    const requestGeneration = beginPreview();
     try {
       const response = await axisFetch(CSV_PREVIEW_ENDPOINT, {
         method: "POST",
         session,
         body: {
-          tenant_id: CONNECTOR_TENANT_ID,
+          tenant_id: tenantId,
           connector_id: template.manifest.connector_id,
           file_name: csvFileName,
           csv_content: csvText,
         },
       });
+      const requestId = axisResponseRequestId(response);
+      const body = await readAxisResponseBody(response);
       if (!response.ok) {
-        setPreviewFailed(true);
-        return;
+        throw new AxisApiError(CSV_PREVIEW_ENDPOINT, response.status, { body, requestId });
       }
-      setCsvPreview(decodeAxisJson(
+      const preview = decodeAxisJson(
         CSV_PREVIEW_ENDPOINT,
-        await response.json(),
+        body,
         parseConnectorCsvPreviewResult,
-        response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id"),
-      ));
-    } catch {
-      setPreviewFailed(true);
+        requestId,
+      );
+      if (preview.tenant_id !== tenantId) {
+        throw new AxisApiDecodeError(
+          CSV_PREVIEW_ENDPOINT,
+          "Axis API response did not match the requested tenant.",
+          { requestId },
+        );
+      }
+      if (previewGeneration.current === requestGeneration) {
+        setCsvPreview(preview);
+      }
+    } catch (caught) {
+      if (previewGeneration.current === requestGeneration) {
+        setPreviewError(operatorErrorWithMessage(caught, copy.csvStep.previewError));
+      }
     } finally {
-      setPreviewing(false);
+      if (previewGeneration.current === requestGeneration) {
+        setPreviewing(false);
+      }
     }
   }
 
@@ -273,14 +329,13 @@ export function AddConnectorWizard({
     if (!template) {
       return;
     }
-    setPreviewing(true);
-    setPreviewFailed(false);
+    const requestGeneration = beginPreview();
     try {
       const response = await axisFetch(DB_PREVIEW_ENDPOINT, {
         method: "POST",
         session,
         body: buildExternalDbPreviewRequest({
-          tenantId: CONNECTOR_TENANT_ID,
+          tenantId,
           connectorId: template.manifest.connector_id,
           connectionProfileId: dbForm.connectionProfileId,
           schemaName: dbForm.schemaName,
@@ -289,20 +344,35 @@ export function AddConnectorWizard({
           template,
         }),
       });
+      const requestId = axisResponseRequestId(response);
+      const body = await readAxisResponseBody(response);
       if (!response.ok) {
-        setPreviewFailed(true);
-        return;
+        throw new AxisApiError(DB_PREVIEW_ENDPOINT, response.status, { body, requestId });
       }
-      setDbPreview(decodeAxisJson(
+      const preview = decodeAxisJson(
         DB_PREVIEW_ENDPOINT,
-        await response.json(),
+        body,
         parseConnectorExternalDbPreviewResult,
-        response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id"),
-      ));
-    } catch {
-      setPreviewFailed(true);
+        requestId,
+      );
+      if (preview.tenant_id !== tenantId) {
+        throw new AxisApiDecodeError(
+          DB_PREVIEW_ENDPOINT,
+          "Axis API response did not match the requested tenant.",
+          { requestId },
+        );
+      }
+      if (previewGeneration.current === requestGeneration) {
+        setDbPreview(preview);
+      }
+    } catch (caught) {
+      if (previewGeneration.current === requestGeneration) {
+        setPreviewError(operatorErrorWithMessage(caught, copy.dbStep.previewError));
+      }
     } finally {
-      setPreviewing(false);
+      if (previewGeneration.current === requestGeneration) {
+        setPreviewing(false);
+      }
     }
   }
 
@@ -321,7 +391,7 @@ export function AddConnectorWizard({
   }
 
   async function submitManifest() {
-    if (!template) {
+    if (!template || (choice === "external_db" && !template.preview_sample)) {
       return;
     }
     setSubmitting(true);
@@ -336,7 +406,7 @@ export function AddConnectorWizard({
             sample_rows: parsedCsv.rows.slice(0, 5),
           }
         : {
-            ...template.preview_sample,
+            ...template.preview_sample!,
             file_name: `${dbForm.schemaName}.${dbForm.tableName}`,
           };
 
@@ -345,7 +415,7 @@ export function AddConnectorWizard({
         method: "POST",
         session,
         body: buildManifestCreateRequest({
-          tenantId: CONNECTOR_TENANT_ID,
+          tenantId,
           registeredBy: identitySession?.actor_id ?? CONNECTOR_CONSOLE_ACTOR,
           template,
           connectorId: connectorId.trim(),
@@ -365,26 +435,51 @@ export function AddConnectorWizard({
         return;
       }
       if (response.status === 409) {
-        setSubmitError({ kind: "conflict" });
+        setSubmitError({
+          kind: "conflict",
+          error: await responseOperatorError(
+            MANIFESTS_ENDPOINT,
+            response,
+            submitErrorLabel.conflict,
+          ),
+        });
         return;
       }
       if (response.status === 403) {
         setSubmitError({
           kind: "forbidden",
-          technicalDetail: await readErrorDetail(response),
+          error: await responseOperatorError(
+            MANIFESTS_ENDPOINT,
+            response,
+            submitErrorLabel.forbidden,
+          ),
         });
         return;
       }
       if (response.status === 422) {
         setSubmitError({
           kind: "validation",
-          technicalDetail: await readErrorDetail(response),
+          error: await responseOperatorError(
+            MANIFESTS_ENDPOINT,
+            response,
+            submitErrorLabel.validation,
+          ),
         });
         return;
       }
-      setSubmitError({ kind: "generic" });
-    } catch {
-      setSubmitError({ kind: "generic" });
+      setSubmitError({
+        kind: "generic",
+        error: await responseOperatorError(
+          MANIFESTS_ENDPOINT,
+          response,
+          submitErrorLabel.generic,
+        ),
+      });
+    } catch (caught) {
+      setSubmitError({
+        kind: "generic",
+        error: operatorErrorWithMessage(caught, submitErrorLabel.generic),
+      });
     } finally {
       setSubmitting(false);
     }
@@ -434,7 +529,10 @@ export function AddConnectorWizard({
                       : "border-line hover:border-signal/40 dark:border-white/15",
                   )}
                   key={option.value}
-                  onClick={() => setChoice(option.value)}
+                  onClick={() => {
+                    invalidatePreviewState();
+                    setChoice(option.value);
+                  }}
                   type="button"
                 >
                   <span className="flex items-center gap-2 text-sm font-medium text-ink">
@@ -456,9 +554,10 @@ export function AddConnectorWizard({
               <>
                 <Field label={copy.csvStep.template}>
                   <Select
+                    disabled={previewing}
                     onChange={(event) => {
+                      invalidatePreviewState();
                       setCsvTemplateId(event.target.value);
-                      setCsvPreview(null);
                     }}
                     value={template?.manifest.connector_id ?? ""}
                   >
@@ -487,7 +586,7 @@ export function AddConnectorWizard({
                     {previewing ? copy.csvStep.previewing : copy.csvStep.preview}
                   </Button>
                 </div>
-                {previewFailed ? <FieldError>{copy.csvStep.previewError}</FieldError> : null}
+                {previewError ? <InlineOperatorError error={previewError} /> : null}
                 {csvPreview ? (
                   <div className="grid gap-2.5">
                     <div className="flex flex-wrap items-center gap-2">
@@ -504,9 +603,9 @@ export function AddConnectorWizard({
                           : copy.csvStep.blockedTitle}
                       </span>
                       <span className="text-sm text-muted">
-                        {csvPreview.record_count} {copy.csvStep.rows} /{" "}
-                        {csvPreview.accepted_record_count} {copy.csvStep.accepted} /{" "}
-                        {csvPreview.rejected_record_count} {copy.csvStep.rejected}
+                        {formatNumber(csvPreview.record_count)} {copy.csvStep.rows} /{" "}
+                        {formatNumber(csvPreview.accepted_record_count)} {copy.csvStep.accepted} /{" "}
+                        {formatNumber(csvPreview.rejected_record_count)} {copy.csvStep.rejected}
                       </span>
                     </div>
                     {csvPreview.validation_issues.length > 0 ? (
@@ -553,9 +652,10 @@ export function AddConnectorWizard({
               <>
                 <Field label={copy.dbStep.template}>
                   <Select
+                    disabled={previewing}
                     onChange={(event) => {
+                      invalidatePreviewState();
                       setDbTemplateId(event.target.value);
-                      setDbPreview(null);
                     }}
                     value={template?.manifest.connector_id ?? ""}
                   >
@@ -572,39 +672,43 @@ export function AddConnectorWizard({
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label={copy.dbStep.profile}>
                     <Input
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        invalidatePreviewState();
                         setDbForm((current) => ({
                           ...current,
                           connectionProfileId: event.target.value,
-                        }))
-                      }
+                        }));
+                      }}
                       value={dbForm.connectionProfileId}
                     />
                   </Field>
                   <Field label={copy.dbStep.credentialHandle}>
                     <Input
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        invalidatePreviewState();
                         setDbForm((current) => ({
                           ...current,
                           credentialHandleId: event.target.value,
-                        }))
-                      }
+                        }));
+                      }}
                       value={dbForm.credentialHandleId}
                     />
                   </Field>
                   <Field label={copy.dbStep.schema}>
                     <Input
-                      onChange={(event) =>
-                        setDbForm((current) => ({ ...current, schemaName: event.target.value }))
-                      }
+                      onChange={(event) => {
+                        invalidatePreviewState();
+                        setDbForm((current) => ({ ...current, schemaName: event.target.value }));
+                      }}
                       value={dbForm.schemaName}
                     />
                   </Field>
                   <Field label={copy.dbStep.table}>
                     <Input
-                      onChange={(event) =>
-                        setDbForm((current) => ({ ...current, tableName: event.target.value }))
-                      }
+                      onChange={(event) => {
+                        invalidatePreviewState();
+                        setDbForm((current) => ({ ...current, tableName: event.target.value }));
+                      }}
                       value={dbForm.tableName}
                     />
                   </Field>
@@ -620,7 +724,7 @@ export function AddConnectorWizard({
                     {previewing ? copy.dbStep.previewing : copy.dbStep.preview}
                   </Button>
                 </div>
-                {previewFailed ? <FieldError>{copy.dbStep.previewError}</FieldError> : null}
+                {previewError ? <InlineOperatorError error={previewError} /> : null}
                 {dbPreview ? (
                   <div className="grid gap-2.5">
                     <div className="flex flex-wrap items-center gap-2">
@@ -680,13 +784,19 @@ export function AddConnectorWizard({
               <Field label={copy.reviewStep.connectorId}>
                 <Input
                   className="font-mono text-xs"
-                  onChange={(event) => setConnectorId(event.target.value)}
+                  onChange={(event) => {
+                    setConnectorId(event.target.value);
+                    setSubmitError(null);
+                  }}
                   value={connectorId}
                 />
               </Field>
               <Field label={copy.reviewStep.displayName}>
                 <Input
-                  onChange={(event) => setDisplayName(event.target.value)}
+                  onChange={(event) => {
+                    setDisplayName(event.target.value);
+                    setSubmitError(null);
+                  }}
                   value={displayName}
                 />
               </Field>
@@ -699,7 +809,7 @@ export function AddConnectorWizard({
               </KeyValueRow>
               <KeyValueRow label={copy.reviewStep.records}>
                 {choice === "file_csv"
-                  ? `${parsedCsv?.rows.length ?? 0} rows from ${csvFileName}`
+                  ? `${formatNumber(parsedCsv?.rows.length ?? 0)} rows from ${csvFileName}`
                   : `${dbForm.schemaName}.${dbForm.tableName} metadata`}
               </KeyValueRow>
             </DetailGrid>
@@ -711,14 +821,7 @@ export function AddConnectorWizard({
               </p>
             ) : null}
             {submitError ? (
-              <div className="grid gap-1">
-                <FieldError>{submitErrorLabel[submitError.kind]}</FieldError>
-                {submitError.technicalDetail ? (
-                  <p className="m-0 font-mono text-xs break-words text-muted">
-                    {submitError.technicalDetail}
-                  </p>
-                ) : null}
-              </div>
+              <InlineOperatorError error={submitError.error} />
             ) : null}
           </div>
         ) : null}
@@ -728,7 +831,10 @@ export function AddConnectorWizard({
             <Button
               className="px-4 py-2 text-sm"
               variant="ghost"
-              onClick={() => setStep(step === "review" ? "source" : "type")}
+              onClick={() => {
+                invalidatePreviewState();
+                setStep(step === "review" ? "source" : "type");
+              }}
             >
               {copy.back}
             </Button>

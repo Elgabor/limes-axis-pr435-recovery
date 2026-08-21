@@ -1,4 +1,8 @@
-import type { OverviewMetric, PlatformStatus } from "./platform-overview";
+import type {
+  ManufacturingProvenance,
+  OverviewMetric,
+  PlatformStatus,
+} from "./platform-overview";
 
 export type ModelProviderOption = {
   provider_id: string;
@@ -49,8 +53,9 @@ export type ModelRoutingFilterOptions = {
 
 export type ManufacturingModelRouting = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   routing_status: PlatformStatus;
   metrics: OverviewMetric[];

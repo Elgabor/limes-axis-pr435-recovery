@@ -1,8 +1,13 @@
 import { z } from "zod";
 
-import type { ActionRunPersistenceResult, ManufacturingActionRegistry } from "../action-demo";
+import type {
+  ActionRunList,
+  ActionRunPersistenceResult,
+  ManufacturingActionRegistry,
+} from "../action-demo";
 import {
   autonomyLevelSchema,
+  manufacturingProvenanceSchema,
   nullableStringSchema,
   overviewMetricSchema,
   parseContract,
@@ -24,8 +29,9 @@ const jsonSchema = z.object({
 }).passthrough();
 const actionRegistry = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   registry_status: platformStatusSchema,
   schema_version: z.string(),
@@ -97,6 +103,23 @@ const actionRunResult = z.object({
   }).nullable().optional(),
   workflow_signal_status: z.string(),
 });
+const actionRunList = z.object({
+  tenant_id: z.string(),
+  runs: z.array(z.object({
+    action_run_id: z.string(),
+    action_id: z.string(),
+    status: z.string(),
+    approval_id: nullableStringSchema,
+    workflow_id: nullableStringSchema,
+    created_at: z.string(),
+    updated_at: z.string(),
+    waiting_duration_seconds: z.number().int().nonnegative(),
+    outcome: z.object({
+      result_summary: z.string(),
+      evidence_refs: stringArraySchema,
+    }).nullable(),
+  })),
+});
 
 export function parseManufacturingActionRegistry(value: unknown): ManufacturingActionRegistry {
   return parseContract(actionRegistry, value);
@@ -104,4 +127,8 @@ export function parseManufacturingActionRegistry(value: unknown): ManufacturingA
 
 export function parseActionRunPersistenceResult(value: unknown): ActionRunPersistenceResult {
   return parseContract(actionRunResult, value);
+}
+
+export function parseActionRunList(value: unknown): ActionRunList {
+  return parseContract(actionRunList, value);
 }

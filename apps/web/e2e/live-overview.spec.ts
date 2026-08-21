@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { strings } from "@/lib/strings";
 
 async function expectNoHorizontalOverflow(page: Page) {
   const overflow = await page.evaluate(() => {
@@ -45,13 +46,16 @@ test.describe("Axis live overview demo", () => {
     // Single page header + slim hero: the cockpit name renders exactly once.
     await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
     await expect(page.getByText("Plant Operations Cockpit")).toHaveCount(1);
-    await expect(page.locator(".ops-page-subtitle")).toContainText("Ravenna Works");
+    await expect(page.locator("[data-hero-subtitle]")).toContainText("Ravenna Works");
 
     // The hero audit count and the evidence feed read the same registry.
     // "—" is the placeholder while the audit events query is still loading.
     await expect(page.getByTestId("hero-audit-count")).not.toHaveText("—");
     const heroAuditCount = await page.getByTestId("hero-audit-count").innerText();
-    await expect(page.getByText(`${heroAuditCount.trim()} recent events`)).toBeVisible();
+    const visibleAuditCount = Math.min(Number(heroAuditCount.trim()), 10);
+    await expect(
+      page.getByText(`Showing ${visibleAuditCount} of ${heroAuditCount.trim()}`),
+    ).toBeVisible();
 
     // Needs-attention strip with inline decision entry points.
     await expect(page.getByText("Needs attention")).toBeVisible();
@@ -85,16 +89,17 @@ test.describe("Axis live overview demo", () => {
     await expect(page.getByRole("heading", { name: "Domain graph" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Persisted routing posture" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Feedback environment" })).toHaveCount(0);
-    await expect(page.getByText("Local fallback overview records are disabled.")).toHaveCount(0);
-    await expect(page.getByText("Operations API unavailable")).toHaveCount(0);
+    await expect(page.getByText(strings.overview.hero.error.title)).toHaveCount(0);
 
     await expectNoHorizontalOverflow(page);
     expect(pageErrors).toEqual([]);
   });
 
-  test("decides a live approval from the needs-attention strip with audit evidence", async ({
-    page,
-  }) => {
+  // The seed owns one deterministic approval queue. Run this tagged write once
+  // after the cross-viewport read-only pass instead of racing three projects.
+  test("decides a live approval from the needs-attention strip with audit evidence", {
+    tag: "@stateful",
+  }, async ({ page }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -109,9 +114,10 @@ test.describe("Axis live overview demo", () => {
         .first(),
     ).toBeVisible();
     const reviewButtons = page.getByRole("button", { name: "Review & decide" });
-    if ((await reviewButtons.count()) === 0) {
-      test.skip(true, "No pending approvals in the live tenant right now.");
-    }
+    await expect(
+      reviewButtons.first(),
+      "The freshly seeded live tenant must expose a pending approval.",
+    ).toBeVisible();
 
     // The sheet reuses the approvals decision card: consequences visible,
     // confirm dialog gating persistence.
@@ -192,7 +198,8 @@ test.describe("Axis live overview demo", () => {
 
     const navigation = await page.evaluate(() => {
       const element = document.querySelector<HTMLElement>("[data-console-sidebar]");
-      const topnav = document.querySelector<HTMLElement>(".topnav");
+      const mobileNavigation = document.querySelector<HTMLElement>("[data-mobile-navigation]");
+      const statusBar = document.querySelector<HTMLElement>(".ops-topbar");
       const viewportWidth = window.innerWidth;
 
       if (!element) {
@@ -206,7 +213,13 @@ test.describe("Axis live overview demo", () => {
         height: Math.round(rect.height),
         navVisible: element.textContent?.includes("Connectors") ?? false,
         top: Math.round(rect.top),
-        topnavVisible: topnav ? window.getComputedStyle(topnav).display !== "none" : false,
+        mobileNavigationBottom: mobileNavigation
+          ? Math.round(mobileNavigation.getBoundingClientRect().bottom)
+          : null,
+        mobileNavigationVisible: mobileNavigation
+          ? window.getComputedStyle(mobileNavigation).display !== "none"
+          : false,
+        statusBarTop: statusBar ? Math.round(statusBar.getBoundingClientRect().top) : null,
         viewportHeight: window.innerHeight,
         viewportWidth,
       };
@@ -216,7 +229,10 @@ test.describe("Axis live overview demo", () => {
 
     if ((navigation?.viewportWidth ?? 0) <= 920) {
       expect(navigation?.display).toBe("none");
-      expect(navigation?.topnavVisible).toBe(true);
+      expect(navigation?.mobileNavigationVisible).toBe(true);
+      expect(navigation?.statusBarTop).toBeGreaterThanOrEqual(
+        (navigation?.mobileNavigationBottom ?? 0) - 1,
+      );
       return;
     }
 

@@ -73,6 +73,7 @@ from axis_api.persistence import (
     ConnectorCredentialHandleCreate,
     DemoReferenceRecordCreate,
     OidcBrowserSessionCreate,
+    TenantCreate,
 )
 
 TENANT_A = "tenant_demo_manufacturing"
@@ -235,6 +236,15 @@ def seed_tenant_a_configuration(factory: sessionmaker[Session]) -> None:
 def seed_tenant_a_audit_events(factory: sessionmaker[Session]) -> None:
     with session_scope(factory) as session:
         repository = AxisPersistenceRepository(session)
+        if repository.get_tenant(TENANT_A) is None:
+            repository.create_tenant(
+                TenantCreate(
+                    tenant_id=TENANT_A,
+                    display_name="Ravenna Works",
+                    description="Plant Operations Cockpit",
+                    created_by="test",
+                )
+            )
         repository.append_audit_event(
             AuditEventCreate(
                 tenant_id=TENANT_A,
@@ -506,6 +516,15 @@ def _connector_manifest_body() -> dict:
     }
 
 
+def _connector_manifest_validation_body() -> dict:
+    body = _connector_manifest_body()
+    return {
+        "tenant_id": body.pop("tenant_id"),
+        "registered_by": body.pop("registered_by"),
+        "manifests": [body],
+    }
+
+
 def _connector_manifest_lifecycle_body() -> dict:
     return {
         "tenant_id": TENANT_A,
@@ -704,6 +723,12 @@ ENFORCED_WRITE_CASES: list[tuple[str, str, str, Callable[[], dict]]] = [
         _connector_manifest_body,
     ),
     (
+        "connector_manifest_validation",
+        "post",
+        "/operations/connectors/manifests/validation",
+        _connector_manifest_validation_body,
+    ),
+    (
         "action_run",
         "post",
         "/demo/manufacturing/actions/request_supplier_expedite/runs",
@@ -893,6 +918,8 @@ ENFORCED_READ_PATHS: list[tuple[str, str]] = [
     ("audit_events", "/demo/manufacturing/audit/events"),
     ("audit_export", "/demo/manufacturing/audit/export"),
     ("audit_legal_holds", "/demo/manufacturing/audit/legal-holds"),
+    ("action_runs", "/operations/actions/runs"),
+    ("replay_simulation", "/demo/manufacturing/simulation/replay"),
     ("connector_manifests", "/demo/manufacturing/connectors/manifests"),
     ("connector_configurations", "/demo/manufacturing/connectors/configurations"),
     ("connector_credential_handles", "/demo/manufacturing/connectors/credential-handles"),

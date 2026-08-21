@@ -2,25 +2,48 @@ import type { HTMLAttributes, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
 
-export interface CardProps extends HTMLAttributes<HTMLDivElement> {
-  /** Adds the hover lift + shadow treatment. */
+export interface CardProps extends HTMLAttributes<HTMLElement> {
+  /** Landmark element to render. Use `section`/`article` when the card is a real region. */
+  as?: "div" | "section" | "article";
+  /** `md` (20px) is the console default; `sm` suits stat tiles and nested cards. */
+  padding?: "none" | "sm" | "md";
+  /** Emphasizes the border on hover — for cards that are themselves a target. */
   interactive?: boolean;
   children: ReactNode;
 }
 
-export function Card({ interactive = false, className, children, ...rest }: CardProps) {
+const paddings: Record<NonNullable<CardProps["padding"]>, string> = {
+  none: "",
+  sm: "p-4",
+  md: "p-5",
+};
+
+/**
+ * The console's one surface treatment: hairline border, 16px radius. Hover is
+ * a border change rather than a lift — surfaces in a dense tool should not move
+ * under the pointer.
+ */
+export function Card({
+  as: Component = "div",
+  padding = "md",
+  interactive = false,
+  className,
+  children,
+  ...rest
+}: CardProps) {
   return (
-    <div
+    <Component
       className={cn(
-        "rounded-3xl border border-line bg-surface p-6",
+        "min-w-0 rounded-2xl border border-line bg-surface",
         "dark:border-white/10 dark:bg-white/5",
+        paddings[padding],
         interactive &&
-          "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_rgb(4_18_46/0.07)] dark:hover:bg-white/8 dark:hover:shadow-none",
+          "transition-colors duration-150 hover:border-ink/20 dark:hover:border-white/25",
         className,
       )}
       {...rest}
     >
       {children}
-    </div>
+    </Component>
   );
 }

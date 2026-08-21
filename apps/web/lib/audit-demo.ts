@@ -1,4 +1,4 @@
-import type { PlatformStatus } from "./platform-overview";
+import type { ManufacturingProvenance, PlatformStatus } from "./platform-overview";
 import { strings } from "./strings";
 
 export type AuditLedgerEvent = {
@@ -34,8 +34,9 @@ export type AuditFilterOptions = {
 
 export type ManufacturingAuditExplorer = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   ledger_status: PlatformStatus;
   metrics: {
@@ -94,7 +95,7 @@ export type AuditLedgerSignatureProof = {
 
 export type AuditExportBundle = {
   tenant_id: string;
-  scenario: string;
+  scenario: string | null;
   format: string;
   export_reason: string;
   filters: {

@@ -8,21 +8,39 @@ const mocks = vi.hoisted(() => ({
   axisFetch: vi.fn(),
 }));
 
-vi.mock("@/lib/axis-api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/axis-api")>()),
-  axisFetch: mocks.axisFetch,
-}));
+vi.mock("@/lib/axis-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/axis-api")>();
+  return {
+    ...actual,
+    axisFetch: mocks.axisFetch,
+    axisFetchParsedJson: async <T,>(
+      path: string,
+      decoder: (value: unknown) => T,
+      options: import("@/lib/axis-api").AxisFetchOptions = {},
+    ): Promise<T> => {
+      const response = await mocks.axisFetch(path, options) as Response;
+      const requestId = actual.axisResponseRequestId(response);
+      const body = await response.json();
+      if (!response.ok) {
+        throw new actual.AxisApiError(path, response.status, { body, requestId });
+      }
+      return actual.decodeAxisJson(path, body, decoder, requestId);
+    },
+  };
+});
 
 vi.mock("@/lib/use-oidc-session", () => ({
   useOidcConsoleSession: () => ({ session: null }),
 }));
 
 import { RunReplayForm } from "./run-replay-form";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 const replayResultFixture: ManufacturingReplaySimulation = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Plant",
   scenario: "Replay fixture",
+  provenance: "live",
   as_of: "2026-07-09T09:00:00+02:00",
   simulation_status: "ready",
   metrics: [],
@@ -97,10 +115,17 @@ const replayResultFixture: ManufacturingReplaySimulation = {
   simulation_notes: [],
 };
 
-function jsonResponse(payload: unknown, status = 200): Response {
+function jsonResponse(
+  payload: unknown,
+  status = 200,
+  requestId?: string,
+): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(requestId ? { "x-request-id": requestId } : {}),
+    },
   });
 }
 
@@ -130,7 +155,7 @@ describe("RunReplayForm", () => {
     });
     const requestedPath = mocks.axisFetch.mock.calls[0][0] as string;
     const query = new URLSearchParams(requestedPath.split("?")[1]);
-    expect(requestedPath.startsWith("/demo/manufacturing/simulation/replay?")).toBe(true);
+    expect(requestedPath.startsWith(`${OPERATIONS_API_PREFIX}/simulation/replay?`)).toBe(true);
     expect(Object.fromEntries(query.entries())).toEqual({
       tenant_id: "tenant_fixture",
       workflow_id: "wf_supply_fixture",
@@ -185,7 +210,7 @@ describe("RunReplayForm", () => {
     expect(screen.getByRole("button", { name: "Run replay" })).toBeEnabled();
   });
 
-  it("surfaces API rejections inline with the API's own message", async () => {
+  it("surfaces a safe API message and keeps its request reference in technical details", async () => {
     const user = userEvent.setup();
     mocks.axisFetch.mockResolvedValue(
       jsonResponse(
@@ -193,9 +218,11 @@ describe("RunReplayForm", () => {
           detail: {
             code: "validation_failed",
             message: "Baseline and candidate policy sets must both be provided.",
+            debug_context: "secret=simulation-database-credential",
           },
         },
         422,
+        "request-replay-422",
       ),
     );
 
@@ -207,6 +234,13 @@ describe("RunReplayForm", () => {
     expect(
       screen.getByText("Baseline and candidate policy sets must both be provided."),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/simulation-database-credential/)).not.toBeInTheDocument();
+    expect(screen.queryByText("request-replay-422")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Technical details" }));
+
+    expect(screen.getByText("request-replay-422")).toBeInTheDocument();
+    expect(screen.queryByText(/simulation-database-credential/)).not.toBeInTheDocument();
     expect(document.querySelector("[data-replay-result]")).not.toBeInTheDocument();
   });
 });

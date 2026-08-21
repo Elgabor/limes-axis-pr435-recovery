@@ -96,6 +96,10 @@ def required_deployment_scripts() -> tuple[str, ...]:
     )
 
 
+def required_runtime_tools() -> tuple[str, ...]:
+    return ("services/api/src/axis_api/bootstrap_tenant.py",)
+
+
 def required_make_targets() -> tuple[str, ...]:
     return (
         "deployment-check",
@@ -126,6 +130,7 @@ def required_make_targets() -> tuple[str, ...]:
 def required_chart_terms() -> tuple[str, ...]:
     return (
         "AXIS_ENV",
+        "AXIS_TENANT_ADMISSION_MODE",
         "AXIS_PUBLIC_BASE_URL",
         "AXIS_API_BASE_URL",
         "AXIS_CORS_ORIGINS",
@@ -353,6 +358,10 @@ def required_docs_terms() -> tuple[str, ...]:
         "profiles/on-prem-offline.yaml",
         "helm upgrade --install limes-axis infra/helm/limes-axis -f",
         "/ready",
+        "alembic upgrade head",
+        "one designated migration owner",
+        "axis-bootstrap-first-tenant",
+        "tenant_registry_already_initialized",
         "not a production certification",
     )
 
@@ -417,6 +426,30 @@ def check_deployment_scripts(repo_root: Path) -> list[CheckResult]:
     ]
 
 
+def check_runtime_tools(repo_root: Path) -> list[CheckResult]:
+    missing = [
+        relative for relative in required_runtime_tools() if not (repo_root / relative).exists()
+    ]
+    pyproject = repo_root / "services" / "api" / "pyproject.toml"
+    dockerfile = repo_root / "services" / "api" / "Dockerfile"
+    expected_entrypoint = (
+        'axis-bootstrap-first-tenant = "axis_api.bootstrap_tenant:main"'
+    )
+    if not pyproject.exists() or expected_entrypoint not in _read_text(pyproject):
+        missing.append("services/api/pyproject.toml:first-tenant-entrypoint")
+    if not dockerfile.exists() or "COPY services/api/src ./src" not in _read_text(dockerfile):
+        missing.append("services/api/Dockerfile:packaged-api-source")
+    return [
+        CheckResult(
+            "deployment.runtime_tools",
+            not missing,
+            "first-tenant bootstrap is packaged in the API image"
+            if not missing
+            else f"missing: {', '.join(missing)}",
+        )
+    ]
+
+
 def check_chart_files(repo_root: Path) -> list[CheckResult]:
     missing = [
         relative for relative in required_chart_files() if not (repo_root / relative).exists()
@@ -470,6 +503,7 @@ def check_profile_contracts(repo_root: Path) -> list[CheckResult]:
             "enabled: true",
             "autoscaling:",
             "pdb:",
+            "AXIS_TENANT_ADMISSION_MODE: registered_only",
             'AXIS_OIDC_AUTH_REQUIRED: "true"',
             'AXIS_OIDC_SESSION_COOKIE_SECURE: "true"',
             'AXIS_EXTERNAL_MODEL_EGRESS_ENABLED: "false"',
@@ -664,6 +698,7 @@ def run_static_checks(repo_root: Path) -> list[CheckResult]:
     checks: list[CheckResult] = []
     checks.extend(check_make_target(repo_root))
     checks.extend(check_deployment_scripts(repo_root))
+    checks.extend(check_runtime_tools(repo_root))
     checks.extend(check_chart_files(repo_root))
     checks.extend(check_profile_files(repo_root))
     checks.extend(check_profile_contracts(repo_root))

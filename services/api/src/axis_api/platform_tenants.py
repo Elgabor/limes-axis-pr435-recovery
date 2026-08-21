@@ -17,11 +17,12 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session, sessionmaker
 
 from axis_api.audit import AuditEventCreate
 from axis_api.db import session_scope
+from axis_api.models import AuditEvent, Tenant
 from axis_api.permissions import PermissionDecision, PermissionRequest, evaluate_permission
 from axis_api.persistence import (
     ActorCreate,
@@ -29,6 +30,10 @@ from axis_api.persistence import (
     TenantCreate,
     TenantLifecycleTransition,
     TenantQuotaUpsert,
+)
+from axis_api.tenant_admission import (
+    TENANT_ADMISSION_CLAIMS_ONLY,
+    tenant_admission_denial_reason,
 )
 
 
@@ -87,21 +92,24 @@ REQUIRED_PROVISION_SCOPE = "platform:tenant:provision"
 REQUIRED_SUSPEND_SCOPE = "platform:tenant:suspend"
 REQUIRED_READ_SCOPE = "platform:tenant:read"
 REQUIRED_QUOTA_SCOPE = "platform:tenant:quota"
+REQUIRED_CONFIGURE_SCOPE = "platform:tenant:configure"
+# Every lifecycle mutation records requested_by as AuditEvent.actor_id.
+# Keep this boundary synchronized with the persisted VARCHAR(120) column.
+AUDIT_ACTOR_ID_MAX_LENGTH = 120
 PROVISIONED_AUDIT_EVENT_TYPE = "platform.tenant.provisioned"
+FIRST_TENANT_BOOTSTRAPPED_AUDIT_EVENT_TYPE = "platform.tenant.first_bootstrap.completed"
 SUSPENDED_AUDIT_EVENT_TYPE = "platform.tenant.suspended"
 REACTIVATED_AUDIT_EVENT_TYPE = "platform.tenant.reactivated"
 QUOTA_UPDATED_AUDIT_EVENT_TYPE = "platform.tenant.quota.updated"
-SUSPENDED_REQUEST_DENIED_AUDIT_EVENT_TYPE = "platform.tenant.suspended_request.denied"
-_BLOCKED_STATUS_REASONS = {
-    TenantLifecycleStatus.SUSPENDED.value: "tenant_suspended",
-    TenantLifecycleStatus.PENDING_DELETION.value: "tenant_pending_deletion",
-}
+VOCABULARY_UPDATED_AUDIT_EVENT_TYPE = "platform.tenant.vocabulary.updated"
+TENANT_VOCABULARY_LABEL_MAX_LENGTH = 100
+TENANT_VOCABULARY_MAX_DOMAIN_LABELS = 50
 
 
 class TenantBootstrapAdmin(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    actor_id: str = Field(min_length=1, max_length=120)
+    actor_id: str = Field(min_length=1, max_length=AUDIT_ACTOR_ID_MAX_LENGTH)
     display_name: str = Field(min_length=1, max_length=200)
     scopes: list[str] = Field(default_factory=list)
 
@@ -112,7 +120,7 @@ class TenantProvisionRequest(BaseModel):
     tenant_id: str = Field(min_length=1, max_length=80, pattern=r"^[a-z0-9][a-z0-9_-]*$")
     display_name: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=600)
-    requested_by: str = Field(min_length=1, max_length=160)
+    requested_by: str = Field(min_length=1, max_length=AUDIT_ACTOR_ID_MAX_LENGTH)
     actor_scopes: list[str] = Field(default_factory=list)
     idempotency_key: str = Field(min_length=1, max_length=200)
     bootstrap_admin: TenantBootstrapAdmin | None = None
@@ -122,7 +130,7 @@ class TenantProvisionRequest(BaseModel):
 class TenantSuspendRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    requested_by: str = Field(min_length=1, max_length=160)
+    requested_by: str = Field(min_length=1, max_length=AUDIT_ACTOR_ID_MAX_LENGTH)
     actor_scopes: list[str] = Field(default_factory=list)
     reason: str = Field(min_length=1, max_length=600)
     notes: list[str] = Field(default_factory=list)
@@ -131,7 +139,7 @@ class TenantSuspendRequest(BaseModel):
 class TenantReactivateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    requested_by: str = Field(min_length=1, max_length=160)
+    requested_by: str = Field(min_length=1, max_length=AUDIT_ACTOR_ID_MAX_LENGTH)
     actor_scopes: list[str] = Field(default_factory=list)
     reason: str = Field(default="", max_length=600)
     notes: list[str] = Field(default_factory=list)
@@ -157,9 +165,69 @@ class TenantQuotaValues(BaseModel):
 class TenantQuotaUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    requested_by: str = Field(min_length=1, max_length=160)
+    requested_by: str = Field(min_length=1, max_length=AUDIT_ACTOR_ID_MAX_LENGTH)
     actor_scopes: list[str] = Field(default_factory=list)
     quotas: TenantQuotaValues
+    notes: list[str] = Field(default_factory=list)
+
+
+class TenantVocabulary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    site_singular: str = Field(
+        default="Site",
+        max_length=TENANT_VOCABULARY_LABEL_MAX_LENGTH,
+    )
+    site_plural: str = Field(
+        default="Sites",
+        max_length=TENANT_VOCABULARY_LABEL_MAX_LENGTH,
+    )
+    workspace_label: str = Field(
+        default="Operations",
+        max_length=TENANT_VOCABULARY_LABEL_MAX_LENGTH,
+    )
+    domain_labels: dict[str, str] = Field(
+        default_factory=dict,
+        max_length=TENANT_VOCABULARY_MAX_DOMAIN_LABELS,
+    )
+
+    @field_validator("site_singular", "site_plural", "workspace_label")
+    @classmethod
+    def validate_label(cls, label: str) -> str:
+        stripped = label.strip()
+        if not stripped:
+            raise ValueError("Tenant vocabulary labels must not be blank.")
+        return stripped
+
+    @field_validator("domain_labels")
+    @classmethod
+    def validate_domain_labels(cls, domain_labels: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for key, value in domain_labels.items():
+            normalized_key = key.strip()
+            normalized_value = value.strip()
+            if not normalized_key or not normalized_value:
+                raise ValueError("Tenant vocabulary domain keys and labels must not be blank.")
+            if (
+                len(normalized_key) > TENANT_VOCABULARY_LABEL_MAX_LENGTH
+                or len(normalized_value) > TENANT_VOCABULARY_LABEL_MAX_LENGTH
+            ):
+                raise ValueError(
+                    "Tenant vocabulary domain keys and labels must not exceed "
+                    f"{TENANT_VOCABULARY_LABEL_MAX_LENGTH} characters."
+                )
+            if normalized_key in normalized:
+                raise ValueError("Tenant vocabulary domain keys must be unique after trimming.")
+            normalized[normalized_key] = normalized_value
+        return normalized
+
+
+class TenantVocabularyUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requested_by: str = Field(min_length=1, max_length=AUDIT_ACTOR_ID_MAX_LENGTH)
+    actor_scopes: list[str] = Field(default_factory=list)
+    vocabulary: TenantVocabulary
     notes: list[str] = Field(default_factory=list)
 
 
@@ -209,12 +277,31 @@ class TenantQuotaSet(BaseModel):
     quota_notes: list[str] = Field(default_factory=list)
 
 
+class TenantVocabularyChange(BaseModel):
+    previous_value: TenantVocabulary | None = None
+    new_value: TenantVocabulary
+    audit_event_id: UUID | None = None
+    audit_event_type: str = Field(min_length=1)
+
+
+class TenantVocabularySet(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    vocabulary: TenantVocabulary
+    configured: bool
+    changes: list[TenantVocabularyChange] = Field(default_factory=list)
+    vocabulary_notes: list[str] = Field(default_factory=list)
+
+
 _QUOTA_NOTES = [
     "Tenant quotas override the global configuration for this tenant only.",
     "api_requests_per_window overrides the global API rate limit on protected paths.",
     "max_concurrent_sessions overrides the global concurrent browser-session cap.",
     "max_connector_sync_rows_per_run caps governed live-sync row limits per run.",
     "Every quota change appends platform.tenant.quota.updated audit evidence.",
+]
+_VOCABULARY_NOTES = [
+    "Industry-neutral defaults are returned until this tenant configures vocabulary.",
+    "Every vocabulary change appends platform.tenant.vocabulary.updated audit evidence.",
 ]
 
 
@@ -225,23 +312,20 @@ def blocked_tenant_reason(status: str | None) -> str | None:
     moved out of the active status are blocked, so environments without seeded
     tenant rows keep their existing behavior.
     """
-    if status is None:
-        return None
-    return _BLOCKED_STATUS_REASONS.get(status)
+    return tenant_admission_denial_reason(
+        status,
+        admission_mode=TENANT_ADMISSION_CLAIMS_ONLY,
+    )
 
 
 def provision_tenant(
     repository: AxisPersistenceRepository,
     request: TenantProvisionRequest,
 ) -> TenantRecord:
-    existing_replay = repository.get_tenant_by_provision_idempotency_key(
-        request.idempotency_key
-    )
+    existing_replay = repository.get_tenant_by_provision_idempotency_key(request.idempotency_key)
     if existing_replay is not None:
-        if not _provision_matches_request(existing_replay, request):
-            raise TenantProvisionConflict(
-                request.tenant_id, "provision_idempotency_conflict"
-            )
+        if not _provision_matches_request(repository, existing_replay, request):
+            raise TenantProvisionConflict(request.tenant_id, "provision_idempotency_conflict")
         return _tenant_from_record(existing_replay, idempotent_replay=True)
 
     existing = repository.get_tenant(request.tenant_id)
@@ -270,10 +354,13 @@ def provision_tenant(
             payload={
                 "tenant_id": request.tenant_id,
                 "display_name": request.display_name,
+                "description": request.description,
                 "status": TenantLifecycleStatus.ACTIVE.value,
                 "idempotency_key": request.idempotency_key,
-                "bootstrap_admin_actor_id": (
-                    bootstrap_admin.actor_id if bootstrap_admin else None
+                "provision_notes": request.notes,
+                "bootstrap_admin_actor_id": (bootstrap_admin.actor_id if bootstrap_admin else None),
+                "bootstrap_admin_display_name": (
+                    bootstrap_admin.display_name if bootstrap_admin else None
                 ),
                 # Scope grants stay IdP-owned; the requested bootstrap scopes are
                 # recorded as audit evidence only, never as a live grant.
@@ -302,9 +389,7 @@ def provision_tenant(
             description=request.description,
             status=TenantLifecycleStatus.ACTIVE.value,
             created_by=request.requested_by,
-            bootstrap_admin_actor_id=(
-                bootstrap_admin.actor_id if bootstrap_admin else None
-            ),
+            bootstrap_admin_actor_id=(bootstrap_admin.actor_id if bootstrap_admin else None),
             provision_idempotency_key=request.idempotency_key,
             audit_event_id=audit_event.id,
             audit_event_type=audit_event.event_type,
@@ -312,6 +397,52 @@ def provision_tenant(
         )
     )
     return _tenant_from_record(tenant, permission_decision=permission_decision)
+
+
+def bootstrap_first_tenant(
+    repository: AxisPersistenceRepository,
+    request: TenantProvisionRequest,
+) -> TenantRecord:
+    """Provision the first tenant through a direct database authority.
+
+    Production ``registered_only`` admission intentionally prevents an unknown
+    OIDC tenant from calling the normal provisioning endpoint. Operators run the
+    packaged bootstrap command once, after migrations, using the deployment's
+    database credential. Competing commands serialize; an exact replay remains
+    safe, while any later or different bootstrap must use the authenticated API.
+    """
+
+    repository.acquire_first_tenant_bootstrap_lock()
+    existing = repository.list_tenants(limit=2)
+    exact_replay_candidate = (
+        len(existing) == 1
+        and existing[0].id == request.tenant_id
+        and existing[0].provision_idempotency_key == request.idempotency_key
+    )
+    if existing and (
+        not exact_replay_candidate
+        or not _has_valid_direct_bootstrap_evidence(repository, existing[0])
+    ):
+        raise TenantProvisionConflict(
+            request.tenant_id,
+            "tenant_registry_already_initialized",
+        )
+    result = provision_tenant(repository, request)
+    if not result.idempotent_replay:
+        repository.append_audit_event(
+            AuditEventCreate(
+                tenant_id=result.tenant_id,
+                actor_id=request.requested_by,
+                event_type=FIRST_TENANT_BOOTSTRAPPED_AUDIT_EVENT_TYPE,
+                payload={
+                    "tenant_id": result.tenant_id,
+                    "authority": "direct_database",
+                    "provision_audit_event_id": str(result.audit_event_id),
+                    "idempotency_key": request.idempotency_key,
+                },
+            )
+        )
+    return result
 
 
 def get_tenant_detail(
@@ -373,12 +504,8 @@ def build_tenant_registry(
     has_more = len(records) > limit
     page_records = records[:limit]
     tenants = [_tenant_from_record(record) for record in page_records]
-    active_count = sum(
-        1 for tenant in tenants if tenant.status == TenantLifecycleStatus.ACTIVE
-    )
-    next_cursor = (
-        encode_tenant_cursor(page_records[-1]) if has_more and page_records else None
-    )
+    active_count = sum(1 for tenant in tenants if tenant.status == TenantLifecycleStatus.ACTIVE)
+    next_cursor = encode_tenant_cursor(page_records[-1]) if has_more and page_records else None
     return TenantRegistry(
         tenant_count=len(tenants),
         active_tenant_count=active_count,
@@ -498,8 +625,7 @@ def get_tenant_quota_set(
     if repository.get_tenant(tenant_id) is None:
         raise TenantNotFound()
     quotas = {
-        quota.quota_key: quota.quota_value
-        for quota in repository.list_tenant_quotas(tenant_id)
+        quota.quota_key: quota.quota_value for quota in repository.list_tenant_quotas(tenant_id)
     }
     return TenantQuotaSet(tenant_id=tenant_id, quotas=quotas, quota_notes=_QUOTA_NOTES)
 
@@ -573,14 +699,98 @@ def update_tenant_quotas(
             )
         )
     quotas = {
-        quota.quota_key: quota.quota_value
-        for quota in repository.list_tenant_quotas(tenant_id)
+        quota.quota_key: quota.quota_value for quota in repository.list_tenant_quotas(tenant_id)
     }
     return TenantQuotaSet(
         tenant_id=tenant_id,
         quotas=quotas,
         changes=changes,
         quota_notes=_QUOTA_NOTES,
+    )
+
+
+def get_tenant_vocabulary(
+    repository: AxisPersistenceRepository,
+    tenant_id: str,
+) -> TenantVocabularySet:
+    tenant = repository.get_tenant(tenant_id)
+    if tenant is None:
+        raise TenantNotFound()
+    configured = tenant.vocabulary is not None
+    vocabulary = (
+        TenantVocabulary.model_validate(tenant.vocabulary) if configured else TenantVocabulary()
+    )
+    return TenantVocabularySet(
+        tenant_id=tenant_id,
+        vocabulary=vocabulary,
+        configured=configured,
+        vocabulary_notes=_VOCABULARY_NOTES,
+    )
+
+
+def update_tenant_vocabulary(
+    repository: AxisPersistenceRepository,
+    tenant_id: str,
+    request: TenantVocabularyUpdateRequest,
+) -> TenantVocabularySet:
+    tenant = repository.get_tenant(tenant_id)
+    if tenant is None:
+        raise TenantNotFound()
+
+    permission_decision = _evaluate_operator_permission(
+        tenant_id=tenant_id,
+        actor_id=request.requested_by,
+        actor_scopes=request.actor_scopes,
+        action_scope=REQUIRED_CONFIGURE_SCOPE,
+        attributes={"operation": "update_tenant_vocabulary"},
+    )
+    previous_value = (
+        TenantVocabulary.model_validate(tenant.vocabulary)
+        if tenant.vocabulary is not None
+        else None
+    )
+    if previous_value == request.vocabulary:
+        return TenantVocabularySet(
+            tenant_id=tenant_id,
+            vocabulary=request.vocabulary,
+            configured=True,
+            vocabulary_notes=_VOCABULARY_NOTES,
+        )
+
+    audit_event = repository.append_audit_event(
+        AuditEventCreate(
+            tenant_id=tenant_id,
+            actor_id=request.requested_by,
+            event_type=VOCABULARY_UPDATED_AUDIT_EVENT_TYPE,
+            payload={
+                "tenant_id": tenant_id,
+                "previous_value": (
+                    previous_value.model_dump() if previous_value is not None else None
+                ),
+                "new_value": request.vocabulary.model_dump(),
+                "required_operator_scope": REQUIRED_OPERATOR_SCOPE,
+                "required_configure_scope": REQUIRED_CONFIGURE_SCOPE,
+                "permission_decision": permission_decision.model_dump(),
+            },
+        )
+    )
+    repository.update_tenant_vocabulary(
+        tenant_id,
+        request.vocabulary.model_dump(),
+    )
+    return TenantVocabularySet(
+        tenant_id=tenant_id,
+        vocabulary=request.vocabulary,
+        configured=True,
+        changes=[
+            TenantVocabularyChange(
+                previous_value=previous_value,
+                new_value=request.vocabulary,
+                audit_event_id=audit_event.id,
+                audit_event_type=audit_event.event_type,
+            )
+        ],
+        vocabulary_notes=_VOCABULARY_NOTES,
     )
 
 
@@ -649,16 +859,131 @@ class TenantStateCache:
         self._entries.pop(tenant_id, None)
 
 
-def _provision_matches_request(record, request: TenantProvisionRequest) -> bool:
-    bootstrap_actor_id = (
-        request.bootstrap_admin.actor_id if request.bootstrap_admin else None
-    )
-    return (
+def _provision_matches_request(
+    repository: AxisPersistenceRepository,
+    record: Tenant,
+    request: TenantProvisionRequest,
+) -> bool:
+    bootstrap_actor_id = request.bootstrap_admin.actor_id if request.bootstrap_admin else None
+    base_fields_match = (
         record.id == request.tenant_id
         and record.name == request.display_name
         and record.description == request.description
         and record.bootstrap_admin_actor_id == bootstrap_actor_id
         and record.created_by == request.requested_by
+    )
+    if not base_fields_match:
+        return False
+    audit_event = _valid_provision_audit_event(repository, record)
+    if audit_event is None:
+        return False
+    audited_description = audit_event.payload.get("description", record.description)
+    notes_are_verifiable, audited_notes = _audited_provision_notes(record, audit_event)
+    if audited_description != request.description:
+        return False
+    if not notes_are_verifiable or audited_notes != request.notes:
+        return False
+    if request.bootstrap_admin is None:
+        return True
+
+    audited_admin_name = audit_event.payload.get("bootstrap_admin_display_name")
+    if audited_admin_name is None:
+        # Compatibility for tenants provisioned before the display name was
+        # copied into audit evidence. Actor identity is immutable in this slice.
+        actor = repository.get_actor(request.bootstrap_admin.actor_id)
+        audited_admin_name = actor.display_name if actor is not None else None
+    return (
+        audited_admin_name == request.bootstrap_admin.display_name
+        and audit_event.payload.get("bootstrap_admin_requested_scopes")
+        == request.bootstrap_admin.scopes
+    )
+
+
+def _valid_provision_audit_event(
+    repository: AxisPersistenceRepository,
+    record: Tenant,
+) -> AuditEvent | None:
+    """Return the tenant's sole internally consistent provisioning event."""
+
+    audit_events = repository.list_audit_events(
+        record.id,
+        event_type=PROVISIONED_AUDIT_EVENT_TYPE,
+        limit=2,
+    )
+    if len(audit_events) != 1:
+        return None
+    audit_event = audit_events[0]
+    payload = audit_event.payload
+    if not isinstance(payload, dict):
+        return None
+    audited_description = payload.get("description", record.description)
+    if "provision_notes" in payload:
+        audited_notes = payload["provision_notes"]
+        if (
+            not isinstance(audited_notes, list)
+            or record.notes[: len(audited_notes)] != audited_notes
+        ):
+            return None
+    if not (
+        audit_event.actor_id == record.created_by
+        and payload.get("tenant_id") == record.id
+        and payload.get("display_name") == record.name
+        and audited_description == record.description
+        and payload.get("status") == TenantLifecycleStatus.ACTIVE.value
+        and payload.get("idempotency_key") == record.provision_idempotency_key
+        and payload.get("bootstrap_admin_actor_id") == record.bootstrap_admin_actor_id
+    ):
+        return None
+    return audit_event
+
+
+def _audited_provision_notes(
+    record: Tenant,
+    audit_event: AuditEvent,
+) -> tuple[bool, list[str]]:
+    """Return whether original provisioning notes remain exactly provable."""
+
+    payload = audit_event.payload
+    if "provision_notes" in payload:
+        notes = payload["provision_notes"]
+        return (True, notes) if isinstance(notes, list) else (False, [])
+    # Older events did not copy notes into immutable evidence. The tenant row
+    # remains authoritative only until a lifecycle transition replaces its
+    # latest-event pointer and may append unrelated notes.
+    if (
+        record.audit_event_id == audit_event.id
+        and record.audit_event_type == PROVISIONED_AUDIT_EVENT_TYPE
+    ):
+        return True, record.notes
+    return False, []
+
+
+def _has_valid_direct_bootstrap_evidence(
+    repository: AxisPersistenceRepository,
+    record: Tenant,
+) -> bool:
+    """Verify that the sole tenant was created by the out-of-band authority."""
+
+    provision_event = _valid_provision_audit_event(repository, record)
+    if provision_event is None:
+        return False
+    bootstrap_events = repository.list_audit_events(
+        record.id,
+        event_type=FIRST_TENANT_BOOTSTRAPPED_AUDIT_EVENT_TYPE,
+        limit=2,
+    )
+    if len(bootstrap_events) != 1:
+        return False
+    bootstrap_event = bootstrap_events[0]
+    payload = bootstrap_event.payload
+    if not isinstance(payload, dict):
+        return False
+    return (
+        bootstrap_event.actor_id == provision_event.actor_id
+        and payload.get("tenant_id") == record.id
+        and payload.get("authority") == "direct_database"
+        and payload.get("provision_audit_event_id") == str(provision_event.id)
+        and payload.get("idempotency_key") == record.provision_idempotency_key
     )
 
 

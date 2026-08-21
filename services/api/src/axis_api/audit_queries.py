@@ -20,6 +20,10 @@ from axis_api.demo import (
     OverviewMetric,
     OverviewStatus,
 )
+from axis_api.manufacturing_metadata import (
+    get_manufacturing_tenant_metadata,
+    operational_provenance,
+)
 from axis_api.models import AuditEvent, AuditLegalHold
 from axis_api.object_storage import (
     COMPLIANCE_RETENTION_MODE,
@@ -119,7 +123,7 @@ class AuditExportManifest(BaseModel):
 
 class AuditExportBundle(BaseModel):
     tenant_id: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
     format: str = Field(min_length=1)
     export_reason: str = Field(min_length=1)
     filters: AuditEventQuery
@@ -458,6 +462,7 @@ def query_persisted_audit_events(
     repository: AxisPersistenceRepository,
     query: AuditEventQuery,
 ) -> ManufacturingAuditExplorer:
+    tenant_metadata = get_manufacturing_tenant_metadata(repository, query.tenant_id)
     records = repository.list_audit_events(
         tenant_id=query.tenant_id,
         event_type=query.event_type,
@@ -467,12 +472,20 @@ def query_persisted_audit_events(
     events = [_audit_event_to_ledger_event(record) for record in records]
     if query.scope is not None:
         events = [event for event in events if event.scope == query.scope]
+    has_persisted_records = bool(records)
+    if not has_persisted_records and any(
+        value is not None for value in (query.event_type, query.actor_id, query.scope)
+    ):
+        has_persisted_records = bool(
+            repository.list_audit_events(tenant_id=query.tenant_id, limit=1)
+        )
 
     return ManufacturingAuditExplorer(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
-        as_of=events[0].occurred_at if events else "2026-06-21T16:30:00+02:00",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(has_persisted_records),
+        as_of=events[0].occurred_at if events else tenant_metadata.as_of,
         ledger_status=OverviewStatus.READY if events else OverviewStatus.WATCH,
         metrics=_metrics(events),
         filter_options=_filter_options(events, query.tenant_id),

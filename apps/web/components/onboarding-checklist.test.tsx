@@ -11,6 +11,7 @@ vi.mock("@/lib/use-axis-query", () => ({
 }));
 
 import { ONBOARDING_ENDPOINTS, OnboardingChecklist } from "./onboarding-checklist";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 type Source = "loading" | "api" | "unavailable";
 
@@ -134,13 +135,19 @@ describe("OnboardingChecklist (full)", () => {
     render(
       <OnboardingChecklist
         demoAvailable
-        demoError="Axis API request failed with 403"
+        demoError={{
+          code: "forbidden",
+          message: "Axis API request failed with 403",
+          requestId: "req-demo-403",
+          status: 403,
+        }}
         onExploreDemo={() => {}}
         variant="full"
       />,
     );
 
     expect(screen.getByText("Axis API request failed with 403")).toBeInTheDocument();
+    expect(screen.getByText("req-demo-403")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Explore with demo data" })).toBeEnabled();
   });
 
@@ -187,7 +194,7 @@ describe("OnboardingChecklist (full)", () => {
   });
 
   it("treats a failing registry as not-done instead of rendering an error wall", () => {
-    mockRegistries({ policies: 1 }, ["/demo/manufacturing/connectors"]);
+    mockRegistries({ policies: 1 }, [`${OPERATIONS_API_PREFIX}/connectors`]);
     render(<OnboardingChecklist variant="full" />);
 
     expect(screen.getByText("1 of 5 setup steps complete")).toBeInTheDocument();

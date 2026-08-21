@@ -1,4 +1,4 @@
-import type { PlatformStatus } from "./platform-overview";
+import type { ManufacturingProvenance, PlatformStatus } from "./platform-overview";
 import type { PlatformPolicyDecision } from "./platform-policies";
 
 export type ApprovalDecision = "approve" | "reject" | "request_changes";
@@ -18,6 +18,7 @@ export type ApprovalAuditPreview = {
 
 export type ApprovalInboxItem = {
   approval_id: string;
+  action_run_id?: string | null;
   action: string;
   risk_level: "high" | "medium" | "low";
   status: string;
@@ -40,8 +41,9 @@ export type ApprovalInboxItem = {
 
 export type ManufacturingApprovalInbox = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   queue_status: PlatformStatus;
   policy_notes: string[];
@@ -145,4 +147,13 @@ export function findApprovalById(
   return (
     inbox.approvals.find((approval) => approval.approval_id === approvalId) ?? inbox.approvals[0]
   );
+}
+
+export function buildApprovalHref(approvalId: string | null | undefined): string {
+  if (!approvalId) {
+    return "/approvals";
+  }
+
+  const params = new URLSearchParams({ approval_id: approvalId });
+  return `/approvals?${params.toString()}`;
 }

@@ -25,6 +25,68 @@ process-local liveness signal and is never gated by Redis or request quotas;
 `/ready` remains the dependency-aware traffic admission signal. The chart maps
 the Redis URL through `secrets.existingSecret` or the optional ExternalSecret.
 
+Production startup also requires
+`AXIS_TENANT_ADMISSION_MODE=registered_only`. In that mode, a valid OIDC tenant
+claim is necessary but not sufficient: the tenant must have a persisted,
+active platform tenant record. Unknown, suspended and pending-deletion tenants
+fail closed before route logic or browser-session creation. The default
+`claims_only` mode remains available only for local/demo environments that have
+not populated the tenant registry yet.
+
+### Apply database migrations once
+
+Before `/ready` is allowed into service and before the first-tenant bootstrap,
+one designated migration owner must run the packaged Alembic upgrade from the
+same immutable API image and Secret-backed environment:
+
+```bash
+kubectl -n limes-axis exec deployment/limes-axis-api -c api -- \
+  alembic upgrade head
+kubectl -n limes-axis exec deployment/limes-axis-api -c api -- \
+  alembic current
+```
+
+Adjust the namespace and Deployment name when the Helm release is renamed.
+Wait for both commands to exit successfully and confirm `alembic current`
+reports the expected head before admitting traffic. Run this gate once per
+release; do not launch concurrent migration owners. The API image packages
+`alembic.ini` and the migration tree, while `/ready` remains the fail-closed
+traffic gate if the schema or another dependency is unavailable.
+
+### Bootstrap the first registered tenant
+
+An empty `registered_only` deployment intentionally rejects every OIDC tenant,
+including a platform operator, until the first active tenant exists. After the
+database migrations finish and before the first operator login, run the
+packaged one-shot command from the same immutable API image and with its normal
+`AXIS_POSTGRES_DSN` Secret environment:
+
+```bash
+kubectl -n limes-axis exec deployment/limes-axis-api -c api -- \
+  axis-bootstrap-first-tenant \
+  --tenant-id tenant_axis_platform_ops \
+  --display-name "Axis platform operators" \
+  --operator-id deployment-bootstrap \
+  --idempotency-key first-tenant-v1 \
+  --bootstrap-admin-id platform-operator-role \
+  --bootstrap-admin-display-name "Platform operator" \
+  --bootstrap-admin-scope platform:tenant:operator \
+  --bootstrap-admin-scope platform:tenant:provision
+```
+
+The command uses direct database authority, records the operator identity and
+requested IdP-owned admin scopes as audit evidence, and creates the tenant via
+the same domain permission and idempotency path as `POST /platform/tenants`.
+It also appends `platform.tenant.first_bootstrap.completed` with
+`authority=direct_database`; it never grants scopes in Axis. Concurrent
+attempts are serialized; an exact replay is safe and emits no duplicate audit
+event. Reusing the same key with changed tenant, admin, scope or note evidence
+is refused with `provision_idempotency_conflict`; a different request after the
+registry is initialized is refused with `tenant_registry_already_initialized`.
+After this one bootstrap, use the authenticated platform-tenant API for every
+additional tenant. Do not temporarily switch production to `claims_only` to
+work around the admission boundary.
+
 The local Compose stack includes persistent Valkey on port `6379` for
 integration testing. Customer deployments should use a monitored, redundant
 Redis or Valkey service with authentication and TLS appropriate to their

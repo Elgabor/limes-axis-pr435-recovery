@@ -10,6 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from axis_api.audit import AuditEventCreate
 from axis_api.audit_queries import _audit_event_to_ledger_event
 from axis_api.demo import AuditLedgerEvent, OverviewMetric, OverviewStatus, WorkflowTimelineEvent
+from axis_api.manufacturing_metadata import (
+    ManufacturingResponseProvenance,
+    find_manufacturing_tenant_metadata,
+    operational_provenance,
+)
 from axis_api.models import (
     AuditEvent,
     ReplaySimulationOutput,
@@ -182,8 +187,9 @@ class ReplaySimulationOutputRecord(BaseModel):
 
 class ManufacturingReplaySimulation(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     as_of: str = Field(min_length=1)
     simulation_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
@@ -233,6 +239,7 @@ def build_replay_simulation(
     *,
     arbitrary_policy_set_diff_enabled: bool = False,
 ) -> ManufacturingReplaySimulation:
+    tenant_metadata = find_manufacturing_tenant_metadata(repository, query.tenant_id)
     generated_at = datetime.now(UTC)
     diff_context = _load_arbitrary_policy_set_diff_context(
         repository,
@@ -300,8 +307,11 @@ def build_replay_simulation(
 
     return ManufacturingReplaySimulation(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(
+            bool(workflow_records or audit_records or persisted_outputs)
+        ),
         as_of=_as_of(artifacts),
         simulation_status=OverviewStatus.READY if artifacts else OverviewStatus.WATCH,
         metrics=_metrics(artifacts, persisted_outputs, retention_window),

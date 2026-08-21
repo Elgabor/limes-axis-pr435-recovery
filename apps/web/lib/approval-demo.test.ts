@@ -6,6 +6,7 @@ import {
   approvalDecisionLabel,
   approvalRiskClass,
   buildApprovalDecisionPayload,
+  buildApprovalHref,
   findApprovalById,
   type ManufacturingApprovalInbox,
 } from "./approval-demo";
@@ -14,6 +15,7 @@ const approvalInboxFixture: ManufacturingApprovalInbox = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Plant",
   scenario: "Runtime contract fixture",
+  provenance: "reference_scenario",
   as_of: "2026-06-22T09:00:00+02:00",
   queue_status: "action_required",
   policy_notes: ["Fixture data is scoped to tests."],
@@ -104,6 +106,11 @@ describe("approval inbox helpers", () => {
     expect(findApprovalById(approvalInboxFixture, "missing").action).toBe(
       "Expedite fixture batch",
     );
+  });
+
+  it("builds shareable approval deep links", () => {
+    expect(buildApprovalHref("approval / 42")).toBe("/approvals?approval_id=approval+%2F+42");
+    expect(buildApprovalHref(null)).toBe("/approvals");
   });
 
   it("builds public-safe persisted decision payloads from provided approval data", () => {

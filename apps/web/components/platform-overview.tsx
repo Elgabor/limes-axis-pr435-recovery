@@ -9,11 +9,17 @@ import { NeedsAttention } from "@/components/overview/needs-attention";
 import { type OverviewQuery } from "@/components/overview/overview-shared";
 import { PostureCards } from "@/components/overview/posture-cards";
 import { SideRail } from "@/components/overview/side-rail";
+import { SourcePill } from "@/components/ui/source-pill";
 import { ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import type { ManufacturingAuditExplorer } from "@/lib/audit-demo";
 import type { ManufacturingModelRouting } from "@/lib/model-routing-demo";
 import {
-  formatOverviewTimestamp,
+  formatContextPath,
+  formatNumber,
+  formatTimestamp,
+  NO_VALUE,
+} from "@/lib/format";
+import {
   type IdentitySessionReadModel,
   type ManufacturingOperationsSnapshot,
   type ManufacturingOverview,
@@ -26,10 +32,12 @@ import {
   parseManufacturingOverview,
   parseIdentitySessionReadModel,
 } from "@/lib/runtime-contracts/overview";
+import { deriveSourceState } from "@/lib/source-state";
 import {
   buildTenantScopedPath,
   DEMO_TENANT_ID,
   resolveConsoleTenantScope,
+  OPERATIONS_API_PREFIX,
 } from "@/lib/tenant-scope";
 import { useAxisQuery } from "@/lib/use-axis-query";
 import { useDemoBootstrap } from "@/lib/use-demo-bootstrap";
@@ -43,10 +51,10 @@ import { useConsole } from "@/providers/console-provider";
  */
 
 const IDENTITY_SESSION_ENDPOINT = "/identity/session";
-const OVERVIEW_ENDPOINT = "/demo/manufacturing/overview";
-const SNAPSHOT_ENDPOINT = "/demo/manufacturing/operations/snapshot";
-const MODEL_ROUTING_ENDPOINT = "/demo/manufacturing/model-routing";
-const AUDIT_EVENTS_ENDPOINT = "/demo/manufacturing/audit/events";
+const OVERVIEW_ENDPOINT = `${OPERATIONS_API_PREFIX}/overview`;
+const SNAPSHOT_ENDPOINT = `${OPERATIONS_API_PREFIX}/operations/snapshot`;
+const MODEL_ROUTING_ENDPOINT = `${OPERATIONS_API_PREFIX}/model-routing`;
+const AUDIT_EVENTS_ENDPOINT = `${OPERATIONS_API_PREFIX}/audit/events`;
 
 function OverviewHero({
   overview,
@@ -66,6 +74,7 @@ function OverviewHero({
       <ErrorPanel
         detail={strings.overview.hero.error.detail}
         endpoint={OVERVIEW_ENDPOINT}
+        reference={overview.errorRequestId ?? undefined}
         title={strings.overview.hero.error.title}
       />
     );
@@ -73,50 +82,105 @@ function OverviewHero({
 
   const data = overview.data;
   const asOf = snapshot.data?.as_of ?? data.as_of;
-  // One audit registry count for the whole page: the persisted audit events
-  // payload that also drives the evidence feed. The seeded "Audit" overview
-  // metric is never displayed, so the hero and the feed cannot disagree.
-  const auditEventCount = auditEvents.data ? String(auditEvents.data.events.length) : "—";
+  /*
+   * Every headline number is read from the persisted operations snapshot, not
+   * from the reference scenario. The scenario's own arrays and metrics describe
+   * a fictional plant — on a live tenant they read "3 workflows / 3 approvals
+   * pending" while the persisted truth is zero, which is exactly the kind of
+   * confident-but-wrong number this console must never show. When the snapshot
+   * has not resolved, the fact reads "—" rather than falling back to seed data.
+   */
+  const persistedFact = (metricLabel: string): string => {
+    const metric = snapshot.data?.metrics.find((entry) => entry.label === metricLabel);
+    return metric ? metric.value : NO_VALUE;
+  };
+  // The audit endpoint is fetched with a fixed limit and exposes no total, so
+  // this is explicitly the size of the latest window, never "all events".
+  const auditEventCount = auditEvents.data
+    ? formatNumber(auditEvents.data.events.length)
+    : NO_VALUE;
   const facts = [
-    { label: "Workflows", value: String(data.workflows.length) },
-    { label: "Approvals pending", value: String(data.approvals.length) },
-    { label: "Agents governed", value: String(data.agents.length) },
-    { label: "Recent audit events", value: auditEventCount, testId: "hero-audit-count" },
+    { label: strings.overview.hero.facts.openWorkflows, value: persistedFact("Open Workflows") },
+    {
+      label: strings.overview.hero.facts.pendingApprovals,
+      value: persistedFact("Pending Approvals"),
+    },
+    { label: strings.overview.hero.facts.operationRecords, value: persistedFact("Operation Records") },
+    {
+      label: strings.overview.hero.facts.recentAudit,
+      value: auditEventCount,
+      testId: "hero-audit-count",
+    },
   ];
 
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-navy bg-navy px-6 py-6 text-white sm:px-8 dark:border-white/10">
-      {/* Signal glow + static dot grid, same treatment in both themes. */}
+    <div className="grid gap-2">
+      <section className="relative overflow-hidden rounded-3xl border border-navy bg-navy px-6 py-6 text-white sm:px-8 dark:border-white/10">
+        {/* Signal glow + static dot grid, same treatment in both themes. */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0"
+          style={{
+            backgroundImage:
+              "radial-gradient(ellipse 80% 90% at 50% 110%, rgb(47 100 255 / 0.35) 0%, rgb(47 100 255 / 0.08) 45%, transparent 70%), radial-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px)",
+            backgroundSize: "auto, 22px 22px",
+          }}
+        />
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
+          <div className="grid gap-1">
+            <h2 className="font-display font-display-lg m-0 text-2xl text-white">
+              {formatContextPath(data.scenario) || strings.overview.hero.fallbackTitle}
+            </h2>
+            <p className="m-0 text-sm text-white/70" data-hero-subtitle>
+              {formatContextPath(data.plant_name, formatTimestamp(asOf))}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-x-8 gap-y-3">
+            {facts.map((fact) => (
+              <div className="grid gap-0.5" key={fact.label}>
+                {/* Facts sit one step below the scenario title so the band has a
+                    single focal point, and use tabular figures so the row does
+                    not shift as counts change. */}
+                <span
+                  className="font-display text-xl tabular-nums text-white"
+                  data-testid={fact.testId}
+                >
+                  {fact.value}
+                </span>
+                <span className="font-mono text-[11px] tracking-[0.12em] text-white/60 uppercase">
+                  {fact.label}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
       <div
-        aria-hidden="true"
-        className="absolute inset-0"
-        style={{
-          backgroundImage:
-            "radial-gradient(ellipse 80% 90% at 50% 110%, rgb(47 100 255 / 0.35) 0%, rgb(47 100 255 / 0.08) 45%, transparent 70%), radial-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px)",
-          backgroundSize: "auto, 22px 22px",
-        }}
-      />
-      <div className="relative z-10 flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
-        <div className="grid gap-1">
-          <h2 className="font-display m-0 text-2xl text-white">{data.scenario}</h2>
-          <p className="ops-page-subtitle m-0! text-sm! text-white/70!">
-            {data.plant_name} / {formatOverviewTimestamp(asOf)}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-x-8 gap-y-3">
-          {facts.map((fact) => (
-            <div className="grid gap-0.5" key={fact.label}>
-              <span className="font-display text-2xl text-white" data-testid={fact.testId}>
-                {fact.value}
-              </span>
-              <span className="font-mono text-[10.5px] tracking-[0.14em] text-white/60 uppercase">
-                {fact.label}
-              </span>
-            </div>
-          ))}
-        </div>
+        aria-label="Overview data sources"
+        className="flex min-w-0 flex-wrap items-center justify-end gap-1.5"
+      >
+        <SourcePill
+          state={deriveSourceState(overview.source, true, data.provenance)}
+          subject="scenario context"
+        />
+        <SourcePill
+          state={deriveSourceState(
+            snapshot.source,
+            Boolean(snapshot.data),
+            snapshot.data?.provenance,
+          )}
+          subject="operations snapshot"
+        />
+        <SourcePill
+          state={deriveSourceState(
+            auditEvents.source,
+            Boolean(auditEvents.data),
+            auditEvents.data?.provenance,
+          )}
+          subject="audit window"
+        />
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -176,6 +240,7 @@ export function PlatformOverview() {
       <ErrorPanel
         detail="The console could not verify the current actor and tenant. Tenant-scoped data is not loaded until identity is available."
         endpoint={IDENTITY_SESSION_ENDPOINT}
+        reference={identityQuery.errorRequestId ?? undefined}
         title="Identity API unavailable"
       />
     );
@@ -245,13 +310,13 @@ export function PlatformOverview() {
       />
 
       <div className="ops-dashboard-grid grid grid-cols-1 gap-4 min-[1400px]:grid-cols-[minmax(0,1fr)_320px]">
-        <main aria-label="Operations evidence" className="ops-dashboard-main grid min-w-0 content-start gap-4">
+        <section aria-label="Operations evidence" className="ops-dashboard-main grid min-w-0 content-start gap-4">
           <EvidenceFeed auditEvents={auditEventsQuery} />
           {/* Suspense boundary for useSearchParams inside the artifact panel. */}
           <Suspense fallback={<LoadingPanel layout="detail" />}>
             <ArtifactPanel onArtifactCommitted={triggerRefresh} snapshot={snapshotQuery} />
           </Suspense>
-        </main>
+        </section>
         <aside
           aria-label="Operations side rail"
           className="ops-right-rail grid min-w-0 content-start gap-4"

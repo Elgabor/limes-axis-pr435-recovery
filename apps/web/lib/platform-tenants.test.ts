@@ -1,19 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AxisApiDecodeError, AxisApiError } from "./axis-api";
+import { AxisApiDecodeError } from "./axis-api";
 import {
   allTenantFilter,
   buildPlatformTenantDetailPath,
   buildPlatformTenantQuotasPath,
+  buildPlatformTenantVocabularyPath,
   buildPlatformTenantsPath,
   buildQuotaValues,
   buildTenantProvisionPayload,
   buildTenantQuotaUpdatePayload,
   buildTenantSuspendPayload,
+  buildTenantVocabularyUpdatePayload,
   emptyTenantProvisionForm,
   fetchTenantDetail,
   fetchTenantQuotas,
   fetchTenantRegistry,
+  fetchTenantVocabulary,
   mergeTenantRegistryPage,
   parseQuotaValue,
   platformTenantOperatorActorId,
@@ -26,6 +29,7 @@ import {
   tenantStatusClass,
   tenantStatusLabel,
   updateTenantQuotas,
+  updateTenantVocabulary,
   validateQuotaForm,
   validateTenantId,
   validateTenantProvisionForm,
@@ -93,6 +97,9 @@ describe("tenant path builders", () => {
     );
     expect(buildPlatformTenantQuotasPath("tenant_acme")).toBe(
       "/platform/tenants/tenant_acme/quotas",
+    );
+    expect(buildPlatformTenantVocabularyPath("weird/../id")).toBe(
+      "/platform/tenants/weird%2F..%2Fid/vocabulary",
     );
   });
 });
@@ -275,10 +282,13 @@ describe("tenant API bindings", () => {
     delete process.env.NEXT_PUBLIC_AXIS_API_BASE_URL;
   });
 
-  function stubFetch(status: number, body: unknown) {
+  function stubFetch(status: number, body: unknown, requestId?: string) {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(body === null ? null : JSON.stringify(body), {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(requestId ? { "x-request-id": requestId } : {}),
+        },
         status,
       }),
     );
@@ -358,14 +368,36 @@ describe("tenant API bindings", () => {
         message: "The actor cannot provision tenants.",
         required_permission: "platform:tenant:provision",
       },
-    });
+    }, "req-tenant-provision-403");
 
     await expect(
       provisionTenant(buildTenantProvisionPayload(buildProvisionForm(), "idem-key-1")),
     ).resolves.toMatchObject({
       kind: "forbidden",
       requiredPermission: "platform:tenant:provision",
+      requestId: "req-tenant-provision-403",
     });
+  });
+
+  it("retains correlation metadata without carrying arbitrary response fields", async () => {
+    process.env.NEXT_PUBLIC_AXIS_API_BASE_URL = "http://axis-api.test";
+    stubFetch(
+      503,
+      { debug: "internal-token-must-not-enter-ui-state" },
+      "req-tenant-provision-503",
+    );
+
+    const result = await provisionTenant(
+      buildTenantProvisionPayload(buildProvisionForm(), "idem-key-1"),
+    );
+
+    expect(result).toEqual({
+      kind: "failed",
+      status: 503,
+      message: "Tenant request failed with 503.",
+      requestId: "req-tenant-provision-503",
+    });
+    expect(JSON.stringify(result)).not.toContain("internal-token-must-not-enter-ui-state");
   });
 
   it("posts a suspend request and returns updated", async () => {
@@ -434,6 +466,74 @@ describe("tenant API bindings", () => {
     });
   });
 
+  it("gets and updates the vocabulary with the configure scope", async () => {
+    process.env.NEXT_PUBLIC_AXIS_API_BASE_URL = "http://axis-api.test";
+    const vocabularySet = {
+      tenant_id: "tenant_acme",
+      vocabulary: {
+        site_singular: "Store",
+        site_plural: "Stores",
+        workspace_label: "Pharmacy",
+        domain_labels: { supply: "Pharmacy supply" },
+      },
+      configured: true,
+      changes: [],
+      vocabulary_notes: [],
+    };
+    const getMock = stubFetch(200, vocabularySet);
+
+    await expect(fetchTenantVocabulary("tenant_acme")).resolves.toEqual(vocabularySet);
+    expect((getMock.mock.calls[0] as [RequestInfo | URL])[0]).toBe(
+      "http://axis-api.test/platform/tenants/tenant_acme/vocabulary",
+    );
+
+    const payload = buildTenantVocabularyUpdatePayload(vocabularySet.vocabulary);
+    expect(payload.actor_scopes).toEqual([
+      "platform:tenant:operator",
+      "platform:tenant:configure",
+    ]);
+
+    const putMock = stubFetch(200, vocabularySet);
+    await expect(updateTenantVocabulary("tenant_acme", payload)).resolves.toMatchObject({
+      kind: "updated",
+      record: vocabularySet,
+    });
+    const [, putInit] = putMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
+    expect(putInit?.method).toBe("PUT");
+    expect(JSON.parse(String(putInit?.body)).vocabulary.domain_labels).toEqual({
+      supply: "Pharmacy supply",
+    });
+  });
+
+  it("surfaces vocabulary validation details from the server", async () => {
+    process.env.NEXT_PUBLIC_AXIS_API_BASE_URL = "http://axis-api.test";
+    stubFetch(422, {
+      detail: [
+        {
+          loc: ["body", "vocabulary", "domain_labels"],
+          msg: "Must contain at most 50 entries.",
+        },
+      ],
+    }, "req-tenant-vocabulary-422");
+
+    const result = await updateTenantVocabulary(
+      "tenant_acme",
+      buildTenantVocabularyUpdatePayload({
+        site_singular: "Site",
+        site_plural: "Sites",
+        workspace_label: "Operations",
+        domain_labels: {},
+      }),
+    );
+
+    expect(result).toEqual({
+      kind: "invalid",
+      message: "The tenant request failed API validation.",
+      fieldErrors: { domainLabels: "Must contain at most 50 entries." },
+      requestId: "req-tenant-vocabulary-422",
+    });
+  });
+
   it("rejects a malformed successful quota update response", async () => {
     process.env.NEXT_PUBLIC_AXIS_API_BASE_URL = "http://axis-api.test";
     stubFetch(200, { quotas: { api_requests_per_window: "many" } });
@@ -452,10 +552,22 @@ describe("tenant API bindings", () => {
     await expect(fetchTenantQuotas("missing")).resolves.toBeNull();
   });
 
+  it("retains the request id for a failed quota lookup", async () => {
+    process.env.NEXT_PUBLIC_AXIS_API_BASE_URL = "http://axis-api.test";
+    stubFetch(503, {}, "request-tenant-quotas-503");
+    await expect(fetchTenantQuotas("tenant_acme")).rejects.toMatchObject({
+      requestId: "request-tenant-quotas-503",
+      status: 503,
+    });
+  });
+
   it("throws AxisApiError for a failed detail read", async () => {
     process.env.NEXT_PUBLIC_AXIS_API_BASE_URL = "http://axis-api.test";
-    stubFetch(503, {});
-    await expect(fetchTenantDetail("tenant_acme")).rejects.toBeInstanceOf(AxisApiError);
+    stubFetch(503, {}, "request-tenant-detail-503");
+    await expect(fetchTenantDetail("tenant_acme")).rejects.toMatchObject({
+      requestId: "request-tenant-detail-503",
+      status: 503,
+    });
   });
 
   it("reads the detail record from the dedicated single-tenant route", async () => {
@@ -502,10 +614,13 @@ describe("tenant API bindings", () => {
 
   it("throws AxisApiError for a failed registry read", async () => {
     process.env.NEXT_PUBLIC_AXIS_API_BASE_URL = "http://axis-api.test";
-    stubFetch(503, {});
+    stubFetch(503, {}, "request-tenant-registry-503");
     await expect(
       fetchTenantRegistry({ status: allTenantFilter }),
-    ).rejects.toBeInstanceOf(AxisApiError);
+    ).rejects.toMatchObject({
+      requestId: "request-tenant-registry-503",
+      status: 503,
+    });
   });
 });
 

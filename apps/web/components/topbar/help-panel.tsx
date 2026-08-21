@@ -11,9 +11,9 @@ import {
 } from "@/components/topbar/panel-chrome";
 import { cn } from "@/lib/cn";
 
-export function HelpPanel() {
+export function HelpPanel({ className }: { className?: string } = {}) {
   return (
-    <section className={popoverClass} aria-label="Platform help">
+    <section className={className ?? popoverClass} aria-label="Platform help">
       <PopoverHeader label="Platform help">
         <span className="status-pill signal-ready">Docs</span>
       </PopoverHeader>

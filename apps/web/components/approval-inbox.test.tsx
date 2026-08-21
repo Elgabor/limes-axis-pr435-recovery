@@ -3,11 +3,14 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "@/components/ui/toast";
+import type { ActionRunList } from "@/lib/action-demo";
 import type { ManufacturingApprovalInbox } from "@/lib/approval-demo";
 
 const mocks = vi.hoisted(() => ({
   axisFetchParsedJson: vi.fn(),
+  triggerRefresh: vi.fn(),
   useAxisQuery: vi.fn(),
+  useTenantVocabulary: vi.fn(),
 }));
 
 vi.mock("@/lib/axis-api", () => ({
@@ -18,16 +21,26 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+vi.mock("@/providers/console-provider", () => ({
+  useConsole: () => ({ triggerRefresh: mocks.triggerRefresh }),
+}));
+
+vi.mock("@/providers/tenant-vocabulary-provider", () => ({
+  useTenantVocabulary: mocks.useTenantVocabulary,
+}));
+
 vi.mock("@/lib/use-oidc-session", () => ({
   useOidcConsoleSession: () => ({ session: null }),
 }));
 
 import { ApprovalInbox } from "./approval-inbox";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 const inboxFixture: ManufacturingApprovalInbox = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Plant",
   scenario: "Runtime contract fixture",
+  provenance: "reference_scenario",
   as_of: "2026-07-10T09:00:00+02:00",
   queue_status: "action_required",
   policy_notes: ["Fixture data is scoped to tests."],
@@ -134,6 +147,15 @@ const persistenceResultFixture = {
 function mockQuery(result: {
   data: ManufacturingApprovalInbox | null;
   source: "loading" | "api" | "unavailable";
+}, auditEvents: Array<{
+  evidence_refs: string[];
+  payload_preview: Record<string, string>;
+}> = [], actionRuns: {
+  data: ActionRunList | null;
+  source: "loading" | "api" | "unavailable";
+} = {
+  data: { tenant_id: "tenant_fixture", runs: [] },
+  source: "api",
 }) {
   mocks.useAxisQuery.mockImplementation((path: string) => {
     if (path === "/identity/session") {
@@ -149,6 +171,36 @@ function mockQuery(result: {
         isRefreshing: false,
         isLoading: false,
         isUnavailable: false,
+      };
+    }
+    if (path.startsWith(`${OPERATIONS_API_PREFIX}/audit/events`)) {
+      return {
+        data: {
+          tenant_id: "tenant_fixture",
+          plant_name: "Fixture Plant",
+          scenario: "Runtime contract fixture",
+          as_of: "2026-07-10T09:00:00+02:00",
+          ledger_status: "ready",
+          filter_options: { tenants: [], event_types: [], scopes: [] },
+          events: auditEvents,
+          retention_notes: [],
+          metrics: [],
+        },
+        source: "api",
+        error: null,
+        isRefreshing: false,
+        isLoading: false,
+        isUnavailable: false,
+      };
+    }
+    if (path === `${OPERATIONS_API_PREFIX}/actions/runs?tenant_id=tenant_fixture`) {
+      return {
+        data: actionRuns.data,
+        source: actionRuns.source,
+        error: actionRuns.source === "unavailable" ? "Axis API request failed." : null,
+        isRefreshing: false,
+        isLoading: actionRuns.source === "loading",
+        isUnavailable: actionRuns.source === "unavailable",
       };
     }
     return {
@@ -172,7 +224,12 @@ function renderInbox() {
 
 beforeEach(() => {
   mocks.axisFetchParsedJson.mockReset();
+  mocks.triggerRefresh.mockReset();
   mocks.useAxisQuery.mockReset();
+  mocks.useTenantVocabulary.mockReturnValue({
+    labelDomain: (domain: string) => domain,
+  });
+  window.history.replaceState(null, "", "/approvals");
 });
 
 describe("ApprovalInbox states", () => {
@@ -196,7 +253,7 @@ describe("ApprovalInbox states", () => {
       screen.getByText(/Local fallback approval records are disabled\./),
     ).toBeInTheDocument();
     // Endpoint stays demoted behind the technical-details expander.
-    expect(screen.queryByText("/demo/manufacturing/approvals")).not.toBeInTheDocument();
+    expect(screen.queryByText(`${OPERATIONS_API_PREFIX}/approvals`)).not.toBeInTheDocument();
   });
 
   it("renders the EmptyPanel when the API responds with zero approvals", () => {
@@ -205,6 +262,39 @@ describe("ApprovalInbox states", () => {
 
     expect(screen.getByRole("heading", { name: "No approvals waiting" })).toBeInTheDocument();
     expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps past follow-through visible when the current approval queue is empty", () => {
+    mockQuery(
+      { data: { ...inboxFixture, approvals: [] }, source: "api" },
+      [],
+      {
+        source: "api",
+        data: {
+          tenant_id: "tenant_fixture",
+          runs: [
+            {
+              action_run_id: "run-reported",
+              action_id: "place_quality_hold",
+              status: "execution_completed",
+              approval_id: "appr_quality_fixture",
+              workflow_id: "wf_quality_fixture",
+              created_at: "2026-07-24T10:00:00Z",
+              updated_at: "2026-07-24T11:00:00Z",
+              waiting_duration_seconds: 3_600,
+              outcome: {
+                result_summary: "External executor completed the quality hold.",
+                evidence_refs: ["audit_quality_hold_execution"],
+              },
+            },
+          ],
+        },
+      },
+    );
+    renderInbox();
+
+    expect(screen.getByRole("heading", { name: "No approvals waiting" })).toBeInTheDocument();
+    expect(screen.getByText("External executor completed the quality hold.")).toBeVisible();
   });
 });
 
@@ -217,13 +307,73 @@ describe("ApprovalInbox decision flow", () => {
     renderInbox();
 
     expect(mocks.useAxisQuery).toHaveBeenCalledWith(
-      "/demo/manufacturing/approvals?tenant_id=tenant_fixture",
+      `${OPERATIONS_API_PREFIX}/approvals?tenant_id=tenant_fixture`,
+      expect.objectContaining({ expectedTenantId: "tenant_fixture" }),
+    );
+    expect(mocks.useAxisQuery).toHaveBeenCalledWith(
+      `${OPERATIONS_API_PREFIX}/actions/runs?tenant_id=tenant_fixture`,
       expect.objectContaining({ expectedTenantId: "tenant_fixture" }),
     );
     expect(
       screen.getByText("The expedite order is dispatched to the supplier."),
     ).toBeVisible();
     expect(screen.getByText("The current production plan stays unchanged.")).toBeVisible();
+  });
+
+  it("uses the tenant label in approval chips, detail and confirmation", async () => {
+    const user = userEvent.setup();
+    mocks.useTenantVocabulary.mockReturnValue({
+      labelDomain: (domain: string) => (
+        domain === "Supply" ? "Pharmacy supply" : domain
+      ),
+    });
+
+    renderInbox();
+
+    expect(
+      screen.getByRole("button", { name: /Expedite fixture batch/ }),
+    ).toHaveTextContent("Pharmacy supply");
+    expect(screen.getByText("Pharmacy supply", { selector: ".eyebrow" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Approve & execute/ }));
+    expect(within(await screen.findByRole("dialog")).getByText(/Pharmacy supply/))
+      .toBeInTheDocument();
+  });
+
+  it("selects the approval linked to an action run", () => {
+    mockQuery(
+      { data: inboxFixture, source: "api" },
+      [{
+        evidence_refs: ["action_run_quality_fixture", "appr_quality_fixture"],
+        payload_preview: { approval_id: "appr_quality_fixture" },
+      }],
+    );
+    window.history.replaceState(
+      null,
+      "",
+      "/approvals?action_run_id=action_run_quality_fixture",
+    );
+    renderInbox();
+
+    expect(
+      screen.getByRole("heading", { name: "Place fixture quality hold" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not select the first approval for an unknown action run", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/approvals?action_run_id=action_run_unknown",
+    );
+    renderInbox();
+
+    expect(
+      screen.getByRole("heading", { name: "Requested approval is not in this queue" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Expedite fixture batch" }),
+    ).not.toBeInTheDocument();
   });
 
   it("switches the detail panel when a queue item is selected", async () => {
@@ -235,6 +385,7 @@ describe("ApprovalInbox decision flow", () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Place fixture quality hold/ }));
+    expect(window.location.search).toBe("?approval_id=appr_quality_fixture");
     expect(
       screen.getByRole("heading", { name: "Place fixture quality hold" }),
     ).toBeInTheDocument();
@@ -273,7 +424,7 @@ describe("ApprovalInbox decision flow", () => {
       expect(mocks.axisFetchParsedJson).toHaveBeenCalledTimes(1);
     });
     expect(mocks.axisFetchParsedJson).toHaveBeenCalledWith(
-      "/demo/manufacturing/approvals/appr_supply_fixture/decision?tenant_id=tenant_fixture",
+      `${OPERATIONS_API_PREFIX}/approvals/appr_supply_fixture/decision?tenant_id=tenant_fixture`,
       expect.any(Function),
       expect.objectContaining({
         method: "POST",
@@ -285,6 +436,7 @@ describe("ApprovalInbox decision flow", () => {
         },
       }),
     );
+    expect(mocks.triggerRefresh).toHaveBeenCalledTimes(1);
 
     // Inline confirmation links to the created audit event.
     const decisionSection = screen.getByRole("region", { name: "Decision" });

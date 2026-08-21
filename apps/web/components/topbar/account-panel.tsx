@@ -40,9 +40,11 @@ function currentReturnPath(): string {
 }
 
 export function AccountPanel({
+  className,
   identitySession,
   identitySessionUnavailable,
 }: {
+  className?: string;
   identitySession: IdentitySessionReadModel | null;
   identitySessionUnavailable: boolean;
 }) {
@@ -84,7 +86,7 @@ export function AccountPanel({
 
   return (
     <section
-      className={cn(popoverClass, "w-[min(390px,calc(100vw-32px))]")}
+      className={cn(className ?? popoverClass, "w-[min(390px,calc(100vw-32px))]")}
       aria-label="Operator account"
     >
       <PopoverHeader label="Operator">
@@ -218,7 +220,7 @@ export function AccountPanel({
           </a>
           <Collapsible onOpenChange={setDeveloperBridgeOpen} open={developerBridgeOpen}>
             <CollapsibleTrigger
-              className="cursor-pointer justify-self-start text-xs text-muted underline underline-offset-2 transition-colors hover:text-ink"
+              className="inline-flex min-h-6 cursor-pointer items-center justify-self-start text-xs text-muted underline underline-offset-2 transition-colors hover:text-ink"
               type="button"
             >
               Developer access
@@ -244,7 +246,7 @@ export function AccountPanel({
                       />
                     </label>
                     {error ? (
-                      <span className="text-xs font-semibold text-danger" role="status">
+                      <span className="text-xs font-semibold text-danger" role="alert">
                         {error}
                       </span>
                     ) : null}

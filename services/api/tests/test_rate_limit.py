@@ -159,6 +159,7 @@ def test_production_rate_limiting_accepts_complete_redis_configuration() -> None
             api_rate_limit_backend="redis",
             api_rate_limit_failure_mode="closed",
             redis_url="redis://rate-limit.internal:6379/0",
+            tenant_admission_mode="registered_only",
         )
     )
 

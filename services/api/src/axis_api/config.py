@@ -1,6 +1,11 @@
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from axis_api.tenant_admission import (
+    TENANT_ADMISSION_CLAIMS_ONLY,
+    TENANT_ADMISSION_REGISTERED_ONLY,
+)
+
 
 class Settings(BaseSettings):
     environment: str = Field(default="development", alias="AXIS_ENV")
@@ -60,6 +65,11 @@ class Settings(BaseSettings):
         default=5.0,
         ge=0,
         alias="AXIS_TENANT_STATE_CACHE_TTL_SECONDS",
+    )
+    tenant_admission_mode: str = Field(
+        default=TENANT_ADMISSION_CLAIMS_ONLY,
+        pattern="^(claims_only|registered_only)$",
+        alias="AXIS_TENANT_ADMISSION_MODE",
     )
     postgres_connect_timeout_seconds: int = Field(
         default=3,
@@ -745,4 +755,9 @@ def validate_runtime_configuration(settings: Settings) -> None:
             raise RuntimeConfigurationError(
                 "AXIS_USAGE_METERING_FAILURE_MODE must be closed in production "
                 "when usage metering is enabled."
+            )
+        if settings.tenant_admission_mode != TENANT_ADMISSION_REGISTERED_ONLY:
+            raise RuntimeConfigurationError(
+                "AXIS_TENANT_ADMISSION_MODE must be registered_only when "
+                "AXIS_ENV is production."
             )

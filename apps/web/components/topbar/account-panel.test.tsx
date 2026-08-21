@@ -63,4 +63,16 @@ describe("AccountPanel", () => {
     await user.click(trigger);
     expect(screen.queryByPlaceholderText("Paste JWT access token")).not.toBeInTheDocument();
   });
+
+  it("announces a rejected bearer bridge submission with role=alert", async () => {
+    const user = userEvent.setup();
+    render(<AccountPanel identitySession={null} identitySessionUnavailable={false} />);
+
+    await user.click(screen.getByRole("button", { name: "Developer access" }));
+    await user.click(screen.getByRole("button", { name: /Attach bearer bridge/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Paste a JWT bearer token to bridge an OIDC session.",
+    );
+  });
 });

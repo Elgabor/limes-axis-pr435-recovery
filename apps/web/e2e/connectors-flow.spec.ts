@@ -19,8 +19,11 @@ test.describe("Axis live story: connectors", () => {
     await page.goto("/connectors");
     await expect(page.getByRole("heading", { name: "Connectors", exact: true })).toBeVisible();
 
-    // At least one live registry entry.
-    await expect(page.getByText("Registered", { exact: true }).first()).toBeVisible();
+    // At least one live reference-registry entry. A reference connector is not
+    // mislabeled as a persisted manifest registration.
+    await expect(
+      page.getByRole("button", { name: /Manufacturing assets CSV/ }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Add connector" }).click();
     await expect(page.getByText("What are you connecting?")).toBeVisible();

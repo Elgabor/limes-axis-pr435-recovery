@@ -4,12 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "@/components/ui/toast";
 import type { ApprovalInboxItem } from "@/lib/approval-demo";
+import { AxisApiError } from "@/lib/axis-api";
 
 const mocks = vi.hoisted(() => ({
   axisFetchParsedJson: vi.fn(),
 }));
 
-vi.mock("@/lib/axis-api", () => ({
+vi.mock("@/lib/axis-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/axis-api")>()),
   axisFetchParsedJson: mocks.axisFetchParsedJson,
 }));
 
@@ -18,6 +20,7 @@ vi.mock("@/lib/use-oidc-session", () => ({
 }));
 
 import { ApprovalDecisionCard, useApprovalDecisionState } from "./approval-decision-card";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 const approvalFixture: ApprovalInboxItem = {
   approval_id: "appr_supply_fixture",
@@ -151,7 +154,7 @@ describe("ApprovalDecisionCard", () => {
       expect(mocks.axisFetchParsedJson).toHaveBeenCalledTimes(1);
     });
     expect(mocks.axisFetchParsedJson).toHaveBeenCalledWith(
-      "/demo/manufacturing/approvals/appr_supply_fixture/decision?tenant_id=tenant_demo_manufacturing",
+      `${OPERATIONS_API_PREFIX}/approvals/appr_supply_fixture/decision?tenant_id=tenant_demo_manufacturing`,
       expect.any(Function),
       expect.objectContaining({
         method: "POST",
@@ -218,15 +221,28 @@ describe("ApprovalDecisionCard", () => {
 
   it("surfaces persistence failures and keeps the options available", async () => {
     const user = userEvent.setup();
-    mocks.axisFetchParsedJson.mockRejectedValue(new Error("Axis API request failed with 503"));
+    mocks.axisFetchParsedJson.mockRejectedValue(new AxisApiError("/approval", 503, {
+      body: {
+        detail: {
+          message: "Approval persistence is temporarily unavailable.",
+          debug_context: "secret=database-credential",
+        },
+      },
+      requestId: "request-approval-503",
+    }));
     render(<Harness />);
 
     await user.click(screen.getByRole("button", { name: /Approve & execute/ }));
     await user.click(await screen.findByRole("button", { name: "Confirm decision" }));
 
     expect(
-      await screen.findByText(/Axis API request failed with 503/),
+      await screen.findByText("Approval persistence is temporarily unavailable."),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/database-credential/)).not.toBeInTheDocument();
+    expect(screen.queryByText("request-approval-503")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Technical details" }));
+    expect(screen.getByText("request-approval-503")).toBeInTheDocument();
+    expect(screen.queryByText(/database-credential/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Approve & execute/ })).toBeEnabled();
   });
 });

@@ -1,9 +1,12 @@
 import csv
+from datetime import datetime
+from enum import StrEnum
 from io import StringIO
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from axis_api.demo import OverviewMetric, OverviewStatus
+from axis_api.manufacturing_metadata import ManufacturingResponseProvenance
 
 
 class ConnectorCredentialRequirements(BaseModel):
@@ -51,17 +54,54 @@ class ConnectorPreviewSample(BaseModel):
     sample_rows: list[dict[str, str]] = Field(default_factory=list)
 
 
+class ConnectorSyncObservation(BaseModel):
+    run_id: str = Field(min_length=1)
+    completed_at: datetime
+    records_read: int = Field(ge=0)
+
+
+class ConnectorRegistryOrigin(StrEnum):
+    REFERENCE = "reference"
+    PERSISTED_MANIFEST = "persisted_manifest"
+
+
+class ConnectorPersistedManifestSummary(BaseModel):
+    manifest_id: str = Field(min_length=1)
+    revision_number: int = Field(ge=1)
+    status: str = Field(min_length=1)
+    registered_by: str = Field(min_length=1)
+    registered_at: datetime
+    notes: list[str] = Field(default_factory=list)
+
+
 class ConnectorRegistryItem(BaseModel):
     manifest: ConnectorManifest
     runtime_policy: ConnectorRuntimePolicy
-    preview_sample: ConnectorPreviewSample
+    preview_sample: ConnectorPreviewSample | None = None
+    last_successful_sync: ConnectorSyncObservation | None = None
     connector_status: OverviewStatus
+    registry_origin: ConnectorRegistryOrigin = ConnectorRegistryOrigin.REFERENCE
+    persisted_manifest: ConnectorPersistedManifestSummary | None = None
+
+    @model_validator(mode="after")
+    def validate_persisted_origin(self) -> "ConnectorRegistryItem":
+        if (
+            self.registry_origin == ConnectorRegistryOrigin.PERSISTED_MANIFEST
+            and self.persisted_manifest is None
+        ):
+            raise ValueError(
+                "Persisted-manifest connector registry items require persistence metadata."
+            )
+        return self
 
 
 class ManufacturingConnectorRegistry(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance = (
+        ManufacturingResponseProvenance.REFERENCE_SCENARIO
+    )
     registry_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
     connectors: list[ConnectorRegistryItem] = Field(default_factory=list)
@@ -346,6 +386,8 @@ def _external_db_validation_issues(
         issues.append(f"Unsupported connector_id: {request.connector_id}")
     elif not connector.manifest.schema_fields:
         issues.append("Connector manifest must declare schema fields.")
+    elif connector.preview_sample is None:
+        issues.append("No preview sample has been recorded for this connector.")
 
     keys = _external_db_requested_keys(request)
     values = _external_db_requested_values(request)
@@ -406,7 +448,7 @@ def _external_db_sample_rows(
     request: ConnectorExternalDbPreviewRequest,
     issues: list[str],
 ) -> list[dict[str, str]]:
-    if issues or connector is None:
+    if issues or connector is None or connector.preview_sample is None:
         return []
     return connector.preview_sample.sample_rows[: request.sample_limit]
 

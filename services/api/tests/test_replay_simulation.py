@@ -40,7 +40,7 @@ def session_factory() -> sessionmaker[Session]:
 
 
 def seed_replay_history(repository: AxisPersistenceRepository) -> None:
-    started_at = datetime(2026, 6, 21, 14, 5, tzinfo=UTC)
+    started_at = datetime.now(UTC) - timedelta(days=1)
     repository.create_workflow_run(
         WorkflowRunCreate(
             tenant_id="tenant_demo_manufacturing",
@@ -93,7 +93,7 @@ def seed_replay_history(repository: AxisPersistenceRepository) -> None:
             workflow_id="wf_supplier_delay_review",
             sequence=2,
             event="workflow.signal.awaiting",
-            occurred_at=datetime(2026, 6, 21, 14, 18, tzinfo=UTC),
+            occurred_at=started_at + timedelta(minutes=13),
             actor="axis-temporal-adapter",
             result="waiting_for_approval",
             summary="Workflow paused at the human approval gate.",
@@ -111,7 +111,7 @@ def seed_replay_history(repository: AxisPersistenceRepository) -> None:
             runtime="Temporal OSS",
             adapter="axis-temporal-adapter",
             autonomy_level="L1",
-            started_at=datetime(2026, 6, 21, 12, 0, tzinfo=UTC),
+            started_at=started_at - timedelta(hours=2),
             eta="Today 17:00",
             blocker=None,
             objective="Other tenant objective",

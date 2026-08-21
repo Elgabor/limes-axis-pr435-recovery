@@ -1,3 +1,5 @@
+import type { Metadata } from "next";
+
 import { ConsolePage } from "@/components/console-page";
 import { PolicyDetail } from "@/components/policy-detail";
 
@@ -6,6 +8,11 @@ type PolicyDetailPageProps = {
     policyId: string;
   }>;
 };
+
+export async function generateMetadata({ params }: PolicyDetailPageProps): Promise<Metadata> {
+  const { policyId } = await params;
+  return { title: `Policy ${policyId}` };
+}
 
 export default async function PolicyDetailPage({ params }: PolicyDetailPageProps) {
   const { policyId } = await params;

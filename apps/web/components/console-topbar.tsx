@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Bell, CircleHelp, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { Bell, RefreshCw, Search, ShieldCheck } from "lucide-react";
 
 import { ConsoleCommandMenu } from "@/components/console-command-menu";
+import { announcePopoverOpened, useExclusivePopover } from "@/lib/console-popovers";
+import { SidebarAccount } from "@/components/sidebar-account";
 import { DemoBadge } from "@/components/demo-badge";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { AccountPanel } from "@/components/topbar/account-panel";
-import { HelpPanel } from "@/components/topbar/help-panel";
 import { NotificationPanel } from "@/components/topbar/notification-panel";
-import { cn } from "@/lib/cn";
-import { apiStatusClass, operatorInitials } from "@/lib/identity-format";
+import { apiStatusClass } from "@/lib/identity-format";
+import { isNavActive } from "@/lib/nav";
 import type {
   IdentitySessionReadModel,
   ManufacturingNotificationCenter,
@@ -24,6 +25,7 @@ import {
   buildTenantScopedPath,
   DEMO_TENANT_ID,
   resolveConsoleTenantScope,
+  OPERATIONS_API_PREFIX,
 } from "@/lib/tenant-scope";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
@@ -32,40 +34,60 @@ type TopbarPanel = "notifications" | "help" | "account" | null;
 
 export function ConsoleTopbar({
   sourceLabel,
-  evidenceLabel,
 }: {
+  /**
+   * Pre-formatted status text from callers that pre-date `SourcePill`
+   * (`ConsolePage`'s prop is a plain string, so the tone can't be derived
+   * from a real `source`/`hasData` pair here). Rendered in the neutral
+   * "checking" tone rather than a hardcoded success green, so a caller
+   * surfacing an unavailable API doesn't read as a false-positive success.
+   */
   sourceLabel?: string;
-  evidenceLabel?: string;
 }) {
+  const pathname = usePathname();
   const { apiStatus, triggerRefresh } = useConsole();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<TopbarPanel>(null);
+  useExclusivePopover(
+    "topbar",
+    useCallback(() => setActivePanel(null), []),
+  );
   const { session } = useOidcConsoleSession();
-  const { data: identitySession, isUnavailable: identitySessionUnavailable } =
+  const {
+    data: identitySession,
+    source: identitySessionSource,
+  } =
     useAxisQuery<IdentitySessionReadModel>("/identity/session", {
       parse: parseIdentitySessionReadModel,
     });
   const tenantScope = resolveConsoleTenantScope(identitySession);
   const tenantId = tenantScope.tenantId;
-  const { data: notificationCenter } = useAxisQuery<ManufacturingNotificationCenter>(
+  const notificationsEnabled = identitySessionSource === "api" && tenantId !== null;
+  const {
+    data: notificationCenter,
+    source: notificationCenterSource,
+  } = useAxisQuery<ManufacturingNotificationCenter>(
     buildTenantScopedPath(
-      "/demo/manufacturing/notifications",
+      `${OPERATIONS_API_PREFIX}/notifications`,
       tenantId ?? DEMO_TENANT_ID,
     ),
     {
-      enabled: tenantId !== null,
+      enabled: notificationsEnabled,
       expectedTenantId: tenantId ?? undefined,
       parse: parseManufacturingNotificationCenter,
     },
   );
+  // A disabled query deliberately reports `loading`, because it has never
+  // attempted transport. Do not expose that internal sentinel forever when
+  // identity already failed or supplied no usable tenant.
+  const effectiveNotificationCenterSource = notificationsEnabled
+    ? notificationCenterSource
+    : identitySessionSource === "loading"
+      ? "loading"
+      : "unavailable";
 
-  const notificationCount = useMemo(() => {
-    if (!notificationCenter) {
-      return 0;
-    }
-
-    return Math.min(9, notificationCenter.unread_count);
-  }, [notificationCenter]);
+  const notificationCount = notificationCenter?.unread_count ?? 0;
+  const notificationBadge = notificationCount > 9 ? "9+" : notificationCount;
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -99,7 +121,7 @@ export function ConsoleTopbar({
 
   return (
     <header
-      className="ops-topbar sticky top-0 isolate z-10 -mx-4 flex min-h-[62px] flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface/80 px-4 py-2 backdrop-blur-xl max-sm:grid max-sm:min-h-0 max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-2 max-sm:py-1.5 sm:-mx-6 sm:px-6 dark:border-white/10"
+      className="ops-topbar sticky top-14 isolate z-10 -mx-4 flex min-h-[62px] flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface/80 px-4 py-2 backdrop-blur-xl max-sm:grid max-sm:min-h-0 max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-2 max-sm:py-1.5 sm:-mx-6 sm:px-6 min-[921px]:top-0 dark:border-white/10"
       aria-label="Console status bar"
     >
       <div className="hidden min-w-0 flex-1 sm:block">
@@ -118,10 +140,7 @@ export function ConsoleTopbar({
           tenantId={tenantId ?? DEMO_TENANT_ID}
         />
         {sourceLabel ? (
-          <span className="status-pill signal-ready">{sourceLabel}</span>
-        ) : null}
-        {evidenceLabel ? (
-          <span className="status-pill signal-ready">{evidenceLabel}</span>
+          <span className="status-pill status-checking">{sourceLabel}</span>
         ) : null}
       </div>
       <div
@@ -157,53 +176,41 @@ export function ConsoleTopbar({
           aria-label="Open notifications"
           title="Open notifications"
           onClick={() =>
-            setActivePanel((current) => (current === "notifications" ? null : "notifications"))
+            setActivePanel((current) => {
+              const next = current === "notifications" ? null : "notifications";
+              if (next !== null) {
+                announcePopoverOpened("topbar");
+              }
+              return next;
+            })
           }
         >
           <Bell size={17} />
           {notificationCount > 0 ? (
             <span className="absolute top-1 right-1 grid h-[14px] min-w-[14px] place-items-center rounded-full border border-surface bg-positive px-0.5 font-mono text-[9px] leading-none font-extrabold text-white">
-              {notificationCount}
+              {notificationBadge}
             </span>
           ) : null}
         </button>
-        <button
-          className={`icon-button${activePanel === "help" ? " icon-button-active" : ""}`}
-          type="button"
-          aria-expanded={activePanel === "help"}
-          aria-label="Open platform help"
-          title="Open platform help"
-          onClick={() => setActivePanel((current) => (current === "help" ? null : "help"))}
-        >
-          <CircleHelp size={17} />
-        </button>
-        <span className="mx-0.5 h-[22px] w-px shrink-0 bg-line dark:bg-white/15" aria-hidden="true" />
-        <button
-          className={cn(
-            "grid size-[34px] shrink-0 cursor-pointer place-items-center rounded-full border border-line bg-surface text-xs font-bold text-ink/80 transition-colors hover:border-signal/40 hover:bg-signal/10 active:translate-y-px dark:border-white/20 dark:bg-white/5",
-            activePanel === "account" && "border-signal/40 bg-signal/10",
-          )}
-          type="button"
-          aria-expanded={activePanel === "account"}
-          aria-label="Open operator account"
-          title="Open operator account"
-          onClick={() => setActivePanel((current) => (current === "account" ? null : "account"))}
-        >
-          {operatorInitials(identitySession?.actor_id ?? session?.actorId)}
-        </button>
+        <span
+          aria-hidden="true"
+          className="mx-0.5 h-[22px] w-px shrink-0 bg-line min-[921px]:hidden dark:bg-white/15"
+        />
+        <div className="min-[921px]:hidden">
+          <SidebarAccount
+            identitySession={identitySession ?? null}
+            identitySessionUnavailable={identitySessionSource === "unavailable"}
+            settingsActive={isNavActive(pathname, "/settings")}
+            variant="compact"
+          />
+        </div>
         {activePanel === "notifications" ? (
           <NotificationPanel
             center={notificationCenter}
             identitySession={identitySession}
             onAcknowledged={triggerRefresh}
             session={session}
-          />
-        ) : null}
-        {activePanel === "help" ? <HelpPanel /> : null}
-        {activePanel === "account" ? (
-          <AccountPanel
-            identitySession={identitySession}
-            identitySessionUnavailable={identitySessionUnavailable}
+            source={effectiveNotificationCenterSource}
           />
         ) : null}
       </div>
@@ -212,6 +219,8 @@ export function ConsoleTopbar({
         onClose={() => setCommandMenuOpen(false)}
         onRefresh={triggerRefresh}
         open={commandMenuOpen}
+        tenantId={tenantId}
+        tenantQueriesEnabled={notificationsEnabled}
       />
     </header>
   );

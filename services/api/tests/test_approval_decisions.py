@@ -748,6 +748,47 @@ def test_approval_decision_endpoint_persists_result(
     assert audit_event.actor_id == "maintenance-owner-role"
 
 
+def test_approval_decision_action_run_appears_in_action_run_list(
+    session_factory: sessionmaker[Session],
+) -> None:
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    app.state.workflow_runtime = RecordingWorkflowRuntime()
+    client = TestClient(app)
+
+    decision = client.post(
+        "/operations/approvals/appr_quality_hold_batch/decision",
+        json={
+            "decision": "approve",
+            "actor_id": "quality-owner-role",
+            "actor_scopes": ["approvals:quality:decide"],
+        },
+    )
+    listed = client.get(
+        "/operations/actions/runs",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
+
+    assert decision.status_code == 201
+    assert decision.json()["action_run_status"] == "approved_for_execution"
+    assert listed.status_code == 200
+    assert listed.json()["runs"] == [
+        {
+            "action_run_id": decision.json()["action_run_id"],
+            "action_id": "place_quality_hold",
+            "status": "approved_for_execution",
+            "approval_id": "appr_quality_hold_batch",
+            "workflow_id": "wf_quality_hold_review",
+            "created_at": listed.json()["runs"][0]["created_at"],
+            "updated_at": listed.json()["runs"][0]["updated_at"],
+            "waiting_duration_seconds": listed.json()["runs"][0][
+                "waiting_duration_seconds"
+            ],
+            "outcome": None,
+        }
+    ]
+
+
 def test_approval_decision_endpoint_binds_actor_and_scopes_from_oidc_token(
     session_factory: sessionmaker[Session],
 ) -> None:

@@ -21,6 +21,7 @@ import { navGroups } from "@/lib/nav";
 import type { OidcConsoleSession } from "@/lib/oidc-session";
 import type { PlatformPolicyRegistry } from "@/lib/platform-policies";
 import { strings } from "@/lib/strings";
+import { buildTenantScopedPath, OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 import { parseManufacturingAgentRegistry } from "@/lib/runtime-contracts/agents";
 import { parseManufacturingConnectorRegistry } from "@/lib/runtime-contracts/connectors";
 import { parseManufacturingWorkflowConsole } from "@/lib/runtime-contracts/workflows";
@@ -34,6 +35,8 @@ type CommandMenuProps = {
   onClose: () => void;
   onRefresh: () => void;
   open: boolean;
+  tenantId: string | null;
+  tenantQueriesEnabled: boolean;
 };
 
 type EntityCommand = {
@@ -51,28 +54,31 @@ const copy = strings.commandMenu;
  */
 async function loadEntityCommands(
   session: OidcConsoleSession | null,
+  tenantId: string,
 ): Promise<EntityCommand[]> {
+  const acceptTenant = <T extends { tenant_id: string }>(payload: T | null): T | null =>
+    payload?.tenant_id === tenantId ? payload : null;
   const [workflows, agents, policies, connectors] = await Promise.all([
     axisFetchParsedJson<ManufacturingWorkflowConsole>(
-      "/demo/manufacturing/workflows",
+      buildTenantScopedPath(`${OPERATIONS_API_PREFIX}/workflows`, tenantId),
       parseManufacturingWorkflowConsole,
       { session },
-    ).catch(() => null),
+    ).then(acceptTenant).catch(() => null),
     axisFetchParsedJson<ManufacturingAgentRegistry>(
-      "/demo/manufacturing/agents",
+      buildTenantScopedPath(`${OPERATIONS_API_PREFIX}/agents`, tenantId),
       parseManufacturingAgentRegistry,
       { session },
-    ).catch(() => null),
+    ).then(acceptTenant).catch(() => null),
     axisFetchParsedJson<PlatformPolicyRegistry>(
-      "/platform/policies",
+      buildTenantScopedPath("/platform/policies", tenantId),
       parsePlatformPolicyRegistry,
       { session },
-    ).catch(() => null),
+    ).then(acceptTenant).catch(() => null),
     axisFetchParsedJson<ManufacturingConnectorRegistry>(
-      "/demo/manufacturing/connectors",
+      buildTenantScopedPath(`${OPERATIONS_API_PREFIX}/connectors`, tenantId),
       parseManufacturingConnectorRegistry,
       { session },
-    ).catch(() => null),
+    ).then(acceptTenant).catch(() => null),
   ]);
 
   return [
@@ -103,29 +109,46 @@ async function loadEntityCommands(
   ];
 }
 
-export function ConsoleCommandMenu({ apiLabel, onClose, onRefresh, open }: CommandMenuProps) {
+export function ConsoleCommandMenu({
+  apiLabel,
+  onClose,
+  onRefresh,
+  open,
+  tenantId,
+  tenantQueriesEnabled,
+}: CommandMenuProps) {
   const router = useRouter();
   const { session } = useOidcConsoleSession();
   const { resolvedTheme, setTheme } = useTheme();
-  const [entities, setEntities] = useState<EntityCommand[]>([]);
+  const [entityIndex, setEntityIndex] = useState<{
+    tenantId: string | null;
+    commands: EntityCommand[];
+  }>({ tenantId: null, commands: [] });
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !tenantQueriesEnabled || tenantId === null) {
       return undefined;
     }
 
     let cancelled = false;
 
-    void loadEntityCommands(session).then((commands) => {
+    void loadEntityCommands(session, tenantId).then((commands) => {
       if (!cancelled) {
-        setEntities(commands);
+        setEntityIndex({ tenantId, commands });
       }
     });
 
     return () => {
       cancelled = true;
     };
-  }, [open, session]);
+  }, [open, session, tenantId, tenantQueriesEnabled]);
+
+  // Never expose a previous principal's results while a new tenant index is
+  // loading or identity has become unresolved.
+  const entities =
+    tenantQueriesEnabled && entityIndex.tenantId === tenantId
+      ? entityIndex.commands
+      : [];
 
   function navigate(href: string) {
     router.push(href);

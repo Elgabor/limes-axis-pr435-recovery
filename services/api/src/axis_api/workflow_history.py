@@ -16,6 +16,7 @@ session (and therefore the same transaction) as the primary record.
 from datetime import datetime
 
 from axis_api.demo import WorkflowRun
+from axis_api.manufacturing_metadata import ManufacturingTenantNotFound
 from axis_api.models import WorkflowRunRecord
 from axis_api.persistence import AxisPersistenceRepository, WorkflowRunCreate
 from axis_api.workflow_reference import (
@@ -61,7 +62,11 @@ def _reference_workflow_run(
 ) -> WorkflowRun | None:
     try:
         console = get_persisted_manufacturing_workflow_console(repository, tenant_id=tenant_id)
-    except (WorkflowReferenceRecordNotFound, WorkflowReferenceRecordInvalid):
+    except (
+        ManufacturingTenantNotFound,
+        WorkflowReferenceRecordNotFound,
+        WorkflowReferenceRecordInvalid,
+    ):
         return None
 
     for run in console.workflow_runs:

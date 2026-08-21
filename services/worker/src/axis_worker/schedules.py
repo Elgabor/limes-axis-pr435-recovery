@@ -8,9 +8,10 @@ job's own idempotency, makes repeated/overlapping invocations safe.
 
 ``register_maintenance_schedules`` is create-or-update idempotent: on first run it
 creates each Schedule; on subsequent runs it updates the existing Schedule in
-place (interval/overlap/paused) without creating duplicates. The Temporal client
-is used behind a narrow :class:`ScheduleClientPort` protocol so tests can drive a
-thin in-memory fake and never require a live Temporal.
+place (interval/overlap/paused) without creating duplicates. Optional schedules
+that were previously created are paused when their feature is disabled. The
+Temporal client is used behind a narrow :class:`ScheduleClientPort` protocol so
+tests can drive a thin in-memory fake and never require a live Temporal.
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ from temporalio.client import (
     ScheduleUpdate,
     ScheduleUpdateInput,
 )
+from temporalio.service import RPCError, RPCStatusCode
 
 from axis_worker.workflows.connector_live_sync_workflows import (
     ConnectorScheduledLiveSyncWorkflow,
@@ -48,6 +50,9 @@ AUDIT_RETENTION_SCHEDULE_ID = "axis-audit-retention-deletion"
 SESSION_SWEEP_SCHEDULE_ID = "axis-orphaned-session-sweep"
 TENANT_RECONCILIATION_SCHEDULE_ID = "axis-tenant-state-reconciliation"
 CONNECTOR_LIVE_SYNC_SCHEDULE_ID = "axis-connector-scheduled-live-sync"
+CONNECTOR_LIVE_SYNC_DISABLED_NOTE = (
+    "Paused by axis-worker because scheduled connector live sync is disabled."
+)
 
 
 class ScheduleClientPort(Protocol):
@@ -88,8 +93,8 @@ def build_scheduled_job_specs(settings: Settings) -> list[ScheduledJobSpec]:
         ),
     ]
     if settings.connector_scheduled_live_sync_enabled:
-        # Registered only behind the worker flag so flag-off deployments keep
-        # today's exact schedule set (no new paused schedule appears).
+        # A flag-off deployment does not create a new paused schedule. The
+        # registration pass separately pauses one that it previously managed.
         specs.append(
             ScheduledJobSpec(
                 schedule_id=CONNECTOR_LIVE_SYNC_SCHEDULE_ID,
@@ -154,13 +159,28 @@ async def _create_or_update_schedule(
             existing_paused = schedule_input.description.schedule.state.paused
             effective_paused = not scheduled_jobs_enabled or existing_paused
             return ScheduleUpdate(
-                schedule=_build_schedule(
-                    spec, task_queue=task_queue, paused=effective_paused
-                )
+                schedule=_build_schedule(spec, task_queue=task_queue, paused=effective_paused)
             )
 
         await handle.update(_updater)
         return "updated"
+
+
+async def _pause_schedule_if_present(
+    client: ScheduleClientPort,
+    schedule_id: str,
+    *,
+    note: str,
+) -> bool:
+    """Pause a previously managed schedule without creating it when absent."""
+    handle = client.get_schedule_handle(schedule_id)
+    try:
+        await handle.pause(note=note)
+    except RPCError as exc:
+        if exc.status == RPCStatusCode.NOT_FOUND:
+            return False
+        raise
+    return True
 
 
 async def register_maintenance_schedules(
@@ -172,9 +192,10 @@ async def register_maintenance_schedules(
     """Create/update every maintenance schedule idempotently.
 
     ``AXIS_SCHEDULED_JOBS_ENABLED=false`` forces every managed schedule to the
-    paused state, including existing schedules. When the flag is true,
-    reconciliation preserves the current operator pause state and never
-    automatically reactivates a paused schedule.
+    paused state, including existing schedules. Disabling optional connector
+    live sync also pauses its existing schedule without creating one when
+    absent. When the master flag is true, reconciliation preserves the current
+    operator pause state and never automatically reactivates a paused schedule.
     """
     outcomes: dict[str, str] = {}
     for spec in build_scheduled_job_specs(settings):
@@ -184,4 +205,12 @@ async def register_maintenance_schedules(
             task_queue=task_queue,
             scheduled_jobs_enabled=settings.scheduled_jobs_enabled,
         )
+    if not settings.connector_scheduled_live_sync_enabled:
+        connector_paused = await _pause_schedule_if_present(
+            client,
+            CONNECTOR_LIVE_SYNC_SCHEDULE_ID,
+            note=CONNECTOR_LIVE_SYNC_DISABLED_NOTE,
+        )
+        if connector_paused:
+            outcomes[CONNECTOR_LIVE_SYNC_SCHEDULE_ID] = "paused"
     return outcomes

@@ -28,6 +28,7 @@ api:
     limes-axis.io/profile: single-tenant-managed
   env:
     AXIS_ENV: production
+    AXIS_TENANT_ADMISSION_MODE: registered_only
     AXIS_DEPLOYMENT_TENANCY_MODE: single_tenant_managed
     AXIS_DEPLOYMENT_CUSTOMER_ISOLATION_CONFIGURED: "false"
     AXIS_DEPLOYMENT_DATA_RESIDENCY_CONFIGURED: "false"

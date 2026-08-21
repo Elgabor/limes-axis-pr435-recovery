@@ -5,7 +5,11 @@ import { useState } from "react";
 
 import { ErrorPanel } from "@/components/ui/states";
 import { ConsolePage } from "@/components/console-page";
-import { AxisApiError } from "@/lib/axis-api";
+import {
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
+import { formatNumber } from "@/lib/format";
 import {
   canListTenantSessions,
   formatSessionInstant,
@@ -21,6 +25,11 @@ import { buildOidcAuthorizeUrl, buildOidcLogoutUrl } from "@/lib/oidc-session";
 import type { IdentitySessionReadModel } from "@/lib/platform-overview";
 import { parseIdentityBrowserSessionList } from "@/lib/runtime-contracts/identity";
 import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
+import {
+  deriveSourceState,
+  PROVENANCE_NOT_APPLICABLE,
+  type SourceState,
+} from "@/lib/source-state";
 import { useAxisQuery } from "@/lib/use-axis-query";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
@@ -28,16 +37,41 @@ import { useConsole } from "@/providers/console-provider";
 const SESSIONS_ROUTE = "/settings/sessions";
 const SESSION_ENDPOINTS = "/identity/session /identity/sessions";
 
-function revokeErrorMessage(caught: unknown): string {
-  if (caught instanceof AxisApiError) {
-    if (caught.status === 403) {
-      return "Axis denied the revocation. Managing other actors' sessions requires identity:sessions:admin.";
-    }
-    if (caught.status === 404) {
-      return "Axis could not find that session in this tenant. Refresh the list.";
-    }
+function revokeOperatorError(caught: unknown): AxisOperatorError {
+  const failure = toAxisOperatorError(caught, "Axis could not revoke the session.");
+  if (failure.status === 403) {
+    return {
+      ...failure,
+      message: "Axis denied the revocation. Managing other actors' sessions requires identity:sessions:admin.",
+    };
   }
-  return "Axis could not revoke the session.";
+  if (failure.status === 404) {
+    return {
+      ...failure,
+      message: "Axis could not find that session in this tenant. Refresh the list.",
+    };
+  }
+  return failure;
+}
+
+/**
+ * `ConsolePage.sourceLabel` is a plain string (it pre-dates `SourcePill` and
+ * other callers we don't own still pass literal text), so the source pill it
+ * renders can't carry real tone here — text is the only channel available.
+ * This mirrors `SourcePill`'s own wording so the copy stays consistent with
+ * consoles that render the full component.
+ */
+function sourceStateLabel(state: SourceState, subject: string): string {
+  if (state === "live") {
+    return `Live ${subject}`;
+  }
+  if (state === "stale") {
+    return `Stale ${subject}`;
+  }
+  if (state === "unavailable") {
+    return `${subject} unavailable`;
+  }
+  return `Loading ${subject}`;
 }
 
 function SessionRow({
@@ -65,7 +99,8 @@ function SessionRow({
         <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
           Created {formatSessionInstant(record.created_at)} · Last seen{" "}
           {formatSessionInstant(record.last_seen_at)} · Expires{" "}
-          {formatSessionInstant(record.expires_at)} · Refreshes {record.refresh_count}
+          {formatSessionInstant(record.expires_at)} · Refreshes{" "}
+          {formatNumber(record.refresh_count)}
         </p>
         {record.revoked_at ? (
           <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
@@ -106,7 +141,7 @@ function SessionRow({
 
 function SignedOutPanel({ signInUrl }: { signInUrl: string }) {
   return (
-    <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-start justify-between gap-4">
+    <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-start justify-between gap-4">
       <div>
         <p className="eyebrow m-0">Signed out</p>
         <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">No authenticated operator session</h2>
@@ -140,19 +175,29 @@ function SessionListPanel({
     identitySessionsPath(listTenantWide),
     { parse: parseIdentityBrowserSessionList },
   );
-  const [pendingSessionRef, setPendingSessionRef] = useState<string | null>(null);
-  const [revokeError, setRevokeError] = useState<string | null>(null);
+  // A Set of in-flight session refs, not a single id: revoking two sessions
+  // back to back (a slow one, then a fast one) must not let the fast one's
+  // completion clear the pending flag for the still in-flight slow one and
+  // re-enable its button for a double submit.
+  const [pendingSessionRefs, setPendingSessionRefs] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [revokeError, setRevokeError] = useState<AxisOperatorError | null>(null);
 
   async function revokeSession(record: IdentityBrowserSessionRecord) {
-    setPendingSessionRef(record.session_ref);
+    setPendingSessionRefs((current) => new Set(current).add(record.session_ref));
     setRevokeError(null);
     try {
       await revokeIdentitySession(record.session_ref, { session });
       triggerRefresh();
     } catch (caught) {
-      setRevokeError(revokeErrorMessage(caught));
+      setRevokeError(revokeOperatorError(caught));
     } finally {
-      setPendingSessionRef(null);
+      setPendingSessionRefs((current) => {
+        const next = new Set(current);
+        next.delete(record.session_ref);
+        return next;
+      });
     }
   }
 
@@ -161,6 +206,7 @@ function SessionListPanel({
       <ErrorPanel
         detail="Live session data requires the Axis identity session APIs. Local fallback session records are disabled."
         endpoint={identitySessionsPath(listTenantWide)}
+        reference={sessions.errorRequestId ?? undefined}
         title="Sessions API unavailable"
       />
     );
@@ -169,7 +215,7 @@ function SessionListPanel({
   const list = sessions.data;
 
   return (
-    <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+    <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
         <div>
           <p className="eyebrow m-0">Browser sessions</p>
@@ -188,7 +234,7 @@ function SessionListPanel({
             </button>
           ) : null}
           <span className={`status-pill ${list ? "signal-ready" : "signal-watch"}`}>
-            {list ? `${list.sessions.length} recorded` : "Loading sessions"}
+            {list ? `${formatNumber(list.sessions.length)} recorded` : "Loading sessions"}
           </span>
         </div>
       </div>
@@ -207,7 +253,7 @@ function SessionListPanel({
                 key={record.session_ref}
                 logoutUrl={logoutUrl}
                 onRevoke={(target) => void revokeSession(target)}
-                pending={pendingSessionRef === record.session_ref}
+                pending={pendingSessionRefs.has(record.session_ref)}
                 record={record}
                 showActor={listTenantWide}
               />
@@ -230,9 +276,13 @@ function SessionListPanel({
       )}
 
       {revokeError ? (
-        <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words signal-action-required" role="status">
-          {revokeError}
-        </p>
+        <div role="alert">
+          <ErrorPanel
+            detail={revokeError.message}
+            reference={revokeError.requestId ?? undefined}
+            title="Session revocation failed"
+          />
+        </div>
       ) : null}
 
       {list?.notes.length ? (
@@ -256,11 +306,6 @@ export function SessionSecurityConsole() {
   const identitySession = identity.data;
   const signInUrl = buildOidcAuthorizeUrl(apiBaseUrl, SESSIONS_ROUTE);
   const logoutUrl = buildOidcLogoutUrl(apiBaseUrl, SESSIONS_ROUTE);
-  const sourceLabel = identitySession
-    ? "Live sessions"
-    : identity.isLoading
-      ? "Loading sessions"
-      : "API required";
 
   return (
     <ConsolePage
@@ -273,7 +318,14 @@ export function SessionSecurityConsole() {
         ) : undefined
       }
       eyebrow="Platform control"
-      sourceLabel={sourceLabel}
+      sourceLabel={sourceStateLabel(
+        deriveSourceState(
+          identity.source,
+          Boolean(identitySession),
+          PROVENANCE_NOT_APPLICABLE,
+        ),
+        "session security",
+      )}
       subtitle="API-owned OIDC browser sessions with rotation, revocation and logout evidence."
       title="Session security"
     >
@@ -281,13 +333,14 @@ export function SessionSecurityConsole() {
         <ErrorPanel
           detail="Live session management requires the Axis identity APIs. Local fallback session records are disabled."
           endpoint={SESSION_ENDPOINTS}
+          reference={identity.errorRequestId ?? undefined}
           title="Session API unavailable"
         />
       ) : !identitySession.authenticated ? (
         <SignedOutPanel signInUrl={signInUrl} />
       ) : (
         <>
-          <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+          <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
             <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
               <div>
                 <p className="eyebrow m-0">Operator session</p>
@@ -313,7 +366,7 @@ export function SessionSecurityConsole() {
               </span>
               <span>
                 <small>Scopes</small>
-                <strong>{identitySession.scopes.length}</strong>
+                <strong>{formatNumber(identitySession.scopes.length)}</strong>
               </span>
             </div>
             {identitySession.mode !== "secure_oidc_cookie" ? (

@@ -6,6 +6,7 @@ metadata:
     {{- include "limes-axis.labels" . | nindent 4 }}
 data:
   AXIS_ENV: {{ .Values.api.env.AXIS_ENV | quote }}
+  AXIS_TENANT_ADMISSION_MODE: {{ .Values.api.env.AXIS_TENANT_ADMISSION_MODE | quote }}
   AXIS_PUBLIC_BASE_URL: {{ .Values.api.env.AXIS_PUBLIC_BASE_URL | quote }}
   AXIS_API_BASE_URL: {{ .Values.api.env.AXIS_API_BASE_URL | quote }}
   AXIS_CORS_ORIGINS: {{ .Values.api.env.AXIS_CORS_ORIGINS | toJson | quote }}

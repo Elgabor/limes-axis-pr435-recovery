@@ -3,7 +3,7 @@ import { strings } from "@/lib/strings";
 /*
  * Grouped navigation model for the console shell and command menu. Icons are
  * referenced by name so this module stays renderable in node test envs; the
- * shell maps names to lucide components in `components/nav-icons.ts`.
+ * shell maps names to icon components in `components/nav-icons.ts`.
  */
 
 export type NavIcon =
@@ -70,5 +70,30 @@ export const navGroups: NavGroup[] = [
   },
 ];
 
-/** Flat item list in sidebar order, for the mobile top row and compatibility. */
+/** Canonical flat route list used by route resolution and non-rail navigation. */
 export const navItems: NavItem[] = navGroups.flatMap((group) => group.items);
+
+/**
+ * The desktop rail keeps Settings in its account footer, where identity and
+ * deployment controls already live. Every other navigation surface consumes
+ * the canonical groups above so Settings remains discoverable on mobile and in
+ * command search without appearing twice in the rail.
+ */
+export const desktopNavGroups: NavGroup[] = navGroups.map((group) => ({
+  ...group,
+  items: group.items.filter((item) => item.href !== "/settings"),
+}));
+
+/** Match a route boundary without treating similar prefixes as descendants. */
+export function isNavActive(pathname: string, href: string): boolean {
+  if (href === "/") {
+    return pathname === "/";
+  }
+
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+/** Resolve dynamic detail routes to the section that owns them. */
+export function resolveNavItem(pathname: string): NavItem | null {
+  return navItems.find((item) => isNavActive(pathname, item.href)) ?? null;
+}

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ManufacturingReplaySimulation } from "../simulation-demo";
 import { auditEventSchema } from "./audit-event";
 import {
+  manufacturingProvenanceSchema,
   nullableStringSchema,
   overviewMetricSchema,
   parseContract,
@@ -60,8 +61,9 @@ const replayArtifact = z.object({
 });
 const replaySimulation = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   simulation_status: platformStatusSchema,
   metrics: z.array(overviewMetricSchema),

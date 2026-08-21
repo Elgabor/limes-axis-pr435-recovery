@@ -66,6 +66,7 @@ export const agentRegistryFixture: ManufacturingAgentRegistry = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Plant",
   scenario: "Runtime contract fixture",
+  provenance: "reference_scenario",
   as_of: "2026-07-10T09:00:00+02:00",
   registry_status: "ready",
   metrics: [

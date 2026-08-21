@@ -47,7 +47,7 @@ export function ApiStatusPanel() {
   const Icon = status.state === "unavailable" ? ServerCrash : Activity;
 
   return (
-    <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-3">
+    <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-3">
       <div>
         <p className="eyebrow m-0">API Status</p>
         <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">Control API</h2>

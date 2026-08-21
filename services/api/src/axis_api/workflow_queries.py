@@ -9,6 +9,10 @@ from axis_api.demo import (
     WorkflowRun,
     WorkflowTimelineEvent,
 )
+from axis_api.manufacturing_metadata import (
+    get_manufacturing_tenant_metadata,
+    operational_provenance,
+)
 from axis_api.models import WorkflowRunRecord, WorkflowTimelineRecord
 from axis_api.persistence import AxisPersistenceRepository
 
@@ -113,6 +117,7 @@ def query_persisted_workflow_runs(
     repository: AxisPersistenceRepository,
     query: WorkflowRunQuery,
 ) -> ManufacturingWorkflowConsole:
+    tenant_metadata = get_manufacturing_tenant_metadata(repository, query.tenant_id)
     records = repository.list_workflow_runs(
         tenant_id=query.tenant_id,
         state=query.state,
@@ -128,11 +133,17 @@ def query_persisted_workflow_runs(
         )
         for record in records
     ]
+    has_persisted_records = bool(records)
+    if not has_persisted_records and query.state is not None:
+        has_persisted_records = bool(
+            repository.list_workflow_runs(tenant_id=query.tenant_id, limit=1)
+        )
     return ManufacturingWorkflowConsole(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
-        as_of=runs[0].started_at if runs else "2026-06-21T16:30:00+02:00",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(has_persisted_records),
+        as_of=runs[0].started_at if runs else tenant_metadata.as_of,
         runtime_status=OverviewStatus.READY if runs else OverviewStatus.WATCH,
         metrics=_metrics(runs),
         workflow_runs=runs,

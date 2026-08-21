@@ -6,6 +6,8 @@ import type { ManufacturingWorkflowConsole } from "@/lib/workflow-demo";
 
 const mocks = vi.hoisted(() => ({
   useAxisQuery: vi.fn(),
+  useConsoleTenantScope: vi.fn(),
+  useTenantVocabulary: vi.fn(),
 }));
 
 vi.mock("@/lib/use-axis-query", () => ({
@@ -16,11 +18,21 @@ vi.mock("@/lib/use-oidc-session", () => ({
   useOidcConsoleSession: () => ({ session: null }),
 }));
 
+vi.mock("@/lib/use-console-tenant-scope", () => ({
+  IDENTITY_SESSION_ENDPOINT: "/identity/session",
+  useConsoleTenantScope: mocks.useConsoleTenantScope,
+}));
+
+vi.mock("@/providers/tenant-vocabulary-provider", () => ({
+  useTenantVocabulary: mocks.useTenantVocabulary,
+}));
+
 import {
-  WORKFLOW_REFERENCE_ENDPOINT,
   WORKFLOW_RUNS_ENDPOINT,
   WorkflowConsole,
 } from "./workflow-console";
+
+const WORKFLOW_RUNS_PATH = `${WORKFLOW_RUNS_ENDPOINT}?tenant_id=tenant_fixture&limit=100`;
 
 const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
 const twoHoursAgo = new Date(Date.now() - 7_200_000).toISOString();
@@ -29,6 +41,7 @@ export const workflowConsoleFixture: ManufacturingWorkflowConsole = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Plant",
   scenario: "Runtime contract fixture",
+  provenance: "reference_scenario",
   as_of: hourAgo,
   runtime_status: "watch",
   metrics: [
@@ -134,18 +147,12 @@ function queryResult(data: unknown, source: MockedSource) {
 
 function mockWorkflowQueries({
   persisted,
-  reference,
 }: {
   persisted: { data: ManufacturingWorkflowConsole | null; source: MockedSource };
-  reference?: { data: ManufacturingWorkflowConsole | null; source: MockedSource };
 }) {
   mocks.useAxisQuery.mockImplementation((path: string) => {
-    if (path === WORKFLOW_RUNS_ENDPOINT) {
+    if (path === WORKFLOW_RUNS_PATH) {
       return queryResult(persisted.data, persisted.source);
-    }
-    if (path === WORKFLOW_REFERENCE_ENDPOINT) {
-      const result = reference ?? { data: null, source: "loading" as const };
-      return queryResult(result.data, result.source);
     }
     return queryResult(null, "loading");
   });
@@ -153,6 +160,21 @@ function mockWorkflowQueries({
 
 beforeEach(() => {
   mocks.useAxisQuery.mockReset();
+  mocks.useConsoleTenantScope.mockReset();
+  mocks.useConsoleTenantScope.mockReturnValue({
+    identity: queryResult(
+      {
+        authenticated: true,
+        tenant_id: "tenant_fixture",
+      },
+      "api",
+    ),
+    tenantId: "tenant_fixture",
+    tenantQueriesEnabled: true,
+  });
+  mocks.useTenantVocabulary.mockReturnValue({
+    labelDomain: (domain: string) => domain,
+  });
 });
 
 describe("WorkflowConsole states", () => {
@@ -178,11 +200,10 @@ describe("WorkflowConsole states", () => {
     expect(screen.queryByText(WORKFLOW_RUNS_ENDPOINT)).not.toBeInTheDocument();
   });
 
-  it("renders the EmptyPanel when both endpoints respond with zero runs", () => {
+  it("renders the EmptyPanel when the persisted endpoint responds with zero runs", () => {
     const emptyConsole = { ...workflowConsoleFixture, workflow_runs: [], metrics: [] };
     mockWorkflowQueries({
       persisted: { data: emptyConsole, source: "api" },
-      reference: { data: emptyConsole, source: "api" },
     });
     render(<WorkflowConsole />);
 
@@ -190,18 +211,26 @@ describe("WorkflowConsole states", () => {
     expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
   });
 
-  it("falls back to reference records when the persisted endpoint has no runs", () => {
+  it("does not replace an empty persisted dataset with reference records", () => {
+    const emptyConsole = { ...workflowConsoleFixture, workflow_runs: [], metrics: [] };
     mockWorkflowQueries({
-      persisted: {
-        data: { ...workflowConsoleFixture, workflow_runs: [] },
-        source: "api",
-      },
-      reference: { data: workflowConsoleFixture, source: "api" },
+      persisted: { data: emptyConsole, source: "api" },
     });
     render(<WorkflowConsole />);
 
-    expect(screen.getByText("API workflow records")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Supply Fixture Review/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "No workflow runs yet" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Supply Fixture Review/ })).not.toBeInTheDocument();
+    expect(mocks.useAxisQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("scopes the workflow request and response to the verified tenant", () => {
+    mockWorkflowQueries({ persisted: { data: workflowConsoleFixture, source: "api" } });
+    render(<WorkflowConsole />);
+
+    expect(mocks.useAxisQuery).toHaveBeenCalledWith(
+      WORKFLOW_RUNS_PATH,
+      expect.objectContaining({ enabled: true, expectedTenantId: "tenant_fixture" }),
+    );
   });
 });
 
@@ -217,9 +246,26 @@ describe("WorkflowConsole list and filters", () => {
     expect(screen.getByRole("heading", { name: "Supply Fixture Review" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /Operations Fixture Brief/ }));
+    expect(window.location.search).toContain("workflow_id=wf_ops_fixture");
     expect(
       screen.getByRole("heading", { name: "Operations Fixture Brief" }),
     ).toBeInTheDocument();
+  });
+
+  it("uses the tenant label in workflow chips, detail and domain filters", () => {
+    mocks.useTenantVocabulary.mockReturnValue({
+      labelDomain: (domain: string) => (
+        domain === "Supply" ? "Pharmacy supply" : domain
+      ),
+    });
+
+    render(<WorkflowConsole />);
+
+    expect(screen.getByRole("button", { name: /Supply Fixture Review/ })).toHaveTextContent(
+      "Pharmacy supply",
+    );
+    expect(screen.getByText("Pharmacy supply", { selector: ".eyebrow" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Pharmacy supply" })).toHaveValue("Supply");
   });
 
   it("filters the list by state and domain", async () => {
@@ -227,6 +273,7 @@ describe("WorkflowConsole list and filters", () => {
     render(<WorkflowConsole />);
 
     await user.selectOptions(screen.getByLabelText("State"), "waiting_for_approval");
+    expect(window.location.search).toContain("state=waiting_for_approval");
     expect(
       screen.queryByRole("button", { name: /Operations Fixture Brief/ }),
     ).not.toBeInTheDocument();

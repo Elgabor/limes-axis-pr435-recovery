@@ -1,9 +1,10 @@
+import { OPERATIONS_API_PREFIX } from "./tenant-scope";
 /**
  * Typed parsers for the live agent-run read surfaces:
  *
- * - GET /demo/manufacturing/agents/{agent_id}/runs — persisted run records
+ * - GET /operations/agents/{agent_id}/runs — persisted run records
  *   (status, mode, autonomy level, model invocation links, step timeline).
- * - GET /demo/manufacturing/agents/{agent_id}/runs/{run_id} — single run.
+ * - GET /operations/agents/{agent_id}/runs/{run_id} — single run.
  *
  * Runs carry reference-based evidence only: prompts and model outputs are
  * never persisted on the run. Parsing is strict — unexpected shapes raise
@@ -18,11 +19,11 @@ export type AgentRunStepType = (typeof agentRunStepOrder)[number];
 
 export function agentRunsPath(agentId: string, pageSize = 20): string {
   const params = new URLSearchParams({ page_size: String(pageSize) });
-  return `/demo/manufacturing/agents/${encodeURIComponent(agentId)}/runs?${params.toString()}`;
+  return `${OPERATIONS_API_PREFIX}/agents/${encodeURIComponent(agentId)}/runs?${params.toString()}`;
 }
 
 export function agentRunDetailPath(agentId: string, runId: string): string {
-  return `/demo/manufacturing/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}`;
+  return `${OPERATIONS_API_PREFIX}/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}`;
 }
 
 export function modelInvocationDetailPath(invocationId: string): string {

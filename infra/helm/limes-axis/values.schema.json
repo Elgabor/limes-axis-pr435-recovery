@@ -17,6 +17,10 @@
         "env": {
           "type": "object",
           "properties": {
+            "AXIS_TENANT_ADMISSION_MODE": {
+              "type": "string",
+              "enum": ["claims_only", "registered_only"]
+            },
             "AXIS_POSTGRES_CONNECT_TIMEOUT_SECONDS": {
               "type": "string",
               "pattern": "^[0-9]+$"

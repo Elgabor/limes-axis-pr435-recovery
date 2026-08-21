@@ -7,6 +7,7 @@ import { afterEach } from "vitest";
 // cleanup never registers itself; do it explicitly.
 afterEach(() => {
   cleanup();
+  window.history.replaceState(null, "", "/");
 });
 
 // jsdom lacks layout APIs that Radix popper (floating-ui) and cmdk rely on.

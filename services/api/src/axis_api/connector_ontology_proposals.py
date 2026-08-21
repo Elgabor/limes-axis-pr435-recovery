@@ -4,8 +4,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from axis_api.audit import AuditEventCreate
-from axis_api.connector_reference import get_persisted_manufacturing_connector_registry
+from axis_api.connector_reference import require_persisted_manufacturing_connector_registry
 from axis_api.demo import OverviewMetric, OverviewStatus
+from axis_api.manufacturing_metadata import (
+    ManufacturingResponseProvenance,
+    find_manufacturing_tenant_metadata,
+    operational_provenance,
+)
 from axis_api.persistence import AxisPersistenceRepository, ConnectorOntologyProposalCreate
 
 
@@ -80,8 +85,9 @@ class ConnectorOntologyProposalRecord(BaseModel):
 
 class ManufacturingConnectorOntologyProposalRegistry(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     registry_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
     proposals: list[ConnectorOntologyProposalRecord] = Field(default_factory=list)
@@ -108,6 +114,7 @@ def build_connector_ontology_proposal_registry(
     repository: AxisPersistenceRepository,
     query: ConnectorOntologyProposalQuery,
 ) -> ManufacturingConnectorOntologyProposalRegistry:
+    tenant_metadata = find_manufacturing_tenant_metadata(repository, query.tenant_id)
     records = repository.list_connector_ontology_proposals(
         tenant_id=query.tenant_id,
         connector_id=query.connector_id,
@@ -123,8 +130,9 @@ def build_connector_ontology_proposal_registry(
     )
     return ManufacturingConnectorOntologyProposalRegistry(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(bool(records)),
         registry_status=OverviewStatus.READY if proposals else OverviewStatus.WATCH,
         metrics=[
             OverviewMetric(
@@ -259,7 +267,9 @@ def _manifest_for_connector(
     tenant_id: str,
     connector_id: str,
 ):
-    registry = get_persisted_manufacturing_connector_registry(repository, tenant_id=tenant_id)
+    registry = require_persisted_manufacturing_connector_registry(
+        repository, tenant_id=tenant_id
+    )
     for connector in registry.connectors:
         if connector.manifest.connector_id == connector_id:
             return connector.manifest

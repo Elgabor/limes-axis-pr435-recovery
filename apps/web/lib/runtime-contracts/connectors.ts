@@ -8,12 +8,14 @@ import type {
   ManufacturingConnectorCredentialLeaseRegistry,
   ManufacturingConnectorEgressPolicyRegistry,
   ManufacturingConnectorEvidenceInvariantReport,
+  ManufacturingConnectorEvidenceInvariantSnapshotHistory,
   ManufacturingConnectorManifestRegistry,
   ManufacturingConnectorOntologyProposalRegistry,
   ManufacturingConnectorRegistry,
   ManufacturingConnectorRunRegistry,
 } from "../connectors-demo";
 import {
+  manufacturingProvenanceSchema,
   nullableStringSchema,
   overviewMetricSchema,
   parseContract,
@@ -60,6 +62,35 @@ const connectorPreviewSample = z.object({
   record_count: z.number(),
   headers: stringArraySchema,
   sample_rows: z.array(stringRecord),
+});
+const connectorPersistedManifestSummary = z.object({
+  manifest_id: z.string(),
+  revision_number: z.number().int().positive(),
+  status: z.string(),
+  registered_by: z.string(),
+  registered_at: z.string(),
+  notes: stringArraySchema,
+});
+const connectorRegistryItem = z.object({
+  manifest: connectorManifest,
+  runtime_policy: connectorRuntimePolicy,
+  preview_sample: connectorPreviewSample.nullable(),
+  last_successful_sync: z.object({
+    run_id: z.string(),
+    completed_at: z.string(),
+    records_read: z.number().int().nonnegative(),
+  }).nullable(),
+  connector_status: platformStatusSchema,
+  registry_origin: z.enum(["reference", "persisted_manifest"]),
+  persisted_manifest: connectorPersistedManifestSummary.nullable(),
+}).superRefine((item, context) => {
+  if (item.registry_origin === "persisted_manifest" && item.persisted_manifest === null) {
+    context.addIssue({
+      code: "custom",
+      message: "Persisted-manifest connector items require persistence metadata.",
+      path: ["persisted_manifest"],
+    });
+  }
 });
 const proposedOntologyEntity = z.object({
   node_id: z.string(),
@@ -120,43 +151,95 @@ const connectorExternalDbPreviewResult = z.object({
 });
 const connectorRegistryHeader = {
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   registry_status: platformStatusSchema,
   metrics: z.array(overviewMetricSchema),
 };
 const connectorRegistry = z.object({
   ...connectorRegistryHeader,
-  connectors: z.array(z.object({
-    manifest: connectorManifest,
-    runtime_policy: connectorRuntimePolicy,
-    preview_sample: connectorPreviewSample,
-    connector_status: platformStatusSchema,
-  })),
+  connectors: z.array(connectorRegistryItem),
   connector_notes: stringArraySchema,
+});
+const connectorManifestRecord = z.object({
+  tenant_id: z.string(),
+  manifest_id: z.string(),
+  connector_id: z.string(),
+  revision_number: z.number().int().positive(),
+  display_name: z.string(),
+  connector_type: z.string(),
+  source_type: z.string(),
+  version: z.string(),
+  status: z.string(),
+  runtime_boundary: z.string(),
+  registered_by: z.string(),
+  manifest: connectorManifest,
+  runtime_policy: connectorRuntimePolicy,
+  preview_sample: connectorPreviewSample.nullable(),
+  audit_event_id: nullableStringSchema,
+  audit_event_type: z.string(),
+  revises_revision_number: z.number().int().positive().nullable(),
+  replaced_by_revision_number: z.number().int().positive().nullable(),
+  revision_idempotency_key: nullableStringSchema,
+  idempotent_replay: z.boolean(),
+  unchanged: z.boolean(),
+  notes: stringArraySchema,
+  created_at: z.string(),
 });
 const connectorManifestRegistry = z.object({
   ...connectorRegistryHeader,
-  manifests: z.array(z.object({
-    tenant_id: z.string(),
-    manifest_id: z.string(),
-    connector_id: z.string(),
-    display_name: z.string(),
-    connector_type: z.string(),
-    source_type: z.string(),
-    version: z.string(),
-    status: z.string(),
-    runtime_boundary: z.string(),
-    registered_by: z.string(),
-    manifest: connectorManifest,
-    runtime_policy: connectorRuntimePolicy,
-    preview_sample: connectorPreviewSample,
-    audit_event_id: nullableStringSchema,
-    audit_event_type: z.string(),
-    notes: stringArraySchema,
-    created_at: z.string(),
-  })),
+  manifests: z.array(connectorManifestRecord),
   manifest_notes: stringArraySchema,
+});
+const connectorManifestDetail = z.object({
+  tenant_id: z.string(),
+  connector_id: z.string(),
+  current_revision: connectorManifestRecord,
+  revisions: z.array(connectorManifestRecord),
+}).superRefine((detail, context) => {
+  const revisions = [detail.current_revision, ...detail.revisions];
+  revisions.forEach((revision, index) => {
+    const pathPrefix = index === 0 ? ["current_revision"] : ["revisions", index - 1];
+    if (revision.tenant_id !== detail.tenant_id) {
+      context.addIssue({
+        code: "custom",
+        message: "Manifest revision tenant does not match the detail envelope.",
+        path: [...pathPrefix, "tenant_id"],
+      });
+    }
+    if (revision.connector_id !== detail.connector_id) {
+      context.addIssue({
+        code: "custom",
+        message: "Manifest revision connector does not match the detail envelope.",
+        path: [...pathPrefix, "connector_id"],
+      });
+    }
+    if (revision.manifest.connector_id !== detail.connector_id) {
+      context.addIssue({
+        code: "custom",
+        message: "Nested manifest connector does not match the detail envelope.",
+        path: [...pathPrefix, "manifest", "connector_id"],
+      });
+    }
+  });
+});
+const connectorManifestBatchValidationResponse = z.object({
+  tenant_id: z.string(),
+  summary: z.object({
+    would_register: z.number().int().nonnegative(),
+    would_replace: z.number().int().nonnegative(),
+    invalid: z.number().int().nonnegative(),
+  }),
+  results: z.array(z.object({
+    connector_id: nullableStringSchema,
+    outcome: z.enum(["would_register", "would_replace", "invalid"]),
+    errors: z.array(z.object({
+      field_path: z.string(),
+      message: z.string(),
+      reason: z.string(),
+    })),
+  })),
 });
 const credentialRotation = z.object({
   tenant_id: z.string(),
@@ -311,6 +394,34 @@ const connectorEvidenceInvariantReport = z.object({
   })),
   report_notes: stringArraySchema,
 });
+const connectorEvidenceInvariantSnapshotHistory = z.object({
+  tenant_id: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
+  history_status: platformStatusSchema,
+  metrics: z.array(overviewMetricSchema),
+  snapshots: z.array(z.object({
+    tenant_id: z.string(),
+    snapshot_id: z.string(),
+    status: z.string(),
+    connector_id: nullableStringSchema,
+    requested_by: z.string(),
+    idempotency_key: z.string(),
+    reason: z.string(),
+    invariant_count: z.number(),
+    invariant_counts: z.record(z.string(), z.number()),
+    subject_ids: stringArraySchema,
+    report_digest_sha256: z.string(),
+    report_hash_algorithm: z.string(),
+    permission_decision: permissionDecision,
+    audit_event_id: nullableStringSchema,
+    audit_event_type: z.string(),
+    idempotent_replay: z.boolean(),
+    notes: stringArraySchema,
+  })),
+  history_notes: stringArraySchema,
+});
 const connectorPromotionDecision = z.object({
   status: z.string(),
   allowed: z.boolean(),
@@ -377,6 +488,14 @@ export function parseManufacturingConnectorManifestRegistry(
   return parseContract(connectorManifestRegistry, value);
 }
 
+export function parseConnectorManifestDetail(value: unknown) {
+  return parseContract(connectorManifestDetail, value);
+}
+
+export function parseConnectorManifestBatchValidationResponse(value: unknown) {
+  return parseContract(connectorManifestBatchValidationResponse, value);
+}
+
 export function parseManufacturingConnectorCredentialHandleRegistry(
   value: unknown,
 ): ManufacturingConnectorCredentialHandleRegistry {
@@ -405,6 +524,12 @@ export function parseManufacturingConnectorEvidenceInvariantReport(
   value: unknown,
 ): ManufacturingConnectorEvidenceInvariantReport {
   return parseContract(connectorEvidenceInvariantReport, value);
+}
+
+export function parseManufacturingConnectorEvidenceInvariantSnapshotHistory(
+  value: unknown,
+): ManufacturingConnectorEvidenceInvariantSnapshotHistory {
+  return parseContract(connectorEvidenceInvariantSnapshotHistory, value);
 }
 
 export function parseManufacturingConnectorOntologyProposalRegistry(

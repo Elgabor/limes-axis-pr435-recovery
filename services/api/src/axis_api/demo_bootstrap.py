@@ -52,7 +52,11 @@ from axis_api.ontology_reference import (
     ONTOLOGY_SURFACE,
 )
 from axis_api.permissions import PermissionDecision, PermissionRequest, evaluate_permission
-from axis_api.persistence import AxisPersistenceRepository, DemoReferenceRecordCreate
+from axis_api.persistence import (
+    AxisPersistenceRepository,
+    DemoReferenceRecordCreate,
+    TenantCreate,
+)
 from axis_api.workflow_reference import (
     MANUFACTURING_WORKFLOW_CONSOLE_REFERENCE_ID,
     WORKFLOW_CONSOLE_SURFACE,
@@ -61,6 +65,7 @@ from axis_api.workflow_reference import (
 CANONICAL_DEMO_TENANT_ID = "tenant_demo_manufacturing"
 DEMO_BOOTSTRAP_SCOPE = "demo:scenario:bootstrap"
 DEMO_BOOTSTRAP_AUDIT_EVENT_TYPE = "demo.scenario.bootstrapped"
+DEMO_BOOTSTRAP_TENANT_AUDIT_EVENT_TYPE = "platform.tenant.bootstrapped"
 DEMO_BOOTSTRAP_SURFACE = "bootstrap"
 DEMO_BOOTSTRAP_REFERENCE_ID = "manufacturing-demo-bootstrap"
 DEMO_BOOTSTRAP_RECORD_SOURCE = "demo-bootstrap"
@@ -164,6 +169,21 @@ def bootstrap_demo_scenario(
         raise DemoBootstrapValidationError(
             "The canonical manufacturing overview payload is invalid.",
             "demo_scenario_reference_invalid",
+        )
+
+    # Bootstrap used to seed reference records without registering the tenant,
+    # so a bootstrapped tenant was invisible to /platform/tenants and to every
+    # tenant-scoped resource that resolves through the registry (vocabulary,
+    # quotas, usage). Register it here, idempotently.
+    if repository.get_tenant(request.tenant_id) is None:
+        repository.create_tenant(
+            TenantCreate(
+                tenant_id=request.tenant_id,
+                display_name=plant_name,
+                description=scenario,
+                created_by=request.requested_by,
+                audit_event_type=DEMO_BOOTSTRAP_TENANT_AUDIT_EVENT_TYPE,
+            )
         )
 
     surfaces: list[DemoBootstrapSurfaceView] = []

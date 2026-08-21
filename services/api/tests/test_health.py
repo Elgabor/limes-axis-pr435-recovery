@@ -174,6 +174,7 @@ def test_production_disables_public_api_documentation() -> None:
         api_rate_limit_backend="redis",
         api_rate_limit_failure_mode="closed",
         redis_url="redis://rate-limit.internal:6379/0",
+        tenant_admission_mode="registered_only",
     )
     client = TestClient(
         create_app(

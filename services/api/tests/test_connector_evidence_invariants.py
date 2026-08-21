@@ -17,6 +17,7 @@ from axis_api.persistence import (
     ConnectorEgressPolicyCreate,
     ConnectorSyncCheckpointClaimCreate,
     ConnectorSyncCheckpointCreate,
+    TenantCreate,
 )
 from axis_api.workflow_runtime import WorkflowSignalResult
 
@@ -50,6 +51,15 @@ def session_factory() -> sessionmaker[Session]:
 
 
 def seed_mismatched_connector_evidence(repository: AxisPersistenceRepository) -> None:
+    if repository.get_tenant("tenant_demo_manufacturing") is None:
+        repository.create_tenant(
+            TenantCreate(
+                tenant_id="tenant_demo_manufacturing",
+                display_name="Ravenna Works",
+                description="Plant Operations Cockpit",
+                created_by="test",
+            )
+        )
     checkpoint_event = repository.append_audit_event(
         AuditEventCreate(
             tenant_id="tenant_demo_manufacturing",

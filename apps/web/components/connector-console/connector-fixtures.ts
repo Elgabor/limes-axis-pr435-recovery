@@ -9,11 +9,13 @@ import type {
   ManufacturingConnectorRegistry,
   ManufacturingConnectorRunRegistry,
 } from "@/lib/connectors-demo";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 const registryBase = {
   tenant_id: "tenant_demo_manufacturing",
   plant_name: "Ravenna Works",
   scenario: "Plant Operations Cockpit",
+  provenance: "reference_scenario" as const,
   registry_status: "watch" as const,
   metrics: [],
 };
@@ -70,7 +72,17 @@ export const csvConnectorFixture: ConnectorRegistryItem = {
       { asset_id: "ast-2", asset_name: "Press" },
     ],
   },
+  last_successful_sync: null,
   connector_status: "watch",
+  registry_origin: "reference",
+  persisted_manifest: {
+    manifest_id: "manifest-1",
+    revision_number: 2,
+    status: "active_preview",
+    registered_by: "plant-operations-owner-role",
+    registered_at: "2026-07-10T08:00:00Z",
+    notes: [],
+  },
 };
 
 export const dbConnectorFixture: ConnectorRegistryItem = {
@@ -83,9 +95,10 @@ export const dbConnectorFixture: ConnectorRegistryItem = {
     source_type: "postgres_metadata",
   },
   preview_sample: {
-    ...csvConnectorFixture.preview_sample,
+    ...csvConnectorFixture.preview_sample!,
     file_name: "operations.production_orders",
   },
+  persisted_manifest: null,
 };
 
 export const connectorRegistryFixture: ManufacturingConnectorRegistry = {
@@ -101,6 +114,7 @@ export const manifestRegistryFixture: ManufacturingConnectorManifestRegistry = {
       tenant_id: registryBase.tenant_id,
       manifest_id: "manifest-1",
       connector_id: "file_csv_manufacturing_assets",
+      revision_number: 2,
       display_name: "Manufacturing assets CSV",
       connector_type: "file_csv",
       source_type: "csv_upload",
@@ -113,11 +127,35 @@ export const manifestRegistryFixture: ManufacturingConnectorManifestRegistry = {
       preview_sample: csvConnectorFixture.preview_sample,
       audit_event_id: "audit-manifest-1",
       audit_event_type: "connector.manifest.registered",
+      revises_revision_number: 1,
+      replaced_by_revision_number: null,
+      revision_idempotency_key: "fixture-revision-2",
+      idempotent_replay: false,
+      unchanged: false,
       notes: [],
       created_at: "2026-07-10T08:00:00Z",
     },
   ],
   manifest_notes: [],
+};
+
+export const manifestDetailFixture = {
+  tenant_id: registryBase.tenant_id,
+  connector_id: "file_csv_manufacturing_assets",
+  current_revision: manifestRegistryFixture.manifests[0],
+  revisions: [
+    {
+      ...manifestRegistryFixture.manifests[0],
+      manifest_id: "manifest-0",
+      revision_number: 1,
+      version: "0.9.0",
+      revises_revision_number: null,
+      replaced_by_revision_number: 2,
+      revision_idempotency_key: null,
+      created_at: "2026-07-09T08:00:00Z",
+    },
+    manifestRegistryFixture.manifests[0],
+  ],
 };
 
 export const credentialHandleRegistryFixture: ManufacturingConnectorCredentialHandleRegistry = {
@@ -304,13 +342,15 @@ export const ontologyProposalRegistryFixture: ManufacturingConnectorOntologyProp
 
 /** Path → fixture payload map matching CONNECTOR_ENDPOINTS. */
 export const connectorEndpointFixtures: Record<string, unknown> = {
-  "/demo/manufacturing/connectors": connectorRegistryFixture,
-  "/demo/manufacturing/connectors/manifests": manifestRegistryFixture,
-  "/demo/manufacturing/connectors/credential-handles": credentialHandleRegistryFixture,
-  "/demo/manufacturing/connectors/credential-leases": credentialLeaseRegistryFixture,
-  "/demo/manufacturing/connectors/egress-policies": egressPolicyRegistryFixture,
-  "/demo/manufacturing/connectors/runs": runRegistryFixture,
-  "/demo/manufacturing/connectors/evidence-invariants?tenant_id=tenant_demo_manufacturing":
+  [`${OPERATIONS_API_PREFIX}/connectors`]: connectorRegistryFixture,
+  [`${OPERATIONS_API_PREFIX}/connectors/manifests`]: manifestRegistryFixture,
+  [`${OPERATIONS_API_PREFIX}/connectors/manifests/file_csv_manufacturing_assets`]:
+    manifestDetailFixture,
+  [`${OPERATIONS_API_PREFIX}/connectors/credential-handles`]: credentialHandleRegistryFixture,
+  [`${OPERATIONS_API_PREFIX}/connectors/credential-leases`]: credentialLeaseRegistryFixture,
+  [`${OPERATIONS_API_PREFIX}/connectors/egress-policies`]: egressPolicyRegistryFixture,
+  [`${OPERATIONS_API_PREFIX}/connectors/runs`]: runRegistryFixture,
+  [`${OPERATIONS_API_PREFIX}/connectors/evidence-invariants?tenant_id=tenant_demo_manufacturing`]:
     evidenceInvariantReportFixture,
-  "/demo/manufacturing/connectors/ontology-proposals": ontologyProposalRegistryFixture,
+  [`${OPERATIONS_API_PREFIX}/connectors/ontology-proposals`]: ontologyProposalRegistryFixture,
 };

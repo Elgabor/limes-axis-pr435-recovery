@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type {
   ConnectorCredentialLeaseRecord,
-  ConnectorManifestRecord,
+  ConnectorManifestDetail,
   ConnectorOntologyProposalRecord,
   ConnectorPreviewSample,
   ConnectorRegistryItem,
@@ -12,10 +12,10 @@ import {
   buildExternalDbPreviewRequest,
   buildManifestCreateRequest,
   buildPreviewSyncPlan,
+  connectorWithCurrentManifest,
   deriveConnectorId,
   findActiveLeaseForConnector,
-  manifestRecordForConnector,
-  mergeConnectorListEntries,
+  manifestAllowsRuns,
   parseCsvText,
   pendingProposalCount,
 } from "./connectors-console";
@@ -66,8 +66,62 @@ const templateConnector: ConnectorRegistryItem = {
     payload_policy: "metadata_only",
   },
   preview_sample: previewSample,
+  last_successful_sync: null,
   connector_status: "watch",
+  registry_origin: "reference",
+  persisted_manifest: null,
 };
+
+function buildManifestDetail(
+  connector: ConnectorRegistryItem,
+  input: {
+    manifestId: string;
+    revisionNumber: number;
+    connectorId?: string;
+    embeddedConnectorId?: string;
+    displayName?: string;
+  },
+): ConnectorManifestDetail {
+  const connectorId = input.connectorId ?? connector.manifest.connector_id;
+  const manifest = {
+    ...connector.manifest,
+    connector_id: input.embeddedConnectorId ?? connectorId,
+    display_name: input.displayName ?? connector.manifest.display_name,
+  };
+  const currentRevision: ConnectorManifestDetail["current_revision"] = {
+    tenant_id: "tenant_demo_manufacturing",
+    manifest_id: input.manifestId,
+    connector_id: connectorId,
+    revision_number: input.revisionNumber,
+    display_name: manifest.display_name,
+    connector_type: manifest.connector_type,
+    source_type: manifest.source_type,
+    version: manifest.version,
+    status: "active_preview",
+    runtime_boundary: manifest.runtime_boundary,
+    registered_by: "manifest-detail-reader",
+    manifest,
+    runtime_policy: connector.runtime_policy,
+    preview_sample: connector.preview_sample,
+    audit_event_id: `audit-${input.manifestId}`,
+    audit_event_type: "connector.manifest.registered",
+    revises_revision_number:
+      input.revisionNumber > 1 ? input.revisionNumber - 1 : null,
+    replaced_by_revision_number: null,
+    revision_idempotency_key: `revision-${input.manifestId}`,
+    idempotent_replay: false,
+    unchanged: false,
+    notes: [`detail ${input.manifestId}`],
+    created_at: "2026-07-10T08:00:00Z",
+  };
+
+  return {
+    tenant_id: currentRevision.tenant_id,
+    connector_id: currentRevision.connector_id,
+    current_revision: currentRevision,
+    revisions: [currentRevision],
+  };
+}
 
 function leaseRecord(
   overrides: Partial<ConnectorCredentialLeaseRecord>,
@@ -267,78 +321,187 @@ describe("registry summaries", () => {
     expect(pendingProposalCount(proposals)).toBe(2);
   });
 
-  it("finds the persisted manifest record for a connector", () => {
-    const manifests = [
-      { connector_id: "a", status: "registered_preview_only" },
-      { connector_id: "b", status: "active_preview" },
-    ] as ConnectorManifestRecord[];
-
-    expect(manifestRecordForConnector(manifests, "b")?.status).toBe("active_preview");
-    expect(manifestRecordForConnector(manifests, "missing")).toBeNull();
+  it("allows runs only for an explicitly active persisted manifest", () => {
+    expect(manifestAllowsRuns({ status: "active_preview" })).toBe(true);
+    expect(manifestAllowsRuns({ status: "active_live" })).toBe(true);
+    expect(manifestAllowsRuns({ status: "registered_preview_only" })).toBe(false);
+    expect(manifestAllowsRuns(null)).toBe(false);
   });
 });
 
-describe("mergeConnectorListEntries", () => {
-  function manifestRecord(
-    connectorId: string,
-    overrides: Partial<ConnectorManifestRecord> = {},
-  ): ConnectorManifestRecord {
-    return {
+describe("connectorWithCurrentManifest", () => {
+  it("uses the fetched current revision while preserving registry provenance and sync evidence", () => {
+    const connector: ConnectorRegistryItem = {
+      ...templateConnector,
+      registry_origin: "persisted_manifest",
+      persisted_manifest: {
+        manifest_id: "manifest-stale",
+        revision_number: 1,
+        status: "registered_preview_only",
+        registered_by: "registry-reader",
+        registered_at: "2026-07-09T08:00:00Z",
+        notes: ["stale registry summary"],
+      },
+      last_successful_sync: {
+        run_id: "run-previous",
+        completed_at: "2026-07-09T09:00:00Z",
+        records_read: 7,
+      },
+    };
+    const currentManifest = {
+      ...connector.manifest,
+      display_name: "Current manufacturing assets",
+      version: "2.0.0",
+      schema_fields: [
+        {
+          ...connector.manifest.schema_fields[0],
+          source_column: "current_asset_id",
+        },
+      ],
+    };
+    const currentRevision = {
       tenant_id: "tenant_demo_manufacturing",
-      manifest_id: `manifest_${connectorId}`,
-      connector_id: connectorId,
-      display_name: `Manifest ${connectorId}`,
-      connector_type: "file_csv",
-      source_type: "csv_upload",
-      version: "1.0.0",
-      status: "registered_preview_only",
-      runtime_boundary: "self_hosted",
-      registered_by: "connector-console-operator",
+      manifest_id: "manifest-current",
+      connector_id: currentManifest.connector_id,
+      revision_number: 2,
+      display_name: currentManifest.display_name,
+      connector_type: currentManifest.connector_type,
+      source_type: currentManifest.source_type,
+      version: currentManifest.version,
+      status: "active_live",
+      runtime_boundary: currentManifest.runtime_boundary,
+      registered_by: "manifest-detail-reader",
+      manifest: currentManifest,
+      runtime_policy: {
+        ...connector.runtime_policy,
+        row_limit: 250,
+      },
+      preview_sample: connector.preview_sample,
+      audit_event_id: "audit-manifest-current",
+      audit_event_type: "connector.manifest.registered",
+      revises_revision_number: 1,
+      replaced_by_revision_number: null,
+      revision_idempotency_key: "revision-current",
+      idempotent_replay: false,
+      unchanged: false,
+      notes: ["authoritative current revision"],
+      created_at: "2026-07-10T08:00:00Z",
+    };
+    const detail: ConnectorManifestDetail = {
+      tenant_id: currentRevision.tenant_id,
+      connector_id: currentRevision.connector_id,
+      current_revision: currentRevision,
+      revisions: [currentRevision],
+    };
+
+    const effective = connectorWithCurrentManifest(connector, detail);
+
+    expect(effective.manifest).toBe(currentRevision.manifest);
+    expect(effective.runtime_policy).toBe(currentRevision.runtime_policy);
+    expect(effective.preview_sample).toBe(currentRevision.preview_sample);
+    expect(effective.persisted_manifest).toEqual({
+      manifest_id: "manifest-current",
+      revision_number: 2,
+      status: "active_live",
+      registered_by: "manifest-detail-reader",
+      registered_at: "2026-07-10T08:00:00Z",
+      notes: ["authoritative current revision"],
+    });
+    expect(effective.registry_origin).toBe("persisted_manifest");
+    expect(effective.connector_status).toBe(connector.connector_status);
+    expect(effective.last_successful_sync).toBe(connector.last_successful_sync);
+    expect(connector.persisted_manifest?.status).toBe("registered_preview_only");
+  });
+
+  it("returns the registry connector unchanged while detail is unavailable", () => {
+    expect(connectorWithCurrentManifest(templateConnector, null)).toBe(templateConnector);
+  });
+
+  it("does not let retained detail roll a newer registry revision backward", () => {
+    const connector: ConnectorRegistryItem = {
+      ...templateConnector,
       manifest: {
         ...templateConnector.manifest,
-        connector_id: connectorId,
-        display_name: `Manifest ${connectorId}`,
+        display_name: "Registry revision three",
+        version: "3.0.0",
       },
-      runtime_policy: templateConnector.runtime_policy,
-      preview_sample: previewSample,
-      audit_event_id: null,
-      audit_event_type: "connector.manifest.registered",
-      notes: [],
-      created_at: "2026-07-11T00:00:00Z",
-      ...overrides,
+      registry_origin: "persisted_manifest",
+      persisted_manifest: {
+        manifest_id: "manifest-current",
+        revision_number: 3,
+        status: "active_live",
+        registered_by: "registry-reader",
+        registered_at: "2026-07-11T08:00:00Z",
+        notes: ["fresh registry summary"],
+      },
     };
-  }
-
-  it("appends manifest-only records as synthetic entries after reference connectors", () => {
-    const entries = mergeConnectorListEntries(
-      [templateConnector],
-      [manifestRecord("file_csv_new_upload")],
-    );
-
-    expect(entries).toHaveLength(2);
-    expect(entries[0].source).toBe("reference");
-    expect(entries[0].connector).toBe(templateConnector);
-    expect(entries[1].source).toBe("manifest");
-    expect(entries[1].connector.manifest.connector_id).toBe("file_csv_new_upload");
-    expect(entries[1].connector.preview_sample).toEqual(previewSample);
-    expect(entries[1].manifestRecord?.status).toBe("registered_preview_only");
-  });
-
-  it("dedupes by connector_id: the reference connector wins and keeps its manifest record", () => {
-    const record = manifestRecord("file_csv_manufacturing_assets", {
-      status: "active_preview",
+    const retainedDetail = buildManifestDetail(connector, {
+      manifestId: "manifest-stale",
+      revisionNumber: 2,
+      displayName: "Retained revision two",
     });
-    const entries = mergeConnectorListEntries([templateConnector], [record]);
 
-    expect(entries).toHaveLength(1);
-    expect(entries[0].source).toBe("reference");
-    expect(entries[0].manifestRecord).toBe(record);
+    expect(connectorWithCurrentManifest(connector, retainedDetail)).toBe(connector);
   });
 
-  it("returns only manifest entries when the reference registry is empty", () => {
-    const entries = mergeConnectorListEntries([], [manifestRecord("file_csv_only")]);
+  it("uses equal-revision detail only when the manifest identity agrees", () => {
+    const connector: ConnectorRegistryItem = {
+      ...templateConnector,
+      registry_origin: "persisted_manifest",
+      persisted_manifest: {
+        manifest_id: "manifest-current",
+        revision_number: 2,
+        status: "active_preview",
+        registered_by: "registry-reader",
+        registered_at: "2026-07-10T07:00:00Z",
+        notes: ["registry summary"],
+      },
+    };
+    const matchingDetail = buildManifestDetail(connector, {
+      manifestId: "manifest-current",
+      revisionNumber: 2,
+      displayName: "Authoritative matching detail",
+    });
+    const divergentDetail = buildManifestDetail(connector, {
+      manifestId: "manifest-divergent",
+      revisionNumber: 2,
+      displayName: "Divergent equal revision",
+    });
 
-    expect(entries).toHaveLength(1);
-    expect(entries[0].source).toBe("manifest");
+    expect(connectorWithCurrentManifest(connector, matchingDetail).manifest.display_name).toBe(
+      "Authoritative matching detail",
+    );
+    expect(connectorWithCurrentManifest(connector, divergentDetail)).toBe(connector);
+  });
+
+  it("ignores retained detail for a different or no-longer-persisted connector", () => {
+    const persistedConnector: ConnectorRegistryItem = {
+      ...templateConnector,
+      registry_origin: "persisted_manifest",
+      persisted_manifest: {
+        manifest_id: "manifest-current",
+        revision_number: 2,
+        status: "active_preview",
+        registered_by: "registry-reader",
+        registered_at: "2026-07-10T07:00:00Z",
+        notes: [],
+      },
+    };
+    const otherConnectorDetail = buildManifestDetail(persistedConnector, {
+      manifestId: "manifest-other",
+      revisionNumber: 3,
+      connectorId: "file_csv_other_connector",
+    });
+    const retainedMatchingDetail = buildManifestDetail(templateConnector, {
+      manifestId: "manifest-removed",
+      revisionNumber: 3,
+    });
+
+    expect(connectorWithCurrentManifest(persistedConnector, otherConnectorDetail)).toBe(
+      persistedConnector,
+    );
+    expect(connectorWithCurrentManifest(templateConnector, retainedMatchingDetail)).toBe(
+      templateConnector,
+    );
   });
 });

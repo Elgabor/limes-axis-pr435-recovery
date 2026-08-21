@@ -2,6 +2,7 @@ import type {
   IdentitySessionReadModel,
   ManufacturingOperationsSnapshot,
 } from "./platform-overview";
+import { OPERATIONS_API_PREFIX } from "./tenant-scope";
 
 export type OperationsArtifactKind =
   | "daily_brief"
@@ -76,28 +77,28 @@ export const OPERATIONS_ARTIFACT_ACTIONS: OperationsArtifactAction[] = [
     kind: "daily_brief",
     label: "Generate daily brief",
     description: "Persist a deterministic plant brief from current operation records.",
-    endpoint: "/demo/manufacturing/operations/daily-brief",
+    endpoint: `${OPERATIONS_API_PREFIX}/operations/daily-brief`,
     requiredScopes: ["briefs:generate", "audit:read", "workflows:read"],
   },
   {
     kind: "quality_risk",
     label: "Build quality scenario",
     description: "Persist a quality risk scenario with workflow and evidence references.",
-    endpoint: "/demo/manufacturing/operations/risk-scenarios/quality",
+    endpoint: `${OPERATIONS_API_PREFIX}/operations/risk-scenarios/quality`,
     requiredScopes: ["quality:read", "workflows:read", "audit:read"],
   },
   {
     kind: "maintenance_risk",
     label: "Build maintenance scenario",
     description: "Persist a maintenance risk scenario from CMMS-backed records.",
-    endpoint: "/demo/manufacturing/operations/risk-scenarios/maintenance",
+    endpoint: `${OPERATIONS_API_PREFIX}/operations/risk-scenarios/maintenance`,
     requiredScopes: ["maintenance:read", "workflows:read", "audit:read"],
   },
   {
     kind: "supplier_delay",
     label: "Build supplier scenario",
     description: "Persist a supply delay scenario with approval and workflow evidence.",
-    endpoint: "/demo/manufacturing/operations/risk-scenarios/supplier-delay",
+    endpoint: `${OPERATIONS_API_PREFIX}/operations/risk-scenarios/supplier-delay`,
     requiredScopes: ["supply:read", "workflows:read", "audit:read"],
   },
 ];

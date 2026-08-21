@@ -7,7 +7,11 @@ import { AlertTriangle, FileCheck2, ShieldCheck } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { ErrorPanel, LoadingPanel } from "@/components/ui/states";
-import { axisFetchParsedJson } from "@/lib/axis-api";
+import {
+  axisFetchParsedJson,
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
 import { buildOidcAuthorizeUrl } from "@/lib/oidc-session";
 import {
   buildOperationsArtifactRequest,
@@ -34,6 +38,7 @@ import { useConsole } from "@/providers/console-provider";
 
 import { buildAuditEventHref } from "@/lib/audit-demo";
 import { PanelHeader, StatusDot, type OverviewQuery } from "./overview-shared";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 /*
  * Compact governed-evidence generation panel: one card, one action row, the
@@ -42,7 +47,7 @@ import { PanelHeader, StatusDot, type OverviewQuery } from "./overview-shared";
  * endpoint just leaves the actions disabled with their scope reason.
  */
 
-export const SNAPSHOT_ENDPOINT = "/demo/manufacturing/operations/snapshot";
+export const SNAPSHOT_ENDPOINT = `${OPERATIONS_API_PREFIX}/operations/snapshot`;
 
 const ACTION_ICONS: Record<string, typeof FileCheck2> = {
   daily_brief: FileCheck2,
@@ -69,7 +74,7 @@ export function ArtifactPanel({
     actionLabel: string;
     response: OperationsArtifactResponse;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AxisOperatorError | null>(null);
   const copy = strings.overview.artifact;
 
   if (!snapshot.data) {
@@ -78,7 +83,12 @@ export function ArtifactPanel({
     }
 
     return (
-      <ErrorPanel detail={copy.error.detail} endpoint={SNAPSHOT_ENDPOINT} title={copy.error.title} />
+      <ErrorPanel
+        detail={copy.error.detail}
+        endpoint={SNAPSHOT_ENDPOINT}
+        reference={snapshot.errorRequestId ?? undefined}
+        title={copy.error.title}
+      />
     );
   }
 
@@ -114,11 +124,10 @@ export function ArtifactPanel({
       setArtifact({ actionLabel: request.action.label, response });
       onArtifactCommitted();
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Axis could not persist the operations artifact.",
-      );
+      setError(toAxisOperatorError(
+        caught,
+        "Axis could not persist the operations artifact.",
+      ));
     } finally {
       setPendingKind(null);
     }
@@ -208,9 +217,11 @@ export function ArtifactPanel({
       ) : null}
 
       {error ? (
-        <p className="m-0 text-sm text-danger" role="status">
-          {error}
-        </p>
+        <ErrorPanel
+          detail={error.message}
+          reference={error.requestId ?? undefined}
+          title="Artifact persistence failed"
+        />
       ) : null}
     </Card>
   );

@@ -13,6 +13,7 @@ import {
   parseAgentRun,
   parseAgentRunList,
 } from "./agent-runs-live";
+import { OPERATIONS_API_PREFIX } from "./tenant-scope";
 
 const runFixture = {
   tenant_id: "tenant_demo_manufacturing",
@@ -62,10 +63,10 @@ const runFixture = {
 describe("agent run live paths", () => {
   it("targets the persisted agent run surfaces", () => {
     expect(agentRunsPath("agent_quality_risk")).toBe(
-      "/demo/manufacturing/agents/agent_quality_risk/runs?page_size=20",
+      `${OPERATIONS_API_PREFIX}/agents/agent_quality_risk/runs?page_size=20`,
     );
     expect(agentRunDetailPath("agent_quality_risk", "run-1")).toBe(
-      "/demo/manufacturing/agents/agent_quality_risk/runs/run-1",
+      `${OPERATIONS_API_PREFIX}/agents/agent_quality_risk/runs/run-1`,
     );
     expect(modelInvocationDetailPath("inv-1")).toBe("/platform/models/invocations/inv-1");
   });

@@ -61,6 +61,46 @@ export class AxisApiDecodeError extends Error {
   }
 }
 
+/** Safe, display-oriented failure metadata retained by mutation UIs. */
+export type AxisOperatorError = {
+  code: string | null;
+  message: string;
+  requestId: string | null;
+  status: number | null;
+};
+
+/**
+ * Reduce a caught value to operator-safe metadata. The raw response body,
+ * decoder cause and arbitrary Error messages are deliberately not retained.
+ */
+export function toAxisOperatorError(
+  caught: unknown,
+  fallbackMessage: string,
+): AxisOperatorError {
+  if (caught instanceof AxisApiError) {
+    return {
+      code: caught.code,
+      message: caught.message,
+      requestId: caught.requestId,
+      status: caught.status,
+    };
+  }
+  if (caught instanceof AxisApiDecodeError) {
+    return {
+      code: null,
+      message: caught.message,
+      requestId: caught.requestId,
+      status: null,
+    };
+  }
+  return {
+    code: null,
+    message: fallbackMessage,
+    requestId: null,
+    status: null,
+  };
+}
+
 export type AxisDecodeIssue = {
   code: string;
   path: string;
@@ -130,7 +170,49 @@ function announceBrowserSessionSignedOut(): void {
   }
 }
 
+/**
+ * Latches once a browser-session refresh has definitively failed.
+ *
+ * Without it an expired session loops forever: the 401 arms a refresh, the
+ * refresh fails, the signed-out event makes the console re-run every live
+ * query, and each of those 401s again — the API rejects without clearing the
+ * `axis_csrf` cookie, so nothing ever disarms the refresh. A tab left open
+ * overnight would wake up hammering the API and never finish loading.
+ *
+ * The latch is cleared only when the readable CSRF cookie changes. A public
+ * endpoint can answer 200 while the browser session is still dead, so response
+ * status alone is not proof that a new cookie session exists. Signing in again
+ * (in this tab or another) rotates the CSRF cookie and re-arms refresh without
+ * a reload.
+ */
+let browserSessionSignedOut = false;
+let signedOutCsrfToken: string | null = null;
+
+/** Test-only: module state outlives individual cases. */
+export function resetBrowserSessionState(): void {
+  browserSessionSignedOut = false;
+  signedOutCsrfToken = null;
+  inflightBrowserSessionRefresh = null;
+}
+
 let inflightBrowserSessionRefresh: Promise<boolean> | null = null;
+
+function markBrowserSessionSignedOut(): void {
+  browserSessionSignedOut = true;
+  signedOutCsrfToken = readCsrfTokenFromCookieHeader(browserCookieHeader());
+  announceBrowserSessionSignedOut();
+}
+
+function clearSignedOutLatchAfterCookieRotation(): void {
+  if (!browserSessionSignedOut) {
+    return;
+  }
+  const currentCsrfToken = readCsrfTokenFromCookieHeader(browserCookieHeader());
+  if (currentCsrfToken !== signedOutCsrfToken) {
+    browserSessionSignedOut = false;
+    signedOutCsrfToken = null;
+  }
+}
 
 async function performBrowserSessionRefresh(): Promise<boolean> {
   const headers = new Headers();
@@ -175,6 +257,10 @@ function shouldAttemptSessionRefresh(
   if (response.status !== 401 || path === SESSION_REFRESH_PATH) {
     return false;
   }
+  // A session already known to be dead must not re-arm the refresh cycle.
+  if (browserSessionSignedOut) {
+    return false;
+  }
   // Bearer-mode requests own their token lifecycle; the cookie refresh
   // endpoint cannot mint bearer credentials for them.
   if (new Headers(init.headers).has("Authorization")) {
@@ -192,13 +278,19 @@ export async function axisFetch(
   const init = buildRequestInit(options);
   const response = await fetch(`${getApiBaseUrl()}${path}`, init);
 
+  // A public or bearer-mode 200 does not prove that a failed browser session is
+  // alive. The API rotates the readable CSRF token with the cookie session, so
+  // that boundary safely detects a fresh sign-in without re-arming on unrelated
+  // responses.
+  clearSignedOutLatchAfterCookieRotation();
+
   if (!shouldAttemptSessionRefresh(response, init, path)) {
     return response;
   }
 
   const refreshed = await refreshBrowserSession();
   if (!refreshed) {
-    announceBrowserSessionSignedOut();
+    markBrowserSessionSignedOut();
     return response;
   }
 
@@ -212,7 +304,7 @@ export async function axisFetch(
   // converge to the signed-out state so the console re-runs its live queries
   // against /identity/session, matching the refresh-failure path above.
   if (shouldAttemptSessionRefresh(retryResponse, retryInit, path)) {
-    announceBrowserSessionSignedOut();
+    markBrowserSessionSignedOut();
   }
   return retryResponse;
 }
@@ -224,14 +316,25 @@ export async function axisFetchParsedJson<T>(
 ): Promise<T> {
   const response = await axisFetch(path, options);
   const body = await readResponseBody(response);
-  const requestId =
-    response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id");
+  const requestId = axisResponseRequestId(response);
 
   if (!response.ok) {
     throw new AxisApiError(path, response.status, { body, requestId });
   }
 
   return decodeAxisJson(path, body, decoder, requestId);
+}
+
+/**
+ * Read the operator-facing correlation reference from an Axis response.
+ *
+ * `x-request-id` is the API contract; `x-correlation-id` remains a compatibility
+ * fallback for older deployments and upstream gateways. Keeping this in the
+ * fetch layer prevents one-off response handlers from silently dropping the
+ * reference or changing the precedence.
+ */
+export function axisResponseRequestId(response: Response): string | null {
+  return response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id");
 }
 
 /** Validate a JSON body already read from an Axis response. */

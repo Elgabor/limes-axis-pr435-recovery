@@ -3,7 +3,12 @@
 import { useState } from "react";
 
 import { useToast } from "@/components/ui/toast";
-import { axisFetchParsedJson } from "@/lib/axis-api";
+import {
+  axisFetchParsedJson,
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
+import { formatContextPath } from "@/lib/format";
 import type { IdentitySessionReadModel } from "@/lib/platform-overview";
 import { strings } from "@/lib/strings";
 import { parseDemoBootstrapResult } from "@/lib/runtime-contracts/bootstrap";
@@ -39,8 +44,8 @@ export type DemoBootstrapSurface = {
 
 export type DemoBootstrapResult = {
   tenant_id: string;
-  scenario: string;
-  plant_name: string;
+  scenario: string | null;
+  plant_name: string | null;
   bootstrapped: boolean;
   surfaces: DemoBootstrapSurface[];
   audit_event_id: string;
@@ -69,7 +74,7 @@ export function useDemoBootstrap() {
     parse: parseIdentitySessionReadModel,
   });
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AxisOperatorError | null>(null);
 
   async function bootstrapDemo() {
     if (pending) {
@@ -90,14 +95,12 @@ export function useDemoBootstrap() {
       );
       push({
         title: strings.onboarding.exploreDemo.toastTitle,
-        detail: `${result.scenario} — ${result.plant_name}`,
+        detail: formatContextPath(result.scenario, result.plant_name),
         tone: "positive",
       });
       triggerRefresh();
     } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : strings.onboarding.exploreDemo.errorFallback,
-      );
+      setError(toAxisOperatorError(caught, strings.onboarding.exploreDemo.errorFallback));
     } finally {
       setPending(false);
     }

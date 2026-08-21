@@ -1,34 +1,52 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, RadioTower } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 import { EntityDetailContent } from "@/components/ontology/entity-detail-content";
-import {
-  useOntologyEntity,
-  type OntologyEntitySource,
-} from "@/components/ontology/use-ontology-entity";
+import { useOntologyEntity } from "@/components/ontology/use-ontology-entity";
 import { PlatformStatusPill } from "@/components/status-pill";
 import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SourcePill } from "@/components/ui/source-pill";
 import { EmptyPanel, ErrorPanel } from "@/components/ui/states";
-import { formatOverviewTimestamp } from "@/lib/platform-overview";
-
-function sourceLabel(source: OntologyEntitySource): string {
-  if (source === "api") {
-    return "API entity detail";
-  }
-
-  if (source === "missing") {
-    return "Entity not found";
-  }
-
-  return source === "loading" ? "Loading entity API" : "Entity API unavailable";
-}
+import { formatContextPath, formatTimestamp } from "@/lib/format";
+import { deriveSourceState } from "@/lib/source-state";
+import { DEMO_TENANT_ID } from "@/lib/tenant-scope";
+import {
+  IDENTITY_SESSION_ENDPOINT,
+  useConsoleTenantScope,
+} from "@/lib/use-console-tenant-scope";
 
 export function OntologyEntityDetail({ nodeId }: { nodeId: string }) {
-  const { detail, source } = useOntologyEntity(nodeId);
+  const { identity, tenantId, tenantQueriesEnabled } = useConsoleTenantScope();
+  const { detail, endpoint, errorRequestId, source } = useOntologyEntity(
+    nodeId,
+    tenantId ?? DEMO_TENANT_ID,
+    tenantQueriesEnabled,
+  );
+
+  if (identity.source === "unavailable") {
+    return (
+      <ErrorPanel
+        detail="The entity is not loaded until the current actor and tenant are verified."
+        endpoint={IDENTITY_SESSION_ENDPOINT}
+        reference={identity.errorRequestId ?? undefined}
+        title="Identity API unavailable"
+      />
+    );
+  }
+
+  if (identity.source === "api" && !tenantId) {
+    return (
+      <ErrorPanel
+        detail="The authenticated identity response does not contain a tenant. Axis will not fall back to a demo entity."
+        endpoint={IDENTITY_SESSION_ENDPOINT}
+        title="Authenticated tenant missing"
+      />
+    );
+  }
 
   if (!detail) {
     if (source === "loading") {
@@ -50,7 +68,8 @@ export function OntologyEntityDetail({ nodeId }: { nodeId: string }) {
       return (
         <ErrorPanel
           detail="Axis did not receive an API-backed ontology entity. Local fallback entity records are disabled."
-          endpoint={`/demo/manufacturing/ontology/entities/${nodeId}`}
+          endpoint={endpoint ?? undefined}
+          reference={errorRequestId ?? undefined}
           title="Entity API unavailable"
         />
       );
@@ -72,20 +91,24 @@ export function OntologyEntityDetail({ nodeId }: { nodeId: string }) {
           <Eyebrow>Ontology Entity</Eyebrow>
           <h2 className="font-display m-0 text-2xl text-ink">{detail.node.label}</h2>
           <p className="m-0 text-sm text-muted">
-            {detail.scenario} / {detail.tenant_id}
+            {formatContextPath(detail.scenario, detail.tenant_id)}
           </p>
         </div>
         <div
           className="flex flex-wrap items-center gap-2"
           aria-label="Entity source and node status"
         >
-          <span className="status-pill signal-ready">
-            <RadioTower size={15} />
-            {sourceLabel(source)}
-          </span>
+          <SourcePill
+            state={deriveSourceState(
+              source === "missing" ? "unavailable" : source,
+              Boolean(detail),
+              detail.provenance,
+            )}
+            subject="ontology entity"
+          />
           <PlatformStatusPill status={detail.node.status} />
           <span className="font-mono text-xs text-muted">
-            {formatOverviewTimestamp(detail.as_of)}
+            {formatTimestamp(detail.as_of)}
           </span>
         </div>
       </Card>

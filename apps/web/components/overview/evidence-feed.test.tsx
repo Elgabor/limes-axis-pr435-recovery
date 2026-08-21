@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { EvidenceFeed } from "./evidence-feed";
 import { auditEventsFixture } from "./overview-fixtures";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 describe("EvidenceFeed", () => {
   it("renders a loading skeleton without any error copy while loading", () => {
@@ -19,7 +20,7 @@ describe("EvidenceFeed", () => {
       screen.getByRole("heading", { name: "Audit evidence API unavailable" }),
     ).toBeInTheDocument();
     // Endpoint stays demoted behind the technical-details expander.
-    expect(screen.queryByText("/demo/manufacturing/audit/events")).not.toBeInTheDocument();
+    expect(screen.queryByText(`${OPERATIONS_API_PREFIX}/audit/events`)).not.toBeInTheDocument();
   });
 
   it("renders the EmptyPanel when the ledger has no events yet", () => {
@@ -45,7 +46,7 @@ describe("EvidenceFeed", () => {
       "/audit?event_id=00000000-0000-4000-8000-000000000004",
     );
     // Actor + event count come straight from the payload.
-    expect(screen.getByText("4 recent events")).toBeInTheDocument();
+    expect(screen.getByText("Showing 4 of 4")).toBeInTheDocument();
     expect(screen.getByText("connector-runtime")).toBeInTheDocument();
   });
 
@@ -53,7 +54,10 @@ describe("EvidenceFeed", () => {
     render(<EvidenceFeed auditEvents={{ data: auditEventsFixture, source: "api" }} />);
 
     expect(
-      screen.getByRole("img", { name: "Recent audit events by category" }),
+      screen.getByRole("img", {
+        name:
+          "Recent audit events by category. approval: 1, connector: 1, workflow: 1, agent: 1.",
+      }),
     ).toBeInTheDocument();
   });
 });

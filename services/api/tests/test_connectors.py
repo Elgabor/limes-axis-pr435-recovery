@@ -1,14 +1,20 @@
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 from runpy import run_path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from axis_api.config import Settings
+from axis_api.connector_manifests import (
+    ConnectorManifestCreateRequest,
+    record_demo_connector_manifest,
+)
+from axis_api.connector_reference import get_persisted_manufacturing_connector_registry
 from axis_api.connectors import (
     ConnectorCsvPreviewRequest,
     ConnectorExternalDbPreviewRequest,
@@ -19,7 +25,12 @@ from axis_api.connectors import (
 from axis_api.db import session_scope
 from axis_api.main import create_app
 from axis_api.models import Base
-from axis_api.persistence import AxisPersistenceRepository, DemoReferenceRecordCreate
+from axis_api.persistence import (
+    AxisPersistenceRepository,
+    ConnectorRunCreate,
+    DemoReferenceRecordCreate,
+    TenantCreate,
+)
 
 
 def persisted_connector_registry_payload() -> dict:
@@ -94,6 +105,14 @@ def bootstrap_connector_registry() -> ManufacturingConnectorRegistry:
     return ManufacturingConnectorRegistry.model_validate(connector_registry_payload())
 
 
+def test_connector_registry_rejects_persisted_origin_without_metadata() -> None:
+    payload = connector_registry_payload()
+    payload["connectors"][0]["registry_origin"] = "persisted_manifest"
+
+    with pytest.raises(ValueError, match="require persistence metadata"):
+        ManufacturingConnectorRegistry.model_validate(payload)
+
+
 def seed_connector_registry_reference(
     factory: sessionmaker[Session],
     payload: dict | None = None,
@@ -123,6 +142,32 @@ def preview_registry_with_connector_ids(
     return ManufacturingConnectorRegistry.model_validate(payload)
 
 
+def create_connector_run(
+    repository: AxisPersistenceRepository,
+    *,
+    tenant_id: str = "tenant_demo_manufacturing",
+    connector_id: str = "persisted_file_csv_assets",
+    run_id: str,
+    status: str,
+    records_read: str,
+    updated_at: datetime,
+) -> None:
+    run = repository.create_connector_run(
+        ConnectorRunCreate(
+            tenant_id=tenant_id,
+            connector_id=connector_id,
+            run_id=run_id,
+            status=status,
+            execution_mode="scheduled_sync_plan",
+            runtime_boundary="axis-connector-sandbox",
+            requested_by="axis-sync-worker-role",
+            result_summary={"records_read": records_read},
+        )
+    )
+    run.updated_at = updated_at
+    repository.session.flush()
+
+
 @pytest.fixture
 def connector_session_factory() -> sessionmaker[Session]:
     engine = create_engine(
@@ -132,6 +177,15 @@ def connector_session_factory() -> sessionmaker[Session]:
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with session_scope(factory) as session:
+        AxisPersistenceRepository(session).create_tenant(
+            TenantCreate(
+                tenant_id="tenant_demo_manufacturing",
+                display_name="Ravenna Works",
+                description="Plant Operations Cockpit",
+                created_by="test",
+            )
+        )
     yield factory
     engine.dispose()
 
@@ -258,26 +312,467 @@ def test_connector_registry_endpoint_returns_persisted_reference_data(
             )
         )
     client = TestClient(app)
-    response = client.get("/demo/manufacturing/connectors")
+    response = client.get(
+        "/demo/manufacturing/connectors",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
 
     assert response.status_code == 200
     body = response.json()
     assert body["tenant_id"] == "tenant_demo_manufacturing"
+    assert body["provenance"] == "reference_scenario"
     assert body["scenario"] == "Persisted Connector Cockpit"
     assert body["connectors"][0]["manifest"]["connector_id"] == "persisted_file_csv_assets"
+    assert body["connectors"][0]["last_successful_sync"] is None
     assert "password" not in str(body).lower()
 
 
-def test_connector_registry_endpoint_reports_missing_reference_record(
+def test_connector_registry_reports_no_sync_observation_for_failed_runs(
+    connector_session_factory: sessionmaker[Session],
+) -> None:
+    seed_connector_registry_reference(
+        connector_session_factory,
+        persisted_connector_registry_payload(),
+    )
+    with session_scope(connector_session_factory) as session:
+        create_connector_run(
+            AxisPersistenceRepository(session),
+            run_id="run_failed",
+            status="sync_execution_failed",
+            records_read="11",
+            updated_at=datetime(2026, 7, 24, 9, 0, tzinfo=UTC),
+        )
+    with session_scope(connector_session_factory) as session:
+        registry = get_persisted_manufacturing_connector_registry(
+            AxisPersistenceRepository(session),
+            "tenant_demo_manufacturing",
+        )
+
+    assert registry.connectors[0].last_successful_sync is None
+
+
+def test_connector_registry_reports_successful_sync_count_and_identity(
+    connector_session_factory: sessionmaker[Session],
+) -> None:
+    seed_connector_registry_reference(
+        connector_session_factory,
+        persisted_connector_registry_payload(),
+    )
+    completed_at = datetime(2026, 7, 24, 10, 30, tzinfo=UTC)
+    with session_scope(connector_session_factory) as session:
+        create_connector_run(
+            AxisPersistenceRepository(session),
+            run_id="run_success",
+            status="sync_execution_completed",
+            records_read="37",
+            updated_at=completed_at,
+        )
+    with session_scope(connector_session_factory) as session:
+        registry = get_persisted_manufacturing_connector_registry(
+            AxisPersistenceRepository(session),
+            "tenant_demo_manufacturing",
+        )
+
+    observation = registry.connectors[0].last_successful_sync
+    assert observation is not None
+    assert observation.run_id == "run_success"
+    assert observation.completed_at == completed_at
+    assert observation.records_read == 37
+
+
+def test_connector_registry_observes_success_for_manifest_only_connector(
+    connector_session_factory: sessionmaker[Session],
+) -> None:
+    registry_payload = connector_registry_payload()
+    seed_connector_registry_reference(connector_session_factory, registry_payload)
+    template = registry_payload["connectors"][1]
+    manifest = {
+        **template["manifest"],
+        "connector_id": "external_db_declarative_sampleless",
+        "display_name": "Declarative sampleless database",
+    }
+    with session_scope(connector_session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        record_demo_connector_manifest(
+            repository,
+            ConnectorManifestCreateRequest(
+                registered_by="platform-connector-owner-role",
+                manifest=manifest,
+                runtime_policy=template["runtime_policy"],
+            ),
+        )
+        create_connector_run(
+            repository,
+            connector_id="external_db_declarative_sampleless",
+            run_id="run_manifest_only_success",
+            status="sync_execution_completed",
+            records_read="29",
+            updated_at=datetime(2026, 7, 24, 11, 0, tzinfo=UTC),
+        )
+        registry = get_persisted_manufacturing_connector_registry(
+            repository,
+            "tenant_demo_manufacturing",
+        )
+
+    connector = next(
+        connector
+        for connector in registry.connectors
+        if connector.manifest.connector_id == "external_db_declarative_sampleless"
+    )
+    assert connector.preview_sample is None
+    assert connector.last_successful_sync is not None
+    assert connector.last_successful_sync.run_id == "run_manifest_only_success"
+    assert connector.last_successful_sync.records_read == 29
+    assert connector.registry_origin == "persisted_manifest"
+    assert connector.persisted_manifest is not None
+    assert connector.persisted_manifest.status == "registered_preview_only"
+
+
+def test_connector_registry_uses_most_recent_successful_sync_completion(
+    connector_session_factory: sessionmaker[Session],
+) -> None:
+    seed_connector_registry_reference(
+        connector_session_factory,
+        persisted_connector_registry_payload(),
+    )
+    with session_scope(connector_session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        create_connector_run(
+            repository,
+            run_id="run_completed_later",
+            status="sync_execution_completed",
+            records_read="41",
+            updated_at=datetime(2026, 7, 24, 12, 0, tzinfo=UTC),
+        )
+        create_connector_run(
+            repository,
+            run_id="run_completed_earlier",
+            status="sync_execution_completed",
+            records_read="19",
+            updated_at=datetime(2026, 7, 24, 11, 0, tzinfo=UTC),
+        )
+    with session_scope(connector_session_factory) as session:
+        registry = get_persisted_manufacturing_connector_registry(
+            AxisPersistenceRepository(session),
+            "tenant_demo_manufacturing",
+        )
+
+    observation = registry.connectors[0].last_successful_sync
+    assert observation is not None
+    assert observation.run_id == "run_completed_later"
+    assert observation.records_read == 41
+
+
+def test_connector_registry_sync_observation_is_derived_without_manifest_write(
+    connector_session_factory: sessionmaker[Session],
+) -> None:
+    payload = persisted_connector_registry_payload()
+    seed_connector_registry_reference(
+        connector_session_factory,
+        payload,
+    )
+    with session_scope(connector_session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        connector = payload["connectors"][0]
+        record_demo_connector_manifest(
+            repository,
+            ConnectorManifestCreateRequest(
+                registered_by="platform-connector-owner-role",
+                manifest=connector["manifest"],
+                runtime_policy=connector["runtime_policy"],
+            ),
+        )
+        manifest_before = repository.get_connector_manifest(
+            "tenant_demo_manufacturing",
+            "persisted_file_csv_assets",
+        )
+        registry_before = get_persisted_manufacturing_connector_registry(
+            repository,
+            "tenant_demo_manufacturing",
+        )
+        assert manifest_before is not None
+        manifest_state_before = {
+            "manifest_payload": deepcopy(manifest_before.manifest_payload),
+            "runtime_policy": deepcopy(manifest_before.runtime_policy),
+            "preview_sample": deepcopy(manifest_before.preview_sample),
+            "updated_at": manifest_before.updated_at,
+        }
+        assert registry_before.connectors[0].last_successful_sync is None
+        assert registry_before.connectors[0].registry_origin == "reference"
+        assert registry_before.connectors[0].persisted_manifest is not None
+
+        create_connector_run(
+            repository,
+            run_id="run_added_after_registry_read",
+            status="sync_execution_completed",
+            records_read="23",
+            updated_at=datetime(2026, 7, 24, 13, 0, tzinfo=UTC),
+        )
+        registry_after = get_persisted_manufacturing_connector_registry(
+            repository,
+            "tenant_demo_manufacturing",
+        )
+        manifest_after = repository.get_connector_manifest(
+            "tenant_demo_manufacturing",
+            "persisted_file_csv_assets",
+        )
+
+    assert registry_after.connectors[0].last_successful_sync is not None
+    assert registry_after.connectors[0].last_successful_sync.records_read == 23
+    assert manifest_after is not None
+    assert {
+        "manifest_payload": manifest_after.manifest_payload,
+        "runtime_policy": manifest_after.runtime_policy,
+        "preview_sample": manifest_after.preview_sample,
+        "updated_at": manifest_after.updated_at,
+    } == manifest_state_before
+    assert "last_successful_sync" not in manifest_after.manifest_payload
+
+
+def test_connector_registry_endpoint_returns_empty_payload_without_reference_record(
     connector_session_factory: sessionmaker[Session],
 ) -> None:
     app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
     app.state.session_factory = connector_session_factory
     client = TestClient(app)
-    response = client.get("/demo/manufacturing/connectors")
+    response = client.get(
+        "/demo/manufacturing/connectors",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
 
-    assert response.status_code == 404
-    assert response.json()["detail"]["code"] == "NOT_FOUND"
+    assert response.status_code == 200
+    assert response.json()["provenance"] == "empty"
+    assert response.json()["connectors"] == []
+
+
+def test_connector_registry_endpoint_composes_live_manifest_without_reference_record(
+    connector_session_factory: sessionmaker[Session],
+) -> None:
+    connector = connector_registry_payload()["connectors"][0]
+    with session_scope(connector_session_factory) as session:
+        record_demo_connector_manifest(
+            AxisPersistenceRepository(session),
+            ConnectorManifestCreateRequest(
+                registered_by="platform-connector-owner-role",
+                manifest=connector["manifest"],
+                runtime_policy=connector["runtime_policy"],
+                preview_sample=connector["preview_sample"],
+            ),
+        )
+
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = connector_session_factory
+    client = TestClient(app)
+
+    response = client.get(
+        "/operations/connectors",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
+    manifest_response = client.get(
+        "/operations/connectors/manifests",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
+
+    assert response.status_code == 200
+    assert manifest_response.status_code == 200
+    manifest_body = manifest_response.json()
+    body = response.json()
+    assert body["provenance"] == "live"
+    assert body["registry_status"] == "ready"
+    assert body["metrics"] == [
+        {
+            "label": "Persisted Manifests",
+            "value": "1",
+            "detail": "Tenant-scoped connector manifest records",
+            "status": "ready",
+        }
+    ]
+    assert [item["manifest"]["connector_id"] for item in body["connectors"]] == [
+        "file_csv_manufacturing_assets"
+    ]
+    assert body["connectors"][0]["connector_status"] == "watch"
+    assert body["connectors"][0]["last_successful_sync"] is None
+    assert body["connectors"][0]["registry_origin"] == "persisted_manifest"
+    assert body["connectors"][0]["persisted_manifest"] == {
+        "manifest_id": manifest_body["manifests"][0]["manifest_id"],
+        "revision_number": 1,
+        "status": "registered_preview_only",
+        "registered_by": "platform-connector-owner-role",
+        "registered_at": manifest_body["manifests"][0]["created_at"],
+        "notes": [],
+    }
+
+    assert [item["connector_id"] for item in manifest_body["manifests"]] == [
+        "file_csv_manufacturing_assets"
+    ]
+    assert "password" not in str(body).lower()
+    assert "credential_value" not in str(body).lower()
+
+
+def test_connector_registry_materializes_full_tenant_view_in_constant_queries(
+    connector_session_factory: sessionmaker[Session],
+) -> None:
+    seed_connector_registry_reference(connector_session_factory)
+    template = connector_registry_payload()["connectors"][0]
+    oldest_connector_id = "file_csv_scale_000"
+    other_tenant_connector_id = "file_csv_other_tenant"
+    with session_scope(connector_session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        for index in range(101):
+            connector_id = f"file_csv_scale_{index:03d}"
+            manifest = deepcopy(template["manifest"])
+            manifest.update(
+                connector_id=connector_id,
+                display_name=f"Scale fixture {index:03d}",
+            )
+            record_demo_connector_manifest(
+                repository,
+                ConnectorManifestCreateRequest(
+                    registered_by="platform-connector-owner-role",
+                    manifest=manifest,
+                    runtime_policy=template["runtime_policy"],
+                    preview_sample=template["preview_sample"],
+                ),
+            )
+
+        other_tenant_manifest = deepcopy(template["manifest"])
+        other_tenant_manifest.update(
+            connector_id=other_tenant_connector_id,
+            display_name="Other tenant scale fixture",
+        )
+        record_demo_connector_manifest(
+            repository,
+            ConnectorManifestCreateRequest(
+                tenant_id="tenant_other",
+                registered_by="platform-connector-owner-role",
+                manifest=other_tenant_manifest,
+                runtime_policy=template["runtime_policy"],
+                preview_sample=template["preview_sample"],
+            ),
+        )
+        create_connector_run(
+            repository,
+            connector_id=oldest_connector_id,
+            run_id="run_scale_oldest",
+            status="sync_execution_completed",
+            records_read="17",
+            updated_at=datetime(2026, 7, 24, 9, 0, tzinfo=UTC),
+        )
+        create_connector_run(
+            repository,
+            connector_id="file_csv_scale_100",
+            run_id="run_scale_newest",
+            status="sync_execution_completed",
+            records_read="31",
+            updated_at=datetime(2026, 7, 24, 10, 0, tzinfo=UTC),
+        )
+        create_connector_run(
+            repository,
+            tenant_id="tenant_other",
+            connector_id=oldest_connector_id,
+            run_id="run_scale_other_tenant",
+            status="sync_execution_completed",
+            records_read="999",
+            updated_at=datetime(2026, 7, 24, 11, 0, tzinfo=UTC),
+        )
+
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = connector_session_factory
+    client = TestClient(app)
+    engine = connector_session_factory.kw["bind"]
+    query_counts = {"connector_manifests": 0, "connector_runs": 0}
+
+    def count_registry_queries(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: bool,
+    ) -> None:
+        normalized_statement = statement.lower()
+        for table_name in query_counts:
+            if f"from {table_name}" in normalized_statement:
+                query_counts[table_name] += 1
+
+    event.listen(engine, "before_cursor_execute", count_registry_queries)
+    try:
+        response = client.get(
+            "/operations/connectors",
+            params={"tenant_id": "tenant_demo_manufacturing"},
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", count_registry_queries)
+
+    assert response.status_code == 200
+    assert query_counts == {"connector_manifests": 1, "connector_runs": 1}
+    body = response.json()
+    connectors_by_id = {
+        connector["manifest"]["connector_id"]: connector
+        for connector in body["connectors"]
+    }
+    assert len(connectors_by_id) == 103
+    assert oldest_connector_id in connectors_by_id
+    assert other_tenant_connector_id not in connectors_by_id
+    reference_connector_id = template["manifest"]["connector_id"]
+    assert connectors_by_id[reference_connector_id]["registry_origin"] == "reference"
+    assert connectors_by_id[reference_connector_id]["persisted_manifest"] is None
+    assert connectors_by_id[oldest_connector_id]["registry_origin"] == (
+        "persisted_manifest"
+    )
+    oldest_persistence = connectors_by_id[oldest_connector_id]["persisted_manifest"]
+    assert oldest_persistence["manifest_id"]
+    assert oldest_persistence["registered_at"]
+    assert oldest_persistence["revision_number"] == 1
+    assert oldest_persistence["status"] == "registered_preview_only"
+    assert oldest_persistence["registered_by"] == "platform-connector-owner-role"
+    assert oldest_persistence["notes"] == []
+    assert connectors_by_id[oldest_connector_id]["last_successful_sync"] == {
+        "run_id": "run_scale_oldest",
+        "completed_at": "2026-07-24T09:00:00Z",
+        "records_read": 17,
+    }
+    assert connectors_by_id["file_csv_scale_100"]["last_successful_sync"] == {
+        "run_id": "run_scale_newest",
+        "completed_at": "2026-07-24T10:00:00Z",
+        "records_read": 31,
+    }
+    persisted_metric = next(
+        metric for metric in body["metrics"] if metric["label"] == "Persisted Manifests"
+    )
+    assert persisted_metric["value"] == "101"
+    connector_metric = next(
+        metric for metric in body["metrics"] if metric["label"] == "Connector Manifests"
+    )
+    assert connector_metric["value"] == "103"
+
+    with session_scope(connector_session_factory) as session:
+        registry = get_persisted_manufacturing_connector_registry(
+            AxisPersistenceRepository(session),
+            "tenant_demo_manufacturing",
+        )
+    preview_sample = template["preview_sample"]
+    csv_content = "\n".join(
+        [
+            ",".join(preview_sample["headers"]),
+            ",".join(
+                preview_sample["sample_rows"][0].get(header, "")
+                for header in preview_sample["headers"]
+            ),
+        ]
+    )
+    preview = preview_file_csv_connector(
+        registry,
+        ConnectorCsvPreviewRequest(
+            tenant_id="tenant_demo_manufacturing",
+            connector_id=oldest_connector_id,
+            file_name="scale-fixture.csv",
+            csv_content=csv_content,
+        ),
+    )
+
+    assert preview.preview_status == "ready"
+    assert preview.accepted_record_count == 1
 
 
 def test_connector_registry_endpoint_rejects_invalid_reference_payload(
@@ -300,7 +795,10 @@ def test_connector_registry_endpoint_rejects_invalid_reference_payload(
             )
         )
     client = TestClient(app)
-    response = client.get("/demo/manufacturing/connectors")
+    response = client.get(
+        "/demo/manufacturing/connectors",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
 
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "VALIDATION_FAILED"
@@ -566,6 +1064,33 @@ def test_external_db_connector_preview_accepts_persisted_manifest_connector_id()
     ]
 
 
+def test_external_db_connector_preview_states_when_sample_was_never_recorded() -> None:
+    payload = connector_registry_payload()
+    payload["connectors"][1]["preview_sample"] = None
+    registry = ManufacturingConnectorRegistry.model_validate(payload)
+
+    preview = preview_external_db_connector(
+        registry,
+        ConnectorExternalDbPreviewRequest(
+            tenant_id="tenant_demo_manufacturing",
+            connector_id="external_db_operational_mirror",
+            connection_profile_id="profile_postgres_ops_readonly",
+            schema_name="operations",
+            table_name="production_orders",
+            selected_columns=["order_id", "asset_id", "status"],
+            sample_limit=2,
+            credential_handle_id="cred_external_db_readonly",
+        ),
+    )
+
+    assert preview.preview_status == "blocked"
+    assert preview.validation_issues == [
+        "No preview sample has been recorded for this connector."
+    ]
+    assert preview.inspected_table.sample_rows == []
+    assert preview.proposed_entities == []
+
+
 def test_connector_registry_endpoint_returns_bootstrap_public_manifest(
     connector_session_factory: sessionmaker[Session],
 ) -> None:
@@ -574,7 +1099,10 @@ def test_connector_registry_endpoint_returns_bootstrap_public_manifest(
     seed_connector_registry_reference(connector_session_factory)
     client = TestClient(app)
 
-    response = client.get("/demo/manufacturing/connectors")
+    response = client.get(
+        "/demo/manufacturing/connectors",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
 
     assert response.status_code == 200
     body = response.json()
@@ -703,6 +1231,94 @@ def test_connector_external_db_preview_endpoint_returns_metadata_only_preview(
     assert "connection_string" not in str(body).lower()
     assert "postgres://" not in str(body).lower()
     assert "password" not in str(body).lower()
+
+
+def test_connector_external_db_preview_endpoint_states_never_sampled_reason(
+    connector_session_factory: sessionmaker[Session],
+) -> None:
+    payload = connector_registry_payload()
+    payload["connectors"][1]["preview_sample"] = None
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = connector_session_factory
+    seed_connector_registry_reference(connector_session_factory, payload)
+    client = TestClient(app)
+
+    response = client.post(
+        "/operations/connectors/external-db/preview",
+        json={
+            "tenant_id": "tenant_demo_manufacturing",
+            "connector_id": "external_db_operational_mirror",
+            "connection_profile_id": "profile_postgres_ops_readonly",
+            "schema_name": "operations",
+            "table_name": "production_orders",
+            "selected_columns": ["order_id", "asset_id", "status"],
+            "sample_limit": 2,
+            "credential_handle_id": "cred_external_db_readonly",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["preview_status"] == "blocked"
+    assert response.json()["validation_issues"] == [
+        "No preview sample has been recorded for this connector."
+    ]
+    assert response.json()["inspected_table"]["sample_rows"] == []
+
+
+def test_connector_external_db_preview_endpoint_uses_sampleless_registered_manifest(
+    connector_session_factory: sessionmaker[Session],
+) -> None:
+    registry_payload = connector_registry_payload()
+    template = registry_payload["connectors"][1]
+    manifest = {
+        **template["manifest"],
+        "connector_id": "external_db_declarative_sampleless",
+        "display_name": "Declarative sampleless database",
+    }
+    with session_scope(connector_session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        repository.upsert_demo_reference_record(
+            DemoReferenceRecordCreate(
+                tenant_id="tenant_demo_manufacturing",
+                surface="connectors",
+                reference_id="manufacturing-connector-registry",
+                status="active",
+                source="bootstrap",
+                version="2026-06-22",
+                payload=registry_payload,
+            )
+        )
+        record_demo_connector_manifest(
+            repository,
+            ConnectorManifestCreateRequest(
+                registered_by="platform-connector-owner-role",
+                manifest=manifest,
+                runtime_policy=template["runtime_policy"],
+            ),
+        )
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = connector_session_factory
+    client = TestClient(app)
+
+    response = client.post(
+        "/operations/connectors/external-db/preview",
+        json={
+            "tenant_id": "tenant_demo_manufacturing",
+            "connector_id": "external_db_declarative_sampleless",
+            "connection_profile_id": "profile_postgres_ops_readonly",
+            "schema_name": "operations",
+            "table_name": "production_orders",
+            "selected_columns": ["order_id", "asset_id", "status"],
+            "sample_limit": 2,
+            "credential_handle_id": "cred_external_db_readonly",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["validation_issues"] == [
+        "No preview sample has been recorded for this connector."
+    ]
+    assert response.json()["inspected_table"]["sample_rows"] == []
 
 
 def test_connector_external_db_preview_endpoint_reports_missing_registry_reference(

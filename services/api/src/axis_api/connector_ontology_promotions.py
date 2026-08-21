@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from axis_api.audit import AuditEventCreate
 from axis_api.connector_ontology_proposals import ConnectorOntologyProposalRecord
-from axis_api.connector_reference import get_persisted_manufacturing_connector_registry
+from axis_api.connector_reference import require_persisted_manufacturing_connector_registry
 from axis_api.ontology.mutations import (
     DeferredOntologyMutationRuntime,
     OntologyMutationError,
@@ -365,7 +365,9 @@ def _manifest_for_connector(
     tenant_id: str,
     connector_id: str,
 ):
-    registry = get_persisted_manufacturing_connector_registry(repository, tenant_id=tenant_id)
+    registry = require_persisted_manufacturing_connector_registry(
+        repository, tenant_id=tenant_id
+    )
     for connector in registry.connectors:
         if connector.manifest.connector_id == connector_id:
             return connector.manifest

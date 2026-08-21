@@ -8,6 +8,7 @@ from axis_api.config import Settings
 from axis_api.object_storage import ObjectLockCapability, build_object_store_readiness
 from axis_api.oidc_code_flow import post_logout_redirect_uri, redirect_uri
 from axis_api.telemetry import observability_posture
+from axis_api.tenant_admission import TENANT_ADMISSION_REGISTERED_ONLY
 
 OIDC_SESSION_COOKIE_MAX_TTL_SECONDS = 12 * 60 * 60
 SUPPORTED_DEPLOYMENT_TENANCY_MODES = {
@@ -26,6 +27,7 @@ class DeploymentReadinessCheck(BaseModel):
 
 
 class DeploymentReadinessCapabilities(BaseModel):
+    tenant_admission_mode: str = Field(min_length=1)
     oidc_session_cookie_secure: bool
     oidc_session_cookie_signing_secret_configured: bool
     oidc_session_cookie_ttl_seconds: int = Field(ge=0)
@@ -227,6 +229,7 @@ def build_deployment_readiness_report(
     )
 
     capabilities = DeploymentReadinessCapabilities(
+        tenant_admission_mode=settings.tenant_admission_mode,
         oidc_session_cookie_secure=settings.oidc_session_cookie_secure,
         oidc_session_cookie_signing_secret_configured=bool(
             settings.oidc_session_cookie_signing_secret
@@ -316,6 +319,19 @@ def build_deployment_readiness_report(
                 "OIDC browser sessions are not production-ready; require Secure cookies, "
                 "an operator-provided signing secret, a bounded TTL and HTTPS "
                 "API/public/redirect URLs."
+            ),
+        ),
+        _check(
+            "registered_tenant_admission",
+            settings.tenant_admission_mode == TENANT_ADMISSION_REGISTERED_ONLY,
+            (
+                "Authenticated principals are admitted only when their tenant is "
+                "registered and active."
+            ),
+            (
+                "Tenant admission trusts identity-provider claims without requiring a "
+                "registered tenant; use AXIS_TENANT_ADMISSION_MODE=registered_only "
+                "before production."
             ),
         ),
         _check(

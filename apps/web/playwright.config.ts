@@ -1,10 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
-const baseURL = "http://127.0.0.1:3100";
+const port = process.env.AXIS_E2E_PORT ?? "3100";
+const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
+  failOnFlakyTests: Boolean(process.env.CI),
   fullyParallel: true,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
@@ -13,7 +15,7 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: "pnpm exec next start --hostname 127.0.0.1 --port 3100",
+    command: `pnpm exec next start --hostname 127.0.0.1 --port ${port}`,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 30_000,
@@ -30,6 +32,14 @@ export default defineConfig({
       name: "mobile",
       use: {
         ...devices["Pixel 7"],
+        launchOptions: executablePath ? { executablePath } : undefined,
+      },
+    },
+    {
+      name: "tablet",
+      use: {
+        ...devices["iPad (gen 7)"],
+        browserName: "chromium",
         launchOptions: executablePath ? { executablePath } : undefined,
       },
     },

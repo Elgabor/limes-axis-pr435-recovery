@@ -4,6 +4,11 @@ import { useState, type FormEvent } from "react";
 import { GitBranchPlus } from "lucide-react";
 
 import { PolicyConditionFields } from "@/components/policy-condition-fields";
+import { Field } from "@/components/ui/field";
+import { InlineOperatorError } from "@/components/ui/inline-operator-error";
+import { Input, Textarea } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { toAxisOperatorError, type AxisOperatorError } from "@/lib/axis-api";
 import {
   buildPolicyRevisePayload,
   draftFromPolicyRecord,
@@ -11,6 +16,7 @@ import {
   platformPolicyReviseScope,
   policyEffectLabel,
   policyScopeLabel,
+  policyWriteOperatorError,
   revisePlatformPolicy,
   validatePolicyDraft,
   type PlatformPolicyRecord,
@@ -22,17 +28,14 @@ import { safeRandomUuid } from "@/lib/ids";
 import { strings } from "@/lib/strings";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
-import { Field } from "@/components/ui/field";
-import { Input, Textarea } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 
 type SubmissionState =
   | { phase: "idle" }
   | { phase: "saving" }
   | { phase: "created"; record: PlatformPolicyRecord }
   | { phase: "replayed"; record: PlatformPolicyRecord }
-  | { phase: "conflict"; message: string }
-  | { phase: "failed"; message: string };
+  | { phase: "conflict"; error: AxisOperatorError }
+  | { phase: "failed"; error: AxisOperatorError };
 
 export function PolicyReviseForm({
   tenantId,
@@ -67,7 +70,10 @@ export function PolicyReviseForm({
     if (Object.keys(validationErrors).length > 0) {
       setSubmission({
         phase: "failed",
-        message: "Fix the highlighted fields; nothing was sent to the API.",
+        error: toAxisOperatorError(
+          null,
+          "Fix the highlighted fields; nothing was sent to the API.",
+        ),
       });
       return;
     }
@@ -101,35 +107,44 @@ export function PolicyReviseForm({
         setIdempotencyKey(safeRandomUuid());
         setSubmission({
           phase: "conflict",
-          message: `${result.message} A fresh idempotency key was generated for the next attempt.`,
+          error: policyWriteOperatorError(
+            result,
+            `${result.message} A fresh idempotency key was generated for the next attempt.`,
+          ),
         });
         return;
       }
 
       if (result.kind === "invalid") {
         setFieldErrors(result.fieldErrors);
-        setSubmission({ phase: "failed", message: result.message });
+        setSubmission({ phase: "failed", error: policyWriteOperatorError(result) });
         return;
       }
 
       if (result.kind === "forbidden") {
         setSubmission({
           phase: "failed",
-          message: result.requiredPermission
-            ? `${result.message} Required permission: ${result.requiredPermission}.`
-            : result.message,
+          error: policyWriteOperatorError(
+            result,
+            result.requiredPermission
+              ? `${result.message} Required permission: ${result.requiredPermission}.`
+              : result.message,
+          ),
         });
         return;
       }
 
-      setSubmission({ phase: "failed", message: result.message });
-    } catch {
-      setSubmission({ phase: "failed", message: "Policy revision API is unavailable." });
+      setSubmission({ phase: "failed", error: policyWriteOperatorError(result) });
+    } catch (caught) {
+      setSubmission({
+        phase: "failed",
+        error: toAxisOperatorError(caught, "Policy revision API is unavailable."),
+      });
     }
   }
 
   return (
-    <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+    <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
       <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-line/60 py-3 first:border-t-0 dark:border-white/10">
         <div>
           <p className="eyebrow m-0">Revise Policy</p>
@@ -249,14 +264,10 @@ export function PolicyReviseForm({
         </p>
       ) : null}
       {submission.phase === "conflict" ? (
-        <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-danger break-words" role="alert">
-          Revision conflict: {submission.message}
-        </p>
+        <InlineOperatorError error={submission.error} prefix="Revision conflict" />
       ) : null}
       {submission.phase === "failed" ? (
-        <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-danger break-words" role="alert">
-          Policy revision failed: {submission.message}
-        </p>
+        <InlineOperatorError error={submission.error} prefix="Policy revision failed" />
       ) : null}
     </section>
   );

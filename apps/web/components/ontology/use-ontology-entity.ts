@@ -2,71 +2,100 @@
 
 import { useEffect, useState } from "react";
 
-import { axisFetch, decodeAxisJson } from "@/lib/axis-api";
+import {
+  axisFetchParsedJson,
+  toAxisOperatorError,
+} from "@/lib/axis-api";
 import type { ManufacturingOntologyEntityDetail } from "@/lib/ontology-demo";
 import { parseManufacturingOntologyEntityDetail } from "@/lib/runtime-contracts/ontology";
+import { buildTenantScopedPath, OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
 
 export type OntologyEntitySource = "loading" | "api" | "unavailable" | "missing";
 
 type OntologyEntityResult = {
-  nodeId: string;
+  queryKey: string;
   detail: ManufacturingOntologyEntityDetail | null;
+  errorRequestId: string | null;
   source: OntologyEntitySource;
 };
+
+export function buildOntologyEntityPath(nodeId: string, tenantId: string): string {
+  return buildTenantScopedPath(
+    `${OPERATIONS_API_PREFIX}/ontology/entities/${encodeURIComponent(nodeId)}`,
+    tenantId,
+  );
+}
 
 /**
  * Fetch a single ontology entity detail from the Axis API. Shared by the
  * full entity page and the explorer slide-over; passing `null` keeps the
  * hook idle (nothing is fetched while the slide-over is closed).
  *
- * The result is keyed by node id, so switching entities reports "loading"
- * immediately instead of flashing the previous entity.
+ * The result is keyed by the tenant-scoped request path, so switching either
+ * tenant or entity reports "loading" instead of exposing the previous scope.
  */
-export function useOntologyEntity(nodeId: string | null) {
+export function useOntologyEntity(
+  nodeId: string | null,
+  tenantId: string,
+  enabled = true,
+) {
   const [result, setResult] = useState<OntologyEntityResult | null>(null);
   const { session } = useOidcConsoleSession();
   const { refreshNonce } = useConsole();
+  const entityPath = nodeId ? buildOntologyEntityPath(nodeId, tenantId) : null;
 
   useEffect(() => {
-    if (!nodeId) {
+    const queryKey = entityPath;
+    if (!nodeId || !queryKey || !enabled) {
       return;
     }
+    const requestedPath: string = queryKey;
 
     const controller = new AbortController();
 
     async function fetchEntity() {
       try {
-        const response = await axisFetch(
-          `/demo/manufacturing/ontology/entities/${encodeURIComponent(nodeId!)}`,
+        const detail = await axisFetchParsedJson(
+          requestedPath,
+          (value) => {
+            const parsed = parseManufacturingOntologyEntityDetail(value);
+            if (parsed.tenant_id !== tenantId) {
+              throw new Error(`Ontology entity tenant does not match ${tenantId}.`);
+            }
+            return parsed;
+          },
           {
             session,
             signal: controller.signal,
           },
         );
-
-        if (response.status === 404) {
-          setResult({ nodeId: nodeId!, detail: null, source: "missing" });
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error(`Ontology entity request failed with ${response.status}`);
-        }
-
-        const detail = decodeAxisJson(
-          `/demo/manufacturing/ontology/entities/${encodeURIComponent(nodeId!)}`,
-          await response.json(),
-          parseManufacturingOntologyEntityDetail,
-          response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id"),
-        );
-        setResult({ nodeId: nodeId!, detail, source: "api" });
-      } catch {
+        setResult({
+          queryKey: requestedPath,
+          detail,
+          errorRequestId: null,
+          source: "api",
+        });
+      } catch (caught) {
         if (!controller.signal.aborted) {
+          const failure = toAxisOperatorError(
+            caught,
+            "Axis could not load this ontology entity.",
+          );
+          if (failure.status === 404) {
+            setResult({
+              queryKey: requestedPath,
+              detail: null,
+              errorRequestId: null,
+              source: "missing",
+            });
+            return;
+          }
           setResult((current) => ({
-            nodeId: nodeId!,
-            detail: current?.nodeId === nodeId ? current.detail : null,
+            queryKey: requestedPath,
+            detail: current?.queryKey === requestedPath ? current.detail : null,
+            errorRequestId: failure.requestId,
             source: "unavailable",
           }));
         }
@@ -76,11 +105,21 @@ export function useOntologyEntity(nodeId: string | null) {
     void fetchEntity();
 
     return () => controller.abort();
-  }, [nodeId, session, refreshNonce]);
+  }, [enabled, entityPath, nodeId, refreshNonce, session, tenantId]);
 
-  if (!nodeId || result?.nodeId !== nodeId) {
-    return { detail: null, source: "loading" as const };
+  if (!nodeId || !entityPath || !enabled || result?.queryKey !== entityPath) {
+    return {
+      detail: null,
+      endpoint: entityPath,
+      errorRequestId: null,
+      source: "loading" as const,
+    };
   }
 
-  return { detail: result.detail, source: result.source };
+  return {
+    detail: result.detail,
+    endpoint: entityPath,
+    errorRequestId: result.errorRequestId,
+    source: result.source,
+  };
 }

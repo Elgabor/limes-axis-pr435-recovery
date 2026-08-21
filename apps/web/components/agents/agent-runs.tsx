@@ -32,6 +32,7 @@ import {
 import { strings } from "@/lib/strings";
 import { useAxisQuery } from "@/lib/use-axis-query";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 function RunRailMarker({ state }: { state: AgentRunRailState }) {
   return (
@@ -41,7 +42,7 @@ function RunRailMarker({ state }: { state: AgentRunRailState }) {
         "inline-block size-2.5 shrink-0 rotate-45",
         state === "done" && "bg-signal",
         state === "current" && "border-2 border-signal bg-transparent",
-        state === "failed" && "border-2 border-[rgb(var(--signal-action-required,220_38_38))] bg-transparent",
+        state === "failed" && "border-2 border-danger bg-transparent",
         state === "pending" && "border border-mist bg-transparent dark:border-white/25",
       )}
       style={
@@ -80,7 +81,11 @@ function AgentRunRail({ run }: { run: AgentRunRecord }) {
             <p
               className={cn(
                 "m-0 font-mono text-[10.5px] tracking-[0.14em] uppercase",
-                stage.state === "pending" ? "text-muted" : "text-signal",
+                stage.state === "pending"
+                  ? "text-muted"
+                  : stage.state === "failed"
+                    ? "text-danger"
+                    : "text-signal",
               )}
             >
               {stage.label}
@@ -182,6 +187,7 @@ function AgentRunDetail({ agentId, run }: { agentId: string; run: AgentRunRecord
         <ErrorPanel
           detail={strings.agents.runs.detailError.detail}
           endpoint={agentRunDetailPath(agentId, run.run_id)}
+          reference={detailQuery.errorRequestId ?? undefined}
           title={strings.agents.runs.detailError.title}
         />
       )}
@@ -279,13 +285,23 @@ function AgentRunDetail({ agentId, run }: { agentId: string; run: AgentRunRecord
  * mounts. Renders exclusively API-backed rows — empty and unavailable states
  * stay honest, run timelines are never fabricated.
  */
-export function AgentRuns({ agentId }: { agentId: string }) {
-  const [selectedRunId, setSelectedRunId] = useState("");
+export function AgentRuns({
+  agentId,
+  onSelect,
+  selectedRunId,
+}: {
+  agentId: string;
+  onSelect?: (runId: string) => void;
+  selectedRunId?: string;
+}) {
+  const [internalSelectedRunId, setInternalSelectedRunId] = useState("");
+  const resolvedSelectedRunId = selectedRunId ?? internalSelectedRunId;
   const runsQuery = useAxisQuery(agentRunsPath(agentId), { parse: parseAgentRunList });
   const runList = runsQuery.data;
 
-  const selectedRun =
-    runList?.runs.find((run) => run.run_id === selectedRunId) ?? runList?.runs[0] ?? null;
+  const selectedRun = resolvedSelectedRunId
+    ? runList?.runs.find((run) => run.run_id === resolvedSelectedRunId) ?? null
+    : runList?.runs[0] ?? null;
   const deferredCount = runList
     ? runList.runs.filter((run) => isDeferredAgentRunStatus(run.status)).length
     : 0;
@@ -303,7 +319,8 @@ export function AgentRuns({ agentId }: { agentId: string }) {
     return (
       <ErrorPanel
         detail={strings.agents.runs.error.detail}
-        endpoint={`/demo/manufacturing/agents/${agentId}/runs`}
+        endpoint={`${OPERATIONS_API_PREFIX}/agents/${agentId}/runs`}
+        reference={runsQuery.errorRequestId ?? undefined}
         title={strings.agents.runs.error.title}
       />
     );
@@ -314,6 +331,15 @@ export function AgentRuns({ agentId }: { agentId: string }) {
       <EmptyPanel
         detail={strings.agents.runs.empty.detail}
         title={strings.agents.runs.empty.title}
+      />
+    );
+  }
+
+  if (resolvedSelectedRunId && !selectedRun) {
+    return (
+      <EmptyPanel
+        detail={strings.states.requestedRecord.detail}
+        title={strings.states.requestedRecord.title}
       />
     );
   }
@@ -351,7 +377,12 @@ export function AgentRuns({ agentId }: { agentId: string }) {
               )}
               data-run-id={run.run_id}
               key={run.run_id}
-              onClick={() => setSelectedRunId(run.run_id)}
+              onClick={() => {
+                if (selectedRunId === undefined) {
+                  setInternalSelectedRunId(run.run_id);
+                }
+                onSelect?.(run.run_id);
+              }}
               type="button"
             >
               <span>

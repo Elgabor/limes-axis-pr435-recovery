@@ -18,6 +18,7 @@ const actionRegistryFixture: ManufacturingActionRegistry = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Plant",
   scenario: "Runtime contract fixture",
+  provenance: "reference_scenario",
   as_of: "2026-06-22T09:00:00+02:00",
   registry_status: "ready",
   schema_version: "2026-06-22",

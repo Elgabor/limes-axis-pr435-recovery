@@ -30,6 +30,7 @@ describe("platform overview helpers", () => {
       tenant_id: "tenant_demo_manufacturing",
       plant_name: "Ravenna Works",
       scenario: "daily-operations-demo",
+      provenance: "live",
       as_of: "2026-06-22T09:00:00+02:00",
       metrics: [],
       domain_snapshots: [

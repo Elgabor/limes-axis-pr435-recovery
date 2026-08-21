@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, CircleDashed, CircleX, Loader2, ShieldCheck } from "lucide-react";
 
@@ -8,18 +8,21 @@ import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/data-table";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { ErrorPanel, LoadingPanel } from "@/components/ui/states";
-import { axisFetch, decodeAxisJson } from "@/lib/axis-api";
+import {
+  axisFetchParsedJson,
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
 import { buildAuditEventHref } from "@/lib/audit-demo";
 import { cn } from "@/lib/cn";
+import { formatDateTime, formatNumber } from "@/lib/format";
 import {
   buildCsvFromPreviewSample,
   buildExternalDbPreviewRequest,
   buildPreviewSyncPlan,
   CONNECTOR_CONSOLE_ACTOR,
-  CONNECTOR_TENANT_ID,
   findActiveLeaseForConnector,
   manifestAllowsRuns,
-  manifestRecordForConnector,
 } from "@/lib/connectors-console";
 import {
   formatConnectorLabel,
@@ -36,11 +39,10 @@ import {
 } from "@/lib/runtime-contracts/connectors";
 import type { IdentitySessionReadModel } from "@/lib/platform-overview";
 import { strings } from "@/lib/strings";
-import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
-import { useAxisQuery } from "@/lib/use-axis-query";
 import type { ConnectorRegistries } from "@/lib/use-connector-registries";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 /*
  * Runs tab: recorded governed runs plus two real actions against the live
@@ -50,9 +52,9 @@ import { useConsole } from "@/providers/console-provider";
  * links to the audit evidence it wrote.
  */
 
-const CSV_PREVIEW_ENDPOINT = "/demo/manufacturing/connectors/file-csv/preview";
-const DB_PREVIEW_ENDPOINT = "/demo/manufacturing/connectors/external-db/preview";
-const RUNS_ENDPOINT = "/demo/manufacturing/connectors/runs";
+const CSV_PREVIEW_ENDPOINT = `${OPERATIONS_API_PREFIX}/connectors/file-csv/preview`;
+const DB_PREVIEW_ENDPOINT = `${OPERATIONS_API_PREFIX}/connectors/external-db/preview`;
+const RUNS_ENDPOINT = `${OPERATIONS_API_PREFIX}/connectors/runs`;
 
 type StageKey = "create" | "dispatch" | "execute";
 type StageStatus = "idle" | "pending" | "success" | "failure";
@@ -62,7 +64,7 @@ type StageState = {
   /** Status string reported by the API response for this stage. */
   resultStatus?: string;
   auditEventId?: string | null;
-  errorDetail?: string;
+  error?: AxisOperatorError;
 };
 
 type StepperState = Record<StageKey, StageState>;
@@ -76,32 +78,7 @@ const IDLE_STEPPER: StepperState = {
 type ValidateOutcome =
   | { kind: "csv"; result: ConnectorCsvPreviewResult }
   | { kind: "db"; result: ConnectorExternalDbPreviewResult }
-  | { kind: "error" };
-
-async function readApiErrorMessage(response: Response): Promise<string> {
-  try {
-    const payload = (await response.json()) as {
-      detail?: { message?: string; reason?: string; required_permission?: string };
-    };
-    return (
-      payload.detail?.message
-      ?? payload.detail?.reason
-      ?? payload.detail?.required_permission
-      ?? `Request failed with ${response.status}`
-    );
-  } catch {
-    return `Request failed with ${response.status}`;
-  }
-}
-
-function formatRunTime(value: string): string {
-  return new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
-}
+  | { kind: "error"; error: AxisOperatorError };
 
 function StageIcon({ status }: { status: StageStatus }) {
   if (status === "success") {
@@ -118,24 +95,33 @@ function StageIcon({ status }: { status: StageStatus }) {
 
 export function ConnectorRuns({
   connector,
+  identitySession,
   registries,
+  tenantId,
 }: {
   connector: ConnectorRegistryItem;
+  identitySession: IdentitySessionReadModel | null;
   registries: ConnectorRegistries;
+  tenantId: string;
 }) {
   const copy = strings.connectors.runs;
   const connectorId = connector.manifest.connector_id;
   const { session } = useOidcConsoleSession();
   const { triggerRefresh } = useConsole();
-  const { data: identitySession } = useAxisQuery<IdentitySessionReadModel>(
-    "/identity/session",
-    { parse: parseIdentitySessionReadModel },
-  );
-
   const [validating, setValidating] = useState(false);
   const [validateOutcome, setValidateOutcome] = useState<ValidateOutcome | null>(null);
   const [stepper, setStepper] = useState<StepperState>(IDLE_STEPPER);
   const [syncRunning, setSyncRunning] = useState(false);
+  // Latest selected connector id, readable from inside an in-flight
+  // `validate()` call so its response can be dropped if the operator
+  // switches connectors before the preview endpoint responds.
+  const connectorIdRef = useRef(connectorId);
+
+  // Synced in an effect: assigning to a ref during render is unsafe under
+  // concurrent rendering.
+  useEffect(() => {
+    connectorIdRef.current = connectorId;
+  }, [connectorId]);
 
   const runsQuery = registries.runs;
   const connectorRuns = (runsQuery.data?.runs ?? [])
@@ -148,10 +134,7 @@ export function ConnectorRuns({
     connectorId,
     new Date(),
   );
-  const manifestRecord = registries.manifests.data
-    ? manifestRecordForConnector(registries.manifests.data.manifests, connectorId)
-    : null;
-  const runsAllowed = manifestAllowsRuns(manifestRecord);
+  const runsAllowed = manifestAllowsRuns(connector.persisted_manifest);
   // Gate only when the API enforces OIDC (see the wizard's identical rule).
   const ssoBlocked = identitySession != null
     && identitySession.api_auth_required
@@ -166,64 +149,84 @@ export function ConnectorRuns({
         : null;
 
   async function validate() {
+    // Captured at call time so a response that arrives after the operator
+    // has selected a different connector can be told apart from a response
+    // for the connector that is still selected — otherwise connector A's
+    // "Validation passed" result could commit into connector B's panel.
+    const requestedConnectorId = connectorId;
+    function commitOutcome(outcome: ValidateOutcome) {
+      if (connectorIdRef.current === requestedConnectorId) {
+        setValidateOutcome(outcome);
+      }
+    }
+
     setValidating(true);
     setValidateOutcome(null);
     try {
       if (connector.manifest.connector_type === "external_db") {
-        const response = await axisFetch(DB_PREVIEW_ENDPOINT, {
-          method: "POST",
-          session,
-          body: buildExternalDbPreviewRequest({
-            tenantId: CONNECTOR_TENANT_ID,
-            connectorId,
-            connectionProfileId: "profile_postgres_ops_readonly",
-            schemaName: "operations",
-            tableName: "production_orders",
-            credentialHandleId: "cred_external_db_readonly",
-            template: connector,
-          }),
-        });
-        if (!response.ok) {
-          setValidateOutcome({ kind: "error" });
-          return;
-        }
-        setValidateOutcome({
-          kind: "db",
-          result: decodeAxisJson(
-            DB_PREVIEW_ENDPOINT,
-            await response.json(),
-            parseConnectorExternalDbPreviewResult,
-            response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id"),
+        const result = await axisFetchParsedJson<ConnectorExternalDbPreviewResult>(
+          DB_PREVIEW_ENDPOINT,
+          (value) => {
+            const parsed = parseConnectorExternalDbPreviewResult(value);
+            if (parsed.tenant_id !== tenantId) {
+              throw new Error("Connector preview response tenant mismatch.");
+            }
+            return parsed;
+          },
+          {
+            method: "POST",
+            session,
+            body: buildExternalDbPreviewRequest({
+              tenantId,
+              connectorId,
+              connectionProfileId: "profile_postgres_ops_readonly",
+              schemaName: "operations",
+              tableName: "production_orders",
+              credentialHandleId: "cred_external_db_readonly",
+              template: connector,
+            }),
+          },
+        );
+        commitOutcome({ kind: "db", result });
+        return;
+      }
+
+      if (!connector.preview_sample) {
+        commitOutcome({
+          kind: "error",
+          error: toAxisOperatorError(
+            null,
+            "This connector does not expose a recorded preview sample.",
           ),
         });
         return;
       }
-
-      const response = await axisFetch(CSV_PREVIEW_ENDPOINT, {
-        method: "POST",
-        session,
-        body: {
-          tenant_id: CONNECTOR_TENANT_ID,
-          connector_id: connectorId,
-          file_name: connector.preview_sample.file_name,
-          csv_content: buildCsvFromPreviewSample(connector.preview_sample),
+      const result = await axisFetchParsedJson<ConnectorCsvPreviewResult>(
+        CSV_PREVIEW_ENDPOINT,
+        (value) => {
+          const parsed = parseConnectorCsvPreviewResult(value);
+          if (parsed.tenant_id !== tenantId) {
+            throw new Error("Connector preview response tenant mismatch.");
+          }
+          return parsed;
         },
+        {
+          method: "POST",
+          session,
+          body: {
+            tenant_id: tenantId,
+            connector_id: connectorId,
+            file_name: connector.preview_sample.file_name,
+            csv_content: buildCsvFromPreviewSample(connector.preview_sample),
+          },
+        },
+      );
+      commitOutcome({ kind: "csv", result });
+    } catch (caught) {
+      commitOutcome({
+        kind: "error",
+        error: toAxisOperatorError(caught, "Connector validation API unavailable."),
       });
-      if (!response.ok) {
-        setValidateOutcome({ kind: "error" });
-        return;
-      }
-      setValidateOutcome({
-        kind: "csv",
-        result: decodeAxisJson(
-          CSV_PREVIEW_ENDPOINT,
-          await response.json(),
-          parseConnectorCsvPreviewResult,
-          response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id"),
-        ),
-      });
-    } catch {
-      setValidateOutcome({ kind: "error" });
     } finally {
       setValidating(false);
     }
@@ -236,20 +239,16 @@ export function ConnectorRuns({
   ): Promise<ConnectorRunRecord | null> {
     setStepper((current) => ({ ...current, [key]: { status: "pending" } }));
     try {
-      const response = await axisFetch(path, { method: "POST", session, body });
-      if (!response.ok) {
-        const errorDetail = await readApiErrorMessage(response);
-        setStepper((current) => ({
-          ...current,
-          [key]: { status: "failure", errorDetail },
-        }));
-        return null;
-      }
-      const record = decodeAxisJson(
+      const record = await axisFetchParsedJson<ConnectorRunRecord>(
         path,
-        await response.json(),
-        parseConnectorRunRecord,
-        response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id"),
+        (value) => {
+          const parsed = parseConnectorRunRecord(value);
+          if (parsed.tenant_id !== tenantId) {
+            throw new Error("Connector run response tenant mismatch.");
+          }
+          return parsed;
+        },
+        { method: "POST", session, body },
       );
       const resultStatus =
         key === "create"
@@ -266,10 +265,13 @@ export function ConnectorRuns({
         },
       }));
       return record;
-    } catch {
+    } catch (caught) {
       setStepper((current) => ({
         ...current,
-        [key]: { status: "failure", errorDetail: "The Axis API request failed." },
+        [key]: {
+          status: "failure",
+          error: toAxisOperatorError(caught, "The Axis API request failed."),
+        },
       }));
       return null;
     }
@@ -283,7 +285,7 @@ export function ConnectorRuns({
     setStepper(IDLE_STEPPER);
 
     const plan = buildPreviewSyncPlan({
-      tenantId: CONNECTOR_TENANT_ID,
+      tenantId,
       connectorId,
       actorId,
       lease,
@@ -356,7 +358,11 @@ export function ConnectorRuns({
       ) : null}
 
       {validateOutcome?.kind === "error" ? (
-        <ErrorPanel title={copy.validate.error} />
+        <ErrorPanel
+          detail={validateOutcome.error.message}
+          reference={validateOutcome.error.requestId ?? undefined}
+          title={copy.validate.error}
+        />
       ) : null}
       {validateOutcome && validateOutcome.kind !== "error" ? (
         <div
@@ -375,10 +381,10 @@ export function ConnectorRuns({
           </p>
           <p className="m-0 text-sm text-muted">
             {validateOutcome.kind === "csv"
-              ? `${validateOutcome.result.record_count} ${copy.validate.rows} / ` +
-                `${validateOutcome.result.accepted_record_count} ${copy.validate.accepted} / ` +
-                `${validateOutcome.result.rejected_record_count} ${copy.validate.rejected}`
-              : `${validateOutcome.result.inspected_table.columns.length} ${copy.validate.columnsChecked} / ` +
+              ? `${formatNumber(validateOutcome.result.record_count)} ${copy.validate.rows} / ` +
+                `${formatNumber(validateOutcome.result.accepted_record_count)} ${copy.validate.accepted} / ` +
+                `${formatNumber(validateOutcome.result.rejected_record_count)} ${copy.validate.rejected}`
+              : `${formatNumber(validateOutcome.result.inspected_table.columns.length)} ${copy.validate.columnsChecked} / ` +
                 validateOutcome.result.inspected_table.table_ref}
           </p>
           {validateOutcome.result.validation_issues.length > 0 ? (
@@ -433,9 +439,13 @@ export function ConnectorRuns({
                     </span>
                   </span>
                 </li>
-                {state.status === "failure" && state.errorDetail ? (
+                {state.status === "failure" && state.error ? (
                   <li aria-label={`${stage.title} error`} className="list-none">
-                    <ErrorPanel detail={state.errorDetail} title={`${stage.title} failed`} />
+                    <ErrorPanel
+                      detail={state.error.message}
+                      reference={state.error.requestId ?? undefined}
+                      title={`${stage.title} failed`}
+                    />
                   </li>
                 ) : null}
               </Fragment>
@@ -453,7 +463,10 @@ export function ConnectorRuns({
       {runsQuery.source === "loading" ? (
         <LoadingPanel rows={3} />
       ) : runsQuery.source === "unavailable" && connectorRuns.length === 0 ? (
-        <ErrorPanel title={copy.error} />
+        <ErrorPanel
+          reference={runsQuery.errorRequestId ?? undefined}
+          title={copy.error}
+        />
       ) : connectorRuns.length === 0 ? (
         <p className="m-0 text-sm text-muted">{copy.empty}</p>
       ) : (
@@ -476,7 +489,7 @@ export function ConnectorRuns({
                   {formatConnectorLabel(run.execution_mode)}
                 </td>
                 <td className="font-mono text-xs whitespace-nowrap text-muted">
-                  {formatRunTime(run.created_at)}
+                  {formatDateTime(run.created_at)}
                 </td>
                 <td>
                   {run.audit_event_id ? (

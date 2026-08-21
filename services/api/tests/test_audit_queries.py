@@ -34,7 +34,7 @@ from axis_api.identity import OidcPrincipal
 from axis_api.main import connector_export_object_store, create_app
 from axis_api.models import AuditEvent, Base
 from axis_api.object_storage import ObjectLockCapability
-from axis_api.persistence import AxisPersistenceRepository
+from axis_api.persistence import AxisPersistenceRepository, TenantCreate
 
 
 class StaticIdentityVerifier:
@@ -55,6 +55,15 @@ def session_factory() -> sessionmaker[Session]:
     )
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    with session_scope(factory) as session:
+        AxisPersistenceRepository(session).create_tenant(
+            TenantCreate(
+                tenant_id="tenant_demo_manufacturing",
+                display_name="Ravenna Works",
+                description="Plant Operations Cockpit",
+                created_by="test",
+            )
+        )
     yield factory
     engine.dispose()
 
@@ -272,6 +281,7 @@ def test_persisted_audit_events_endpoint_returns_tenant_scoped_query(
     assert response.status_code == 200
     body = response.json()
     assert body["tenant_id"] == "tenant_demo_manufacturing"
+    assert body["provenance"] == "live"
     assert body["metrics"][0]["value"] == "1"
     assert body["events"][0]["event_type"] == "approval.decision.recorded"
     assert body["events"][0]["related_approval_id"] == "appr_expedite_supplier_batch"
@@ -285,13 +295,58 @@ def test_persisted_audit_events_endpoint_returns_empty_result_for_empty_query(
     app.state.session_factory = session_factory
     client = TestClient(app)
 
-    response = client.get("/demo/manufacturing/audit/events")
+    response = client.get(
+        "/demo/manufacturing/audit/events",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
 
     assert response.status_code == 200
     body = response.json()
+    assert body["provenance"] == "empty"
     assert body["events"] == []
     assert body["filter_options"]["tenants"] == ["tenant_demo_manufacturing"]
     assert body["ledger_status"] == "watch"
+
+
+def test_persisted_audit_events_uses_non_demo_tenant_metadata_when_empty(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_scope(session_factory) as session:
+        AxisPersistenceRepository(session).create_tenant(
+            TenantCreate(
+                tenant_id="tenant_customer_audit",
+                display_name="Turin Operations",
+                description="",
+                created_by="test",
+            )
+        )
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    response = TestClient(app).get(
+        "/demo/manufacturing/audit/events",
+        params={"tenant_id": "tenant_customer_audit"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["plant_name"] == "Turin Operations"
+    assert response.json()["scenario"] is None
+    assert response.json()["provenance"] == "empty"
+    assert response.json()["events"] == []
+    assert "Ravenna" not in response.text
+
+
+def test_persisted_audit_events_reports_unknown_tenant(
+    session_factory: sessionmaker[Session],
+) -> None:
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    response = TestClient(app).get(
+        "/demo/manufacturing/audit/events",
+        params={"tenant_id": "tenant_unknown"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "TENANT_NOT_FOUND"
 
 
 def test_persisted_audit_events_endpoint_requires_oidc_when_configured(

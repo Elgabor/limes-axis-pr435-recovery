@@ -1,4 +1,4 @@
-import type { PlatformStatus } from "./platform-overview";
+import type { ManufacturingProvenance, PlatformStatus } from "./platform-overview";
 import type { PlatformPolicyDecision } from "./platform-policies";
 
 export type ActionRiskLevel = "low" | "medium" | "high" | "critical";
@@ -67,8 +67,9 @@ export type ActionRegistryFilterOptions = {
 
 export type ManufacturingActionRegistry = {
   tenant_id: string;
-  plant_name: string;
-  scenario: string;
+  plant_name: string | null;
+  scenario: string | null;
+  provenance: ManufacturingProvenance;
   as_of: string;
   registry_status: PlatformStatus;
   schema_version: string;
@@ -125,6 +126,50 @@ export type ActionRunPersistenceResult = {
   workflow_status?: string | null;
   platform_policy_decision?: PlatformPolicyDecision | null;
 };
+
+export type ActionRunOutcomeRecord = {
+  result_summary: string;
+  evidence_refs: string[];
+};
+
+export type ActionRunRecord = {
+  action_run_id: string;
+  action_id: string;
+  status: string;
+  approval_id: string | null;
+  workflow_id: string | null;
+  created_at: string;
+  updated_at: string;
+  waiting_duration_seconds: number;
+  outcome: ActionRunOutcomeRecord | null;
+};
+
+export type ActionRunList = {
+  tenant_id: string;
+  runs: ActionRunRecord[];
+};
+
+export type ActionRunFollowThrough = {
+  awaiting: ActionRunRecord[];
+  reported: ActionRunRecord[];
+};
+
+export function partitionActionRuns(runs: readonly ActionRunRecord[]): ActionRunFollowThrough {
+  const authorisedRuns = runs.filter((run) => run.approval_id !== null);
+  const awaiting = authorisedRuns
+    .filter((run) => run.status === "approved_for_execution" && run.outcome === null)
+    .slice()
+    .sort((left, right) =>
+      right.waiting_duration_seconds - left.waiting_duration_seconds
+      || left.created_at.localeCompare(right.created_at),
+    );
+  const reported = authorisedRuns
+    .filter((run) => run.outcome !== null)
+    .slice()
+    .sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+
+  return { awaiting, reported };
+}
 
 export function actionRunWorkflowSignalLabel(
   result: Pick<ActionRunPersistenceResult, "workflow_signal" | "workflow_signal_status">,

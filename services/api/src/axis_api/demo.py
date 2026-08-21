@@ -3,6 +3,7 @@ from enum import StrEnum
 from pydantic import BaseModel, Field, model_validator
 
 from axis_api.actions import ActionDefinition, ActionRiskLevel, ApprovalMode
+from axis_api.manufacturing_metadata import ManufacturingResponseProvenance
 from axis_api.ontology.queries import OntologyGraphQueryMetadata
 from axis_api.permissions import PermissionDecision
 
@@ -102,13 +103,16 @@ class WorkflowRun(BaseModel):
 
 class ManufacturingWorkflowConsole(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance = (
+        ManufacturingResponseProvenance.REFERENCE_SCENARIO
+    )
     as_of: str = Field(min_length=1)
     runtime_status: OverviewStatus
-    metrics: list[OverviewMetric] = Field(min_length=1)
+    metrics: list[OverviewMetric] = Field(default_factory=list)
     workflow_runs: list[WorkflowRun] = Field(default_factory=list)
-    runtime_notes: list[str] = Field(min_length=1)
+    runtime_notes: list[str] = Field(default_factory=list)
 
 
 class ApprovalSummary(BaseModel):
@@ -190,33 +194,39 @@ class ActionRegistryEntry(BaseModel):
 
 
 class ActionRegistryFilterOptions(BaseModel):
-    domains: list[str] = Field(min_length=1)
-    risk_levels: list[ActionRiskLevel] = Field(min_length=1)
-    approval_modes: list[ApprovalMode] = Field(min_length=1)
-    statuses: list[str] = Field(min_length=1)
+    domains: list[str] = Field(default_factory=list)
+    risk_levels: list[ActionRiskLevel] = Field(default_factory=list)
+    approval_modes: list[ApprovalMode] = Field(default_factory=list)
+    statuses: list[str] = Field(default_factory=list)
 
 
 class ManufacturingActionRegistry(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance = (
+        ManufacturingResponseProvenance.REFERENCE_SCENARIO
+    )
     as_of: str = Field(min_length=1)
     registry_status: OverviewStatus
     schema_version: str = Field(min_length=1)
-    metrics: list[OverviewMetric] = Field(min_length=1)
+    metrics: list[OverviewMetric] = Field(default_factory=list)
     filter_options: ActionRegistryFilterOptions
-    actions: list[ActionRegistryEntry] = Field(min_length=1)
-    registry_notes: list[str] = Field(min_length=1)
+    actions: list[ActionRegistryEntry] = Field(default_factory=list)
+    registry_notes: list[str] = Field(default_factory=list)
 
 
 class ManufacturingApprovalInbox(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance = (
+        ManufacturingResponseProvenance.REFERENCE_SCENARIO
+    )
     as_of: str = Field(min_length=1)
     queue_status: OverviewStatus
-    policy_notes: list[str] = Field(min_length=1)
-    approvals: list[ApprovalInboxItem] = Field(min_length=1)
+    policy_notes: list[str] = Field(default_factory=list)
+    approvals: list[ApprovalInboxItem] = Field(default_factory=list)
 
 
 class AgentSummary(BaseModel):
@@ -267,22 +277,25 @@ class AgentRegistryEntry(BaseModel):
 
 
 class AgentRegistryFilterOptions(BaseModel):
-    domains: list[str] = Field(min_length=1)
-    autonomy_levels: list[str] = Field(min_length=1)
-    statuses: list[str] = Field(min_length=1)
-    model_policies: list[str] = Field(min_length=1)
+    domains: list[str] = Field(default_factory=list)
+    autonomy_levels: list[str] = Field(default_factory=list)
+    statuses: list[str] = Field(default_factory=list)
+    model_policies: list[str] = Field(default_factory=list)
 
 
 class ManufacturingAgentRegistry(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance = (
+        ManufacturingResponseProvenance.REFERENCE_SCENARIO
+    )
     as_of: str = Field(min_length=1)
     registry_status: OverviewStatus
-    metrics: list[OverviewMetric] = Field(min_length=1)
+    metrics: list[OverviewMetric] = Field(default_factory=list)
     filter_options: AgentRegistryFilterOptions
-    agents: list[AgentRegistryEntry] = Field(min_length=1)
-    registry_notes: list[str] = Field(min_length=1)
+    agents: list[AgentRegistryEntry] = Field(default_factory=list)
+    registry_notes: list[str] = Field(default_factory=list)
 
 
 class AuditEvidence(BaseModel):
@@ -325,27 +338,33 @@ class AuditFilterOptions(BaseModel):
 
 class ManufacturingAuditExplorer(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance = (
+        ManufacturingResponseProvenance.REFERENCE_SCENARIO
+    )
     as_of: str = Field(min_length=1)
     ledger_status: OverviewStatus
-    metrics: list[OverviewMetric] = Field(min_length=1)
+    metrics: list[OverviewMetric] = Field(default_factory=list)
     filter_options: AuditFilterOptions
     events: list[AuditLedgerEvent] = Field(default_factory=list)
-    retention_notes: list[str] = Field(min_length=1)
+    retention_notes: list[str] = Field(default_factory=list)
 
 
 class ManufacturingOverview(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance = (
+        ManufacturingResponseProvenance.REFERENCE_SCENARIO
+    )
     as_of: str = Field(min_length=1)
-    metrics: list[OverviewMetric] = Field(min_length=1)
-    risk_signals: list[RiskSignal] = Field(min_length=1)
-    workflows: list[WorkflowSummary] = Field(min_length=1)
-    approvals: list[ApprovalSummary] = Field(min_length=1)
-    agents: list[AgentSummary] = Field(min_length=1)
-    audit_events: list[AuditEvidence] = Field(min_length=1)
+    metrics: list[OverviewMetric] = Field(default_factory=list)
+    risk_signals: list[RiskSignal] = Field(default_factory=list)
+    workflows: list[WorkflowSummary] = Field(default_factory=list)
+    approvals: list[ApprovalSummary] = Field(default_factory=list)
+    agents: list[AgentSummary] = Field(default_factory=list)
+    audit_events: list[AuditEvidence] = Field(default_factory=list)
 
 
 class OntologyNodeType(StrEnum):
@@ -460,13 +479,16 @@ def ontology_relationship_metadata_payload(
 
 class ManufacturingOntology(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance = (
+        ManufacturingResponseProvenance.REFERENCE_SCENARIO
+    )
     as_of: str = Field(min_length=1)
     nodes: list[OntologyNode] = Field(default_factory=list)
     relationships: list[OntologyRelationship] = Field(default_factory=list)
-    source_systems: list[str] = Field(min_length=1)
-    permission_notes: list[str] = Field(min_length=1)
+    source_systems: list[str] = Field(default_factory=list)
+    permission_notes: list[str] = Field(default_factory=list)
     graph_query: OntologyGraphQueryMetadata = Field(
         default_factory=_default_ontology_graph_query_metadata
     )
@@ -481,8 +503,11 @@ class OntologyEntityRelationship(BaseModel):
 
 class ManufacturingOntologyEntityDetail(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance = (
+        ManufacturingResponseProvenance.REFERENCE_SCENARIO
+    )
     as_of: str = Field(min_length=1)
     node: OntologyNode
     connected_relationships: list[OntologyEntityRelationship] = Field(default_factory=list)
@@ -538,25 +563,30 @@ class ModelRouteTelemetry(BaseModel):
 
 
 class ModelRoutingFilterOptions(BaseModel):
-    domains: list[str] = Field(min_length=1)
-    providers: list[str] = Field(min_length=1)
-    model_policies: list[str] = Field(min_length=1)
-    egress_decisions: list[str] = Field(min_length=1)
-    statuses: list[OverviewStatus] = Field(min_length=1)
+    domains: list[str] = Field(default_factory=list)
+    providers: list[str] = Field(default_factory=list)
+    model_policies: list[str] = Field(default_factory=list)
+    egress_decisions: list[str] = Field(default_factory=list)
+    statuses: list[OverviewStatus] = Field(default_factory=list)
 
 
 class ManufacturingModelRouting(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance = (
+        ManufacturingResponseProvenance.REFERENCE_SCENARIO
+    )
     as_of: str = Field(min_length=1)
     routing_status: OverviewStatus
-    metrics: list[OverviewMetric] = Field(min_length=1)
+    # No min_length: a tenant that has not routed a model yet has empty lists,
+    # and an empty collection is a valid answer rather than a 404.
+    metrics: list[OverviewMetric] = Field(default_factory=list)
     filter_options: ModelRoutingFilterOptions
-    provider_options: list[ModelProviderOption] = Field(min_length=1)
-    routes: list[ModelRouteTelemetry] = Field(min_length=1)
-    budget_notes: list[str] = Field(min_length=1)
-    observability_notes: list[str] = Field(min_length=1)
+    provider_options: list[ModelProviderOption] = Field(default_factory=list)
+    routes: list[ModelRouteTelemetry] = Field(default_factory=list)
+    budget_notes: list[str] = Field(default_factory=list)
+    observability_notes: list[str] = Field(default_factory=list)
 
 
 
@@ -730,6 +760,7 @@ def build_manufacturing_ontology_entity_detail(
         tenant_id=ontology.tenant_id,
         plant_name=ontology.plant_name,
         scenario=ontology.scenario,
+        provenance=ontology.provenance,
         as_of=ontology.as_of,
         node=node,
         connected_relationships=connected_relationships,

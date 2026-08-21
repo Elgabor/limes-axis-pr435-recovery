@@ -1,6 +1,11 @@
 from pydantic import ValidationError
 
 from axis_api.demo import ManufacturingOverview
+from axis_api.manufacturing_empty import empty_manufacturing_overview
+from axis_api.manufacturing_metadata import (
+    ManufacturingResponseProvenance,
+    get_manufacturing_tenant_metadata,
+)
 from axis_api.persistence import AxisPersistenceRepository
 
 MANUFACTURING_OVERVIEW_REFERENCE_ID = "manufacturing-overview"
@@ -17,15 +22,16 @@ class DemoReferenceRecordInvalid(ValueError):
 
 def get_persisted_manufacturing_overview(
     repository: AxisPersistenceRepository,
-    tenant_id: str = "tenant_demo_manufacturing",
+    tenant_id: str,
 ) -> ManufacturingOverview:
+    tenant_metadata = get_manufacturing_tenant_metadata(repository, tenant_id)
     record = repository.get_demo_reference_record(
         tenant_id=tenant_id,
         surface=OVERVIEW_SURFACE,
         reference_id=MANUFACTURING_OVERVIEW_REFERENCE_ID,
     )
     if record is None:
-        raise DemoReferenceRecordNotFound("Manufacturing overview reference record not found")
+        return empty_manufacturing_overview(tenant_id, tenant_metadata)
 
     try:
         overview = ManufacturingOverview.model_validate(record.payload)
@@ -39,4 +45,6 @@ def get_persisted_manufacturing_overview(
             "Manufacturing overview tenant does not match record tenant"
         )
 
-    return overview
+    return overview.model_copy(
+        update={"provenance": ManufacturingResponseProvenance.REFERENCE_SCENARIO}
+    )

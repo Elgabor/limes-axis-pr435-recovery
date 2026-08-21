@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 import { AgentRuns } from "@/components/agents/agent-runs";
 import { Card } from "@/components/ui/card";
@@ -223,12 +224,31 @@ function EvidenceTab({ agent }: { agent: AgentRegistryEntry }) {
  * Agent detail pane: plain-language tabs over the registry record. Raw
  * snake_case fields live in the Inspect drawer, never as primary copy.
  */
-export function AgentDetail({ agent }: { agent: AgentRegistryEntry }) {
+type AgentDetailTab = "overview" | "permissions" | "runs" | "evidence";
+
+export function AgentDetail({
+  activeTab,
+  agent,
+  domainLabel,
+  onRunSelect,
+  onTabChange,
+  selectedRunId,
+}: {
+  activeTab?: AgentDetailTab;
+  agent: AgentRegistryEntry;
+  domainLabel?: string;
+  onRunSelect?: (runId: string) => void;
+  onTabChange?: (tab: AgentDetailTab) => void;
+  selectedRunId?: string;
+}) {
+  const [internalTab, setInternalTab] = useState<AgentDetailTab>("overview");
+  const resolvedTab = activeTab ?? internalTab;
+
   return (
     <Card className="grid content-start gap-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="grid max-w-xl gap-1">
-          <Eyebrow>{agent.domain}</Eyebrow>
+          <Eyebrow>{domainLabel || agent.domain}</Eyebrow>
           <h2 className="font-display m-0 text-xl text-ink">{agent.name}</h2>
           <p className="m-0 text-sm text-muted">{agent.purpose}</p>
         </div>
@@ -240,7 +260,19 @@ export function AgentDetail({ agent }: { agent: AgentRegistryEntry }) {
         </div>
       </div>
 
-      <Tabs defaultValue="overview">
+      <Tabs value={resolvedTab} onValueChange={(value) => {
+        if (
+          value === "overview"
+          || value === "permissions"
+          || value === "runs"
+          || value === "evidence"
+        ) {
+          if (activeTab === undefined) {
+            setInternalTab(value);
+          }
+          onTabChange?.(value);
+        }
+      }}>
         <TabsList>
           <TabsTrigger value="overview">{strings.agents.tabs.overview}</TabsTrigger>
           <TabsTrigger value="permissions">{strings.agents.tabs.permissions}</TabsTrigger>
@@ -254,7 +286,11 @@ export function AgentDetail({ agent }: { agent: AgentRegistryEntry }) {
           <PermissionsTab agent={agent} />
         </TabsContent>
         <TabsContent value="runs">
-          <AgentRuns agentId={agent.agent_id} />
+          <AgentRuns
+            agentId={agent.agent_id}
+            onSelect={onRunSelect}
+            selectedRunId={selectedRunId}
+          />
         </TabsContent>
         <TabsContent value="evidence">
           <EvidenceTab agent={agent} />
@@ -266,7 +302,7 @@ export function AgentDetail({ agent }: { agent: AgentRegistryEntry }) {
         title={agent.name}
         trigger={
           <button
-            className="inline-flex w-fit cursor-pointer items-center font-mono text-xs text-muted transition-colors duration-200 hover:text-signal"
+            className="inline-flex min-h-6 w-fit cursor-pointer items-center font-mono text-xs text-muted transition-colors duration-200 hover:text-signal"
             type="button"
           >
             {strings.agents.inspect}

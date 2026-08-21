@@ -15,6 +15,7 @@ const modelRoutingFixture: ManufacturingModelRouting = {
   tenant_id: "tenant_fixture",
   plant_name: "Fixture Plant",
   scenario: "Runtime contract fixture",
+  provenance: "reference_scenario",
   as_of: "2026-06-22T09:00:00+02:00",
   routing_status: "watch",
   metrics: [],

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,6 +6,15 @@ import type { PlatformPolicyDetail, PlatformPolicyRecord } from "@/lib/platform-
 
 const mocks = vi.hoisted(() => ({
   fetchPlatformPolicyDetail: vi.fn(),
+}));
+
+vi.mock("@/lib/use-console-tenant-scope", () => ({
+  IDENTITY_SESSION_ENDPOINT: "/identity/session",
+  useConsoleTenantScope: () => ({
+    identity: { data: null, source: "api" },
+    tenantId: "tenant_demo_manufacturing",
+    tenantQueriesEnabled: true,
+  }),
 }));
 
 vi.mock("@/lib/platform-policies", async (importOriginal) => ({
@@ -75,8 +84,20 @@ const detailFixture: PlatformPolicyDetail = {
 
 describe("PolicyDetail tabs", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/policies/deny_critical_actions");
     mocks.fetchPlatformPolicyDetail.mockReset();
     mocks.fetchPlatformPolicyDetail.mockResolvedValue(detailFixture);
+  });
+
+  it("requests and validates the verified tenant scope", async () => {
+    render(<PolicyDetail policyId="deny_critical_actions" />);
+
+    await screen.findByRole("heading", { name: "Deny critical actions" });
+    expect(mocks.fetchPlatformPolicyDetail).toHaveBeenCalledWith(
+      "deny_critical_actions",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      "tenant_demo_manufacturing",
+    );
   });
 
   it("keeps header and KPIs above tabs and defaults to Conditions", async () => {
@@ -104,6 +125,7 @@ describe("PolicyDetail tabs", () => {
 
   it("shows revise form, history and compare under the Revisions tab", async () => {
     const user = userEvent.setup();
+    const pushState = vi.spyOn(window.history, "pushState");
     render(<PolicyDetail policyId="deny_critical_actions" />);
     await screen.findByRole("heading", { name: "Deny critical actions" });
 
@@ -113,8 +135,51 @@ describe("PolicyDetail tabs", () => {
       screen.getByRole("form", { name: "Platform policy revision" }),
     ).toBeInTheDocument();
     expect(screen.getByText("Revision History")).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: "Policy revision history" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Revision Compare")).toBeInTheDocument();
     expect(screen.getByLabelText("Revision to compare")).toBeInTheDocument();
+    expect(window.location.search).toBe("?tab=revisions");
+    expect(pushState).toHaveBeenCalledWith(
+      window.history.state,
+      "",
+      "/policies/deny_critical_actions?tab=revisions",
+    );
+    pushState.mockRestore();
+  });
+
+  it("restores a linked revision tab and comparison target from the URL", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/policies/deny_critical_actions?tab=revisions&compare_revision=1",
+    );
+
+    render(<PolicyDetail policyId="deny_critical_actions" />);
+
+    await screen.findByRole("form", { name: "Platform policy revision" });
+    expect(screen.getByRole("tab", { name: "Revisions" })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
+    expect(screen.getByLabelText("Revision to compare")).toHaveValue("1");
+  });
+
+  it("removes a comparison revision that the loaded policy cannot resolve", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/policies/deny_critical_actions?tab=revisions&compare_revision=99",
+    );
+
+    render(<PolicyDetail policyId="deny_critical_actions" />);
+
+    await screen.findByRole("form", { name: "Platform policy revision" });
+    await waitFor(() => {
+      expect(window.location.search).toBe("?tab=revisions");
+    });
+    expect(screen.getByLabelText("Revision to compare")).toHaveValue("");
   });
 
   it("renders exactly one dry-run evaluator under the Evaluate tab", async () => {

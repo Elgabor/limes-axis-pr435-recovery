@@ -1,6 +1,6 @@
 import type {
+  ConnectorManifestDetail,
   ConnectorCredentialLeaseRecord,
-  ConnectorManifestRecord,
   ConnectorOntologyProposalRecord,
   ConnectorPreviewSample,
   ConnectorRegistryItem,
@@ -13,13 +13,112 @@ import type {
  * shapes were read from `services/api/src/axis_api/{connectors,connector_manifests,connector_runs}.py`.
  */
 
-export const CONNECTOR_TENANT_ID = "tenant_demo_manufacturing";
-
 export const CONNECTOR_SYNC_DISPATCH_SCOPE = "connectors:sync:dispatch";
 export const CONNECTOR_SYNC_EXECUTE_SCOPE = "connectors:sync:execute";
+export const CONNECTOR_MANIFEST_BATCH_LIMIT = 50;
 
 /** Fallback actor recorded on unauthenticated demo writes; the API rebinds it to the OIDC principal when a session exists. */
 export const CONNECTOR_CONSOLE_ACTOR = "connector-console-operator";
+
+export type ConnectorRegistrationDocument = {
+  manifest: ConnectorRegistryItem["manifest"];
+  runtime_policy: ConnectorRegistryItem["runtime_policy"];
+  preview_sample?: ConnectorPreviewSample | null;
+  notes?: string[];
+};
+
+export type ConnectorManifestValidationOutcome =
+  | "would_register"
+  | "would_replace"
+  | "invalid";
+
+export type ConnectorManifestValidationResult = {
+  connector_id: string | null;
+  outcome: ConnectorManifestValidationOutcome;
+  errors: Array<{
+    field_path: string;
+    message: string;
+    reason: string;
+  }>;
+};
+
+export type ConnectorManifestBatchValidationResponse = {
+  tenant_id: string;
+  summary: Record<ConnectorManifestValidationOutcome, number>;
+  results: ConnectorManifestValidationResult[];
+};
+
+export function buildConnectorRegistrationDocument(
+  connector: ConnectorRegistryItem,
+): ConnectorRegistrationDocument {
+  return {
+    manifest: connector.manifest,
+    runtime_policy: connector.runtime_policy,
+    preview_sample: connector.preview_sample,
+    notes: connector.persisted_manifest?.notes ?? [],
+  };
+}
+
+export function serializeConnectorRegistrationDocument(connector: ConnectorRegistryItem): string {
+  return JSON.stringify(buildConnectorRegistrationDocument(connector), null, 2);
+}
+
+export function connectorRegistrationFileName(connector: ConnectorRegistryItem): string {
+  const connectorId = connector.manifest.connector_id.replace(/[^a-zA-Z0-9_-]+/g, "-");
+  return `${connectorId}.registration.json`;
+}
+
+/**
+ * Overlay the selected connector with the separately fetched current revision.
+ * The registry remains the complete list/source fallback; once detail resolves,
+ * schema, actions and export must all consume the same authoritative revision.
+ */
+export function connectorWithCurrentManifest(
+  connector: ConnectorRegistryItem,
+  detail: ConnectorManifestDetail | null,
+): ConnectorRegistryItem {
+  const registryManifest = connector.persisted_manifest;
+  if (detail === null || registryManifest === null) {
+    return connector;
+  }
+
+  const current = detail.current_revision;
+  const connectorId = connector.manifest.connector_id;
+  if (
+    detail.connector_id !== connectorId ||
+    current.connector_id !== connectorId ||
+    current.manifest.connector_id !== connectorId
+  ) {
+    return connector;
+  }
+
+  // Registry and detail are fetched independently. A retained detail response
+  // must not roll a freshly refreshed registry back to an older revision.
+  // Revision number supplies ordering; manifest id resolves the equal-revision
+  // case without guessing which divergent record is authoritative.
+  if (
+    current.revision_number < registryManifest.revision_number ||
+    (current.revision_number === registryManifest.revision_number &&
+      current.manifest_id !== registryManifest.manifest_id)
+  ) {
+    return connector;
+  }
+
+  return {
+    ...connector,
+    manifest: current.manifest,
+    runtime_policy: current.runtime_policy,
+    preview_sample: current.preview_sample,
+    persisted_manifest: {
+      manifest_id: current.manifest_id,
+      revision_number: current.revision_number,
+      status: current.status,
+      registered_by: current.registered_by,
+      registered_at: current.created_at,
+      notes: current.notes,
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // CSV round-trip
@@ -332,61 +431,6 @@ export function buildPreviewSyncPlan(input: {
 }
 
 // ---------------------------------------------------------------------------
-// Connector list entries (reference registry + persisted manifests)
-
-/**
- * A row in the connector list. `reference` entries come from the seeded
- * registry and support previews and runs; `manifest` entries are persisted
- * manifest records (e.g. wizard registrations) that the reference registry
- * does not know yet, so their sync surfaces are still pending activation.
- */
-export type ConnectorListEntry = {
-  connector: ConnectorRegistryItem;
-  source: "reference" | "manifest";
-  manifestRecord: ConnectorManifestRecord | null;
-};
-
-/**
- * Merge persisted manifest records into the reference connector list so a
- * connector registered through the wizard appears immediately. Deduped by
- * connector_id: a reference connector wins over its own manifest record;
- * manifest-only records are appended as synthetic entries built from the
- * manifest's own payloads.
- */
-export function mergeConnectorListEntries(
-  referenceConnectors: ConnectorRegistryItem[],
-  manifestRecords: ConnectorManifestRecord[],
-): ConnectorListEntry[] {
-  const referenceIds = new Set(
-    referenceConnectors.map((connector) => connector.manifest.connector_id),
-  );
-
-  const referenceEntries: ConnectorListEntry[] = referenceConnectors.map((connector) => ({
-    connector,
-    source: "reference",
-    manifestRecord: manifestRecordForConnector(
-      manifestRecords,
-      connector.manifest.connector_id,
-    ),
-  }));
-
-  const manifestOnlyEntries: ConnectorListEntry[] = manifestRecords
-    .filter((record) => !referenceIds.has(record.connector_id))
-    .map((record) => ({
-      connector: {
-        manifest: record.manifest,
-        runtime_policy: record.runtime_policy,
-        preview_sample: record.preview_sample,
-        connector_status: "watch",
-      },
-      source: "manifest",
-      manifestRecord: record,
-    }));
-
-  return [...referenceEntries, ...manifestOnlyEntries];
-}
-
-// ---------------------------------------------------------------------------
 // Registry summaries
 
 /** Proposals still waiting for promotion into the ontology graph. */
@@ -394,14 +438,7 @@ export function pendingProposalCount(proposals: ConnectorOntologyProposalRecord[
   return proposals.filter((proposal) => !proposal.promoted_at).length;
 }
 
-export function manifestRecordForConnector(
-  manifests: ConnectorManifestRecord[],
-  connectorId: string,
-): ConnectorManifestRecord | null {
-  return manifests.find((manifest) => manifest.connector_id === connectorId) ?? null;
-}
-
 /** Manifest lifecycle states in which the API allows connector run operations. */
-export function manifestAllowsRuns(manifest: ConnectorManifestRecord | null): boolean {
+export function manifestAllowsRuns(manifest: { status: string } | null): boolean {
   return manifest !== null && ["active_preview", "active_live"].includes(manifest.status);
 }

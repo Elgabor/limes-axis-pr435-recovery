@@ -3,6 +3,11 @@
 import { useState, type FormEvent } from "react";
 import { FlaskConical } from "lucide-react";
 
+import { Field } from "@/components/ui/field";
+import { InlineOperatorError } from "@/components/ui/inline-operator-error";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { toAxisOperatorError, type AxisOperatorError } from "@/lib/axis-api";
 import {
   buildPolicyEvaluationPayload,
   draftConditionsMatchContext,
@@ -19,9 +24,6 @@ import {
   type PlatformPolicyScope,
 } from "@/lib/platform-policies";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
-import { Field } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 
 type EvaluationFormFields = {
   scope: PlatformPolicyScope;
@@ -35,7 +37,7 @@ type EvaluationState =
   | { phase: "idle" }
   | { phase: "evaluating" }
   | { phase: "decided"; decision: PlatformPolicyDecision; draftMatch: boolean | null }
-  | { phase: "failed"; message: string };
+  | { phase: "failed"; error: AxisOperatorError };
 
 type PolicyEvaluationPanelProps = {
   tenantId: string;
@@ -144,7 +146,10 @@ export function PolicyEvaluationPanel({
     const parsedAmount = parseRequestedAmount(form.requestedAmount);
 
     if (!parsedAmount.ok) {
-      setEvaluation({ phase: "failed", message: parsedAmount.message });
+      setEvaluation({
+        phase: "failed",
+        error: toAxisOperatorError(null, parsedAmount.message),
+      });
       return;
     }
 
@@ -167,11 +172,10 @@ export function PolicyEvaluationPanel({
           ? draftConditionsMatchContext(draftConditions, payload.context)
           : null,
       });
-    } catch (error) {
+    } catch (caught) {
       setEvaluation({
         phase: "failed",
-        message:
-          error instanceof Error ? error.message : "Policy evaluation API is unavailable.",
+        error: toAxisOperatorError(caught, "Policy evaluation API is unavailable."),
       });
     }
   }
@@ -256,9 +260,7 @@ export function PolicyEvaluationPanel({
       </form>
 
       {evaluation.phase === "failed" ? (
-        <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-danger break-words" role="alert">
-          Dry-run evaluation failed: {evaluation.message}
-        </p>
+        <InlineOperatorError error={evaluation.error} prefix="Dry-run evaluation failed" />
       ) : null}
       {evaluation.phase === "decided" ? (
         <>

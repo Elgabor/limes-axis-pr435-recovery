@@ -21,6 +21,7 @@ import {
   StatusDot,
   type OverviewQuery,
 } from "./overview-shared";
+import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
 
 /*
  * The single evidence feed for the overview: one list of recent persisted
@@ -29,7 +30,7 @@ import {
  * table, audit observability chart, recent activity list).
  */
 
-export const AUDIT_EVENTS_ENDPOINT = "/demo/manufacturing/audit/events";
+export const AUDIT_EVENTS_ENDPOINT = `${OPERATIONS_API_PREFIX}/audit/events`;
 
 const FEED_ROW_LIMIT = 10;
 
@@ -62,6 +63,7 @@ export function EvidenceFeed({
       <ErrorPanel
         detail={copy.error.detail}
         endpoint={AUDIT_EVENTS_ENDPOINT}
+        reference={auditEvents.errorRequestId ?? undefined}
         title={copy.error.title}
       />
     );
@@ -78,7 +80,7 @@ export function EvidenceFeed({
       <PanelHeader
         aside={
           <span className="font-mono text-xs whitespace-nowrap text-muted">
-            {events.length} recent events
+            Showing {Math.min(events.length, FEED_ROW_LIMIT)} of {events.length}
           </span>
         }
         eyebrow={copy.eyebrow}
@@ -99,7 +101,7 @@ export function EvidenceFeed({
             </span>
             <div className="grid min-w-0 flex-1 gap-0.5">
               <Link
-                className="m-0 w-fit text-sm font-medium break-words text-ink hover:text-signal hover:underline"
+                className="m-0 inline-flex min-h-6 w-fit items-center text-sm font-medium break-words text-ink hover:text-signal hover:underline"
                 href={buildAuditEventHref(event.audit_event_id)}
                 title={copy.viewEvent}
               >

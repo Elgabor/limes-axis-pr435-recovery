@@ -47,6 +47,25 @@ def test_postgres_approval_decision_uses_transaction_advisory_lock() -> None:
     assert any("approval_42" in str(value) for value in compiled.params.values())
 
 
+def test_postgres_notification_acknowledgement_uses_transaction_advisory_lock() -> None:
+    repository, session = _repository_for_dialect("postgresql")
+
+    repository.acquire_platform_notification_acknowledgement_lock(
+        tenant_id="tenant_acme",
+        notification_id="notification_42",
+        actor_id="operator@example.com",
+    )
+
+    statement = session.execute.call_args.args[0]
+    compiled = statement.compile(dialect=postgresql.dialect())
+    sql = str(compiled)
+    assert "pg_advisory_xact_lock" in sql
+    assert "hashtextextended" in sql
+    assert any("tenant_acme" in str(value) for value in compiled.params.values())
+    assert any("notification_42" in str(value) for value in compiled.params.values())
+    assert any("operator@example.com" in str(value) for value in compiled.params.values())
+
+
 def test_sqlite_oidc_session_admission_relies_on_database_write_serialization() -> None:
     repository, session = _repository_for_dialect("sqlite")
 

@@ -1,4 +1,9 @@
-import { AxisApiError, axisFetch, type AxisFetchOptions } from "./axis-api";
+import {
+  AxisApiError,
+  axisFetch,
+  axisResponseRequestId,
+  type AxisFetchOptions,
+} from "./axis-api";
 
 export const IDENTITY_SESSION_ADMIN_SCOPE = "identity:sessions:admin";
 
@@ -42,7 +47,9 @@ export async function revokeIdentitySession(
   const response = await axisFetch(path, { ...options, method: "POST" });
 
   if (!response.ok) {
-    throw new AxisApiError(path, response.status);
+    throw new AxisApiError(path, response.status, {
+      requestId: axisResponseRequestId(response),
+    });
   }
 }
 

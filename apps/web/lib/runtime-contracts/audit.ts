@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AuditExportBundle, ManufacturingAuditExplorer } from "../audit-demo";
 import { auditEventSchema } from "./audit-event";
 import {
+  manufacturingProvenanceSchema,
   nullableStringSchema,
   overviewMetricSchema,
   parseContract,
@@ -11,8 +12,9 @@ import {
 } from "./shared";
 const auditExplorer = z.object({
   tenant_id: z.string(),
-  plant_name: z.string(),
-  scenario: z.string(),
+  plant_name: nullableStringSchema,
+  scenario: nullableStringSchema,
+  provenance: manufacturingProvenanceSchema,
   as_of: z.string(),
   ledger_status: platformStatusSchema,
   metrics: z.array(overviewMetricSchema),
@@ -28,7 +30,7 @@ const auditExplorer = z.object({
 });
 const auditExportBundle = z.object({
   tenant_id: z.string(),
-  scenario: z.string(),
+  scenario: nullableStringSchema,
   format: z.string(),
   export_reason: z.string(),
   filters: z.object({

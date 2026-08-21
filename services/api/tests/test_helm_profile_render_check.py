@@ -45,6 +45,7 @@ kind: ConfigMap
 metadata:
   name: limes-axis-config
 data:
+  AXIS_TENANT_ADMISSION_MODE: "registered_only"
   AXIS_DEPLOYMENT_TENANCY_MODE: "{tenancy_mode}"
   AXIS_DEPLOYMENT_NETWORK_EGRESS_MODE: "{egress_mode}"
   AXIS_EXTERNAL_MODEL_EGRESS_ENABLED: "false"

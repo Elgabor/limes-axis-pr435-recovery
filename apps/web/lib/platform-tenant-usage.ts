@@ -1,4 +1,10 @@
-import { AxisApiError, axisFetch, decodeAxisJson, type AxisFetchOptions } from "./axis-api";
+import {
+  AxisApiError,
+  axisFetch,
+  axisResponseRequestId,
+  decodeAxisJson,
+  type AxisFetchOptions,
+} from "./axis-api";
 import { buildPlatformTenantDetailPath } from "./platform-tenants";
 import { parseTenantUsageSummary } from "./runtime-contracts/tenants";
 
@@ -71,14 +77,16 @@ export async function fetchTenantUsage(
   }
 
   if (!response.ok) {
-    throw new AxisApiError(path, response.status);
+    throw new AxisApiError(path, response.status, {
+      requestId: axisResponseRequestId(response),
+    });
   }
 
   return decodeAxisJson(
     path,
     await response.json(),
     parseTenantUsageSummary,
-    response.headers.get("x-request-id") ?? response.headers.get("x-correlation-id"),
+    axisResponseRequestId(response),
   );
 }
 

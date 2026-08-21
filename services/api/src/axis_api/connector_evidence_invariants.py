@@ -30,6 +30,11 @@ from axis_api.connector_runs import (
     build_connector_sync_checkpoint_registry,
 )
 from axis_api.demo import ApprovalDecision, OverviewMetric, OverviewStatus
+from axis_api.manufacturing_metadata import (
+    ManufacturingResponseProvenance,
+    find_manufacturing_tenant_metadata,
+    operational_provenance,
+)
 from axis_api.models import AuditEvent
 from axis_api.object_storage import ObjectStore
 from axis_api.permissions import PermissionDecision, PermissionRequest, evaluate_permission
@@ -104,8 +109,9 @@ class ConnectorEvidenceInvariantItem(BaseModel):
 
 class ManufacturingConnectorEvidenceInvariantReport(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     registry_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
     invariant_counts: dict[str, int] = Field(default_factory=dict)
@@ -241,8 +247,9 @@ class ConnectorEvidenceInvariantSnapshotExportRequestRecord(BaseModel):
 
 class ConnectorEvidenceInvariantSnapshotHistory(BaseModel):
     tenant_id: str = Field(min_length=1)
-    plant_name: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    plant_name: str | None = Field(default=None, min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     history_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
     snapshots: list[ConnectorEvidenceInvariantSnapshotRecord] = Field(default_factory=list)
@@ -273,7 +280,8 @@ class ConnectorEvidenceInvariantSnapshotIntegrityProof(BaseModel):
 
 class ConnectorEvidenceInvariantSnapshotExportBundle(BaseModel):
     tenant_id: str = Field(min_length=1)
-    scenario: str = Field(min_length=1)
+    scenario: str | None = Field(default=None, min_length=1)
+    provenance: ManufacturingResponseProvenance
     format: str = Field(min_length=1)
     export_reason: str = Field(min_length=1)
     filters: ConnectorEvidenceInvariantSnapshotQuery
@@ -394,6 +402,7 @@ def build_connector_evidence_invariant_report(
     repository: AxisPersistenceRepository,
     query: ConnectorEvidenceInvariantQuery,
 ) -> ManufacturingConnectorEvidenceInvariantReport:
+    tenant_metadata = find_manufacturing_tenant_metadata(repository, query.tenant_id)
     checkpoints = build_connector_sync_checkpoint_registry(
         repository,
         ConnectorSyncCheckpointQuery(
@@ -480,8 +489,11 @@ def build_connector_evidence_invariant_report(
     }
     return ManufacturingConnectorEvidenceInvariantReport(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(
+            bool(checkpoints.checkpoints or claims.claims or leases.leases or policies.policies)
+        ),
         registry_status=OverviewStatus.WATCH if invariants else OverviewStatus.READY,
         metrics=[
             OverviewMetric(
@@ -577,6 +589,7 @@ def read_connector_evidence_invariant_snapshot_history(
     actor_id: str,
     actor_scopes: list[str],
 ) -> ConnectorEvidenceInvariantSnapshotHistory:
+    tenant_metadata = find_manufacturing_tenant_metadata(repository, query.tenant_id)
     _evaluate_snapshot_history_permission(query, actor_id, actor_scopes)
     snapshots = _snapshot_records_for_query(repository, query)
     snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
@@ -597,8 +610,9 @@ def read_connector_evidence_invariant_snapshot_history(
     )
     return ConnectorEvidenceInvariantSnapshotHistory(
         tenant_id=query.tenant_id,
-        plant_name="Ravenna Works",
-        scenario="Plant Operations Cockpit",
+        plant_name=tenant_metadata.plant_name,
+        scenario=tenant_metadata.scenario,
+        provenance=operational_provenance(bool(snapshots)),
         history_status=OverviewStatus.READY if snapshots else OverviewStatus.WATCH,
         metrics=[
             OverviewMetric(
@@ -624,9 +638,15 @@ def export_connector_evidence_invariant_snapshots(
     actor_scopes: list[str],
     ledger_signer: AuditLedgerSigner | None = None,
 ) -> ConnectorEvidenceInvariantSnapshotExportBundle:
+    tenant_metadata = find_manufacturing_tenant_metadata(repository, query.tenant_id)
     _evaluate_snapshot_history_permission(query, actor_id, actor_scopes)
     snapshots = _snapshot_records_for_query(repository, query)
-    bundle = _snapshot_export_bundle_for_records(query, snapshots, ledger_signer=ledger_signer)
+    bundle = _snapshot_export_bundle_for_records(
+        query,
+        snapshots,
+        scenario=tenant_metadata.scenario,
+        ledger_signer=ledger_signer,
+    )
     snapshot_ids = [snapshot.snapshot_id for snapshot in snapshots]
     repository.append_audit_event(
         AuditEventCreate(
@@ -913,6 +933,9 @@ def materialize_connector_evidence_invariant_snapshot_export_request(
     bundle = _snapshot_export_bundle_for_records(
         query,
         snapshots,
+        scenario=find_manufacturing_tenant_metadata(
+            repository, query.tenant_id
+        ).scenario,
         ledger_signer=ledger_signer,
     )
     artifact_payload = bundle.model_dump(mode="json")
@@ -1011,6 +1034,7 @@ def _snapshot_export_bundle_for_records(
     query: ConnectorEvidenceInvariantSnapshotExportQuery,
     snapshots: list[ConnectorEvidenceInvariantSnapshotRecord],
     *,
+    scenario: str | None,
     ledger_signer: AuditLedgerSigner | None,
 ) -> ConnectorEvidenceInvariantSnapshotExportBundle:
     checksum = _snapshots_checksum(snapshots)
@@ -1036,7 +1060,8 @@ def _snapshot_export_bundle_for_records(
     )
     return ConnectorEvidenceInvariantSnapshotExportBundle(
         tenant_id=query.tenant_id,
-        scenario="Plant Operations Cockpit",
+        scenario=scenario,
+        provenance=operational_provenance(bool(snapshots)),
         format=query.format,
         export_reason=query.export_reason,
         filters=ConnectorEvidenceInvariantSnapshotQuery(

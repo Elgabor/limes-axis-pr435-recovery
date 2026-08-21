@@ -68,6 +68,7 @@ def _enterprise_sso_settings(**overrides: object) -> Settings:
         "redis_url": "redis://redis.example:6379/0",
         "api_rate_limit_requests": 120,
         "api_rate_limit_window_seconds": 60,
+        "tenant_admission_mode": "registered_only",
         "dr_runbook_configured": True,
         "dr_rpo_rto_defined": True,
         "dr_rehearsal_evidence_configured": True,
@@ -105,6 +106,7 @@ def test_support_diagnostics_reports_public_safe_demo_support_bundle() -> None:
     assert body["support_blockers"] == [
         "oidc_enterprise_sso",
         "oidc_secure_cookie_session",
+        "registered_tenant_admission",
         "api_rate_limiting",
         "network_egress_restricted",
         "deployment_tenancy_profile",

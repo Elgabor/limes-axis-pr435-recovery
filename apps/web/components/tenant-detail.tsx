@@ -2,12 +2,18 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowLeft, History, RadioTower, ShieldCheck } from "lucide-react";
+import { ArrowLeft, History, ShieldCheck } from "lucide-react";
 
 import { ErrorPanel, LoadingPanel } from "@/components/ui/states";
+import {
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
+import { SourcePill } from "@/components/ui/source-pill";
 import { TenantLifecycleActions } from "@/components/tenant-lifecycle-actions";
 import { TenantQuotaEditor } from "@/components/tenant-quota-editor";
 import { TenantUsagePanel } from "@/components/tenant-usage-panel";
+import { TenantVocabularyEditor } from "@/components/tenant-vocabulary-editor";
 import {
   buildPlatformTenantDetailPath,
   fetchTenantDetail,
@@ -15,23 +21,12 @@ import {
   tenantStatusLabel,
   type TenantRecord,
 } from "@/lib/platform-tenants";
-import { formatOverviewTimestamp } from "@/lib/platform-overview";
+import { formatTimestamp } from "@/lib/format";
+import { deriveSourceState, PROVENANCE_NOT_APPLICABLE } from "@/lib/source-state";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
 
 type DetailSource = "loading" | "api" | "unavailable" | "missing";
-
-function sourceLabel(source: DetailSource): string {
-  if (source === "api") {
-    return "API tenant detail";
-  }
-
-  if (source === "missing") {
-    return "Tenant not found";
-  }
-
-  return source === "loading" ? "Loading tenant API" : "Tenant API unavailable";
-}
 
 type TimelineEntry = {
   key: string;
@@ -85,6 +80,7 @@ function buildTimeline(tenant: TenantRecord): TimelineEntry[] {
 export function TenantDetail({ tenantId }: { tenantId: string }) {
   const [tenant, setTenant] = useState<TenantRecord | null>(null);
   const [source, setSource] = useState<DetailSource>("loading");
+  const [loadError, setLoadError] = useState<AxisOperatorError | null>(null);
   const { session } = useOidcConsoleSession();
   const { refreshNonce } = useConsole();
 
@@ -104,15 +100,21 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
 
         if (result.kind === "notFound") {
           setTenant(null);
+          setLoadError(null);
           setSource("missing");
           return;
         }
 
         setTenant(result.record);
+        setLoadError(null);
         setSource("api");
-      } catch {
+      } catch (caught) {
         if (!controller.signal.aborted) {
           setTenant(null);
+          setLoadError(toAxisOperatorError(
+            caught,
+            "Axis could not load this platform tenant.",
+          ));
           setSource("unavailable");
         }
       }
@@ -133,6 +135,7 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
         <ErrorPanel
           detail="Axis did not receive an API-backed platform tenant. Local fallback tenant records are disabled."
           endpoint={buildPlatformTenantDetailPath(tenantId)}
+          reference={loadError?.requestId ?? undefined}
           title="Tenant API unavailable"
         />
       );
@@ -140,7 +143,7 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
 
     return (
       <div className="grid min-w-0 gap-4">
-        <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-start justify-between gap-4">
+        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="eyebrow m-0">Platform Tenant</p>
             <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">Tenant not found</h2>
@@ -163,7 +166,7 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="grid min-w-0 gap-4">
-      <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-start justify-between gap-4">
+      <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="eyebrow m-0">Platform Tenant</p>
           <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{tenant.display_name}</h2>
@@ -171,10 +174,14 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
           <p className="mx-0 mt-1 mb-0 leading-snug text-muted break-words font-mono text-[13px]">{tenant.tenant_id}</p>
         </div>
         <div className="flex min-w-0 flex-wrap items-center justify-end gap-2" aria-label="Tenant source and status">
-          <span className="status-pill signal-ready">
-            <RadioTower size={15} />
-            {sourceLabel(source)}
-          </span>
+          <SourcePill
+            state={deriveSourceState(
+              source === "missing" ? "unavailable" : source,
+              Boolean(tenant),
+              PROVENANCE_NOT_APPLICABLE,
+            )}
+            subject="tenant"
+          />
           <span className={`status-pill ${tenantStatusClass(tenant.status)}`}>
             <ShieldCheck size={15} />
             {tenantStatusLabel(tenant.status)}
@@ -187,29 +194,29 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
       </section>
 
       <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
-        <article className="min-w-0 rounded-3xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
+        <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
           <p className="eyebrow m-0">Status</p>
-          <p className="font-display mx-0 mt-4 mb-2 text-3xl text-ink">{tenantStatusLabel(tenant.status)}</p>
+          <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{tenantStatusLabel(tenant.status)}</p>
           <p className="m-0 text-xs leading-relaxed text-muted break-words">Only active tenants can establish sessions</p>
         </article>
-        <article className="min-w-0 rounded-3xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
+        <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
           <p className="eyebrow m-0">Created By</p>
-          <p className="font-display mx-0 mt-4 mb-2 text-3xl text-ink">{tenant.created_by}</p>
-          <p className="m-0 text-xs leading-relaxed text-muted break-words">{formatOverviewTimestamp(tenant.created_at)}</p>
+          <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{tenant.created_by}</p>
+          <p className="m-0 text-xs leading-relaxed text-muted break-words">{formatTimestamp(tenant.created_at)}</p>
         </article>
-        <article className="min-w-0 rounded-3xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
+        <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
           <p className="eyebrow m-0">Bootstrap Admin</p>
-          <p className="font-display mx-0 mt-4 mb-2 text-3xl text-ink font-mono text-[13px] break-words">{tenant.bootstrap_admin_actor_id ?? "None"}</p>
+          <p className="mx-0 mt-2 mb-0 font-mono text-[13px] break-words text-ink">{tenant.bootstrap_admin_actor_id ?? "None"}</p>
           <p className="m-0 text-xs leading-relaxed text-muted break-words">Optional actor created at provisioning time</p>
         </article>
-        <article className="min-w-0 rounded-3xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
+        <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
           <p className="eyebrow m-0">Last Audit Event</p>
-          <p className="font-display mx-0 mt-4 mb-2 text-3xl text-ink">{tenant.audit_event_type}</p>
+          <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{tenant.audit_event_type}</p>
           <p className="m-0 text-xs leading-relaxed text-muted break-words font-mono text-[13px]">{tenant.audit_event_id ?? "No audit id"}</p>
         </article>
       </div>
 
-      <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+      <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-line/60 py-3 first:border-t-0 dark:border-white/10">
           <div>
             <p className="eyebrow m-0">Lifecycle Timeline</p>
@@ -228,7 +235,7 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
                 <p className="eyebrow m-0">Event</p>
                 <p className="m-0 font-medium text-ink break-words">{entry.label}</p>
                 <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
-                  {entry.timestamp ? formatOverviewTimestamp(entry.timestamp) : "Unknown time"}
+                  {formatTimestamp(entry.timestamp)}
                 </p>
               </div>
               <div>
@@ -254,8 +261,10 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
 
       <TenantQuotaEditor tenantId={tenant.tenant_id} />
 
+      <TenantVocabularyEditor tenantId={tenant.tenant_id} />
+
       {notes.length > 0 ? (
-        <section className="min-w-0 rounded-3xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
           <p className="eyebrow m-0">Tenant Notes</p>
           <div className="grid min-w-0 gap-2.5">
             {notes.map((note) => (

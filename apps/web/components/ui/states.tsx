@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getApiBaseUrl, isDefaultApiBaseUrl } from "@/lib/api-status";
 import { cn } from "@/lib/cn";
+import { strings } from "@/lib/strings";
 
 /*
  * Unified state system: LoadingPanel / ErrorPanel / EmptyPanel are the only
@@ -28,7 +29,7 @@ export function LoadingPanel({ rows, layout = "list" }: LoadingPanelProps) {
   if (layout === "metrics") {
     const count = rows ?? 4;
     return (
-      <div aria-busy="true" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" role="status">
+      <div aria-busy="true" aria-label="Loading content" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" role="status">
         {Array.from({ length: count }, (_, index) => (
           <Skeleton key={index} className="h-24" />
         ))}
@@ -38,7 +39,7 @@ export function LoadingPanel({ rows, layout = "list" }: LoadingPanelProps) {
 
   if (layout === "detail") {
     return (
-      <div aria-busy="true" className="flex min-w-0 flex-col gap-3" role="status">
+      <div aria-busy="true" aria-label="Loading content" className="flex min-w-0 flex-col gap-3" role="status">
         <Skeleton className="h-7 w-2/5" />
         <Skeleton className="h-4 w-4/5" />
         <Skeleton className="h-40" />
@@ -48,7 +49,7 @@ export function LoadingPanel({ rows, layout = "list" }: LoadingPanelProps) {
 
   const count = rows ?? 5;
   return (
-    <div aria-busy="true" className="flex min-w-0 flex-col gap-2.5" role="status">
+    <div aria-busy="true" aria-label="Loading content" className="flex min-w-0 flex-col gap-2.5" role="status">
       {Array.from({ length: count }, (_, index) => (
         <Skeleton key={index} className="h-11" />
       ))}
@@ -60,15 +61,20 @@ type ErrorPanelProps = {
   title: string;
   detail?: string;
   endpoint?: string;
+  /**
+   * Correlation id an operator can quote to support — the API's `x-request-id`
+   * or a React error digest. Shown under Technical details.
+   */
+  reference?: string;
   onRetry?: () => void;
 };
 
-export function ErrorPanel({ title, detail, endpoint, onRetry }: ErrorPanelProps) {
+export function ErrorPanel({ title, detail, endpoint, reference, onRetry }: ErrorPanelProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const DetailsChevron = detailsOpen ? ChevronDown : ChevronRight;
 
   return (
-    <section className="min-w-0 rounded-2xl border border-danger/35 bg-danger/5 p-4.5 dark:border-danger/40 dark:bg-danger/10">
+    <section className="min-w-0 rounded-2xl border border-danger/35 bg-danger/5 p-4 dark:border-danger/40 dark:bg-danger/10">
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-display m-0 flex items-center gap-2 text-lg text-ink">
@@ -80,22 +86,28 @@ export function ErrorPanel({ title, detail, endpoint, onRetry }: ErrorPanelProps
           ) : null}
         </div>
         {onRetry ? (
-          <Button className="px-4 py-2 text-sm" variant="secondary" onClick={onRetry}>
-            Try again
+          <Button size="sm" variant="secondary" onClick={onRetry}>
+            {strings.states.retry}
           </Button>
         ) : null}
       </div>
       <button
         aria-expanded={detailsOpen}
-        className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-ink"
+        className="mt-3 inline-flex min-h-6 items-center gap-1 text-xs font-medium text-muted transition-colors hover:text-ink"
         type="button"
         onClick={() => setDetailsOpen((open) => !open)}
       >
         <DetailsChevron aria-hidden="true" size={13} />
-        Technical details
+        {strings.states.technicalDetails}
       </button>
       {detailsOpen ? (
         <dl className="mx-0 mt-2 mb-0 flex min-w-0 flex-col gap-1.5 rounded-xl border border-line bg-surface/70 p-3 text-xs dark:border-white/10 dark:bg-white/4">
+          {reference ? (
+            <div className="flex min-w-0 flex-wrap gap-x-2">
+              <dt className="m-0 font-medium text-muted">{strings.states.reference}</dt>
+              <dd className="m-0 font-mono break-words text-ink">{reference}</dd>
+            </div>
+          ) : null}
           {endpoint ? (
             <div className="flex min-w-0 flex-wrap gap-x-2">
               <dt className="m-0 font-medium text-muted">Endpoint</dt>
@@ -141,15 +153,14 @@ export function EmptyPanel({ icon: Icon, title, detail, action }: EmptyPanelProp
       {Icon ? <Icon aria-hidden="true" className="text-muted" size={22} /> : null}
       <h2 className="font-display m-0 text-lg text-ink">{title}</h2>
       <p className="m-0 max-w-md text-sm leading-snug text-muted">{detail}</p>
+      {/* Both branches render the real Button chrome — the link variant used to
+          hand-roll a copy of it, which is how the two drifted apart. */}
       {action?.href ? (
-        <Link
-          className="mt-2 inline-flex items-center rounded-full border border-mist bg-surface px-5 py-2.5 text-sm font-medium text-ink transition-all duration-300 hover:border-signal/50 hover:text-signal dark:border-white/20 dark:hover:border-signal/60"
-          href={action.href}
-        >
-          {action.label}
-        </Link>
+        <Button asChild className="mt-2" variant="secondary">
+          <Link href={action.href}>{action.label}</Link>
+        </Button>
       ) : action?.onClick ? (
-        <Button className="mt-2 px-5 py-2.5 text-sm" variant="secondary" onClick={action.onClick}>
+        <Button className="mt-2" variant="secondary" onClick={action.onClick}>
           {action.label}
         </Button>
       ) : null}

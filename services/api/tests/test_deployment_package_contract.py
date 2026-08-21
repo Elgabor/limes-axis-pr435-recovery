@@ -47,6 +47,7 @@ def test_default_chart_renders_complete_production_admission_configuration() -> 
     assert completed.returncode == 0, completed.stderr
     rendered = completed.stdout
     for expected in (
+        'AXIS_TENANT_ADMISSION_MODE: "registered_only"',
         'AXIS_API_RATE_LIMIT_ENABLED: "true"',
         'AXIS_API_RATE_LIMIT_BACKEND: "redis"',
         'AXIS_API_RATE_LIMIT_FAILURE_MODE: "closed"',
@@ -91,6 +92,16 @@ def test_deployment_package_declares_deployment_profile_overlays() -> None:
     assert "infra/helm/limes-axis/profiles/on-prem-offline.yaml" in required_profiles
 
 
+def test_deployment_package_includes_first_tenant_bootstrap_in_api_image() -> None:
+    checker = load_check_module()
+
+    required_tools = checker.required_runtime_tools()
+    results = checker.check_runtime_tools(REPO_ROOT)
+
+    assert "services/api/src/axis_api/bootstrap_tenant.py" in required_tools
+    assert all(result.ok for result in results), [result.detail for result in results]
+
+
 def test_deployment_values_schema_declares_operational_enums() -> None:
     schema_path = REPO_ROOT / "infra" / "helm" / "limes-axis" / "values.schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
@@ -100,6 +111,10 @@ def test_deployment_values_schema_declares_operational_enums() -> None:
     network_policy = properties["networkPolicy"]["properties"]
     external_secret = properties["secrets"]["properties"]["externalSecret"]["properties"]
 
+    assert api_env["AXIS_TENANT_ADMISSION_MODE"]["enum"] == [
+        "claims_only",
+        "registered_only",
+    ]
     assert api_env["AXIS_DEPLOYMENT_TENANCY_MODE"]["enum"] == [
         "saas_multi_tenant",
         "single_tenant_managed",
@@ -129,6 +144,14 @@ def test_deployment_values_schema_declares_operational_enums() -> None:
 
 def test_deployment_values_schema_rejects_invalid_operational_modes(tmp_path: Path) -> None:
     invalid_cases = {
+        "tenant-admission": (
+            """
+api:
+  env:
+    AXIS_TENANT_ADMISSION_MODE: allow_all
+""",
+            "/api/env/AXIS_TENANT_ADMISSION_MODE",
+        ),
         "tenancy": (
             """
 api:
@@ -388,6 +411,7 @@ def test_deployment_package_externalizes_state_and_secrets() -> None:
     assert "AXIS_DEPLOYMENT_DATA_RESIDENCY_CONFIGURED" in required_terms
     assert "AXIS_DEPLOYMENT_OPERATOR_ACCESS_RUNBOOK_CONFIGURED" in required_terms
     assert "AXIS_DEPLOYMENT_BREAK_GLASS_APPROVAL_CONFIGURED" in required_terms
+    assert "AXIS_TENANT_ADMISSION_MODE" in required_terms
     assert "AXIS_OIDC_ISSUER" in required_terms
     assert "AXIS_OIDC_CLIENT_ID" in required_terms
     assert "AXIS_OIDC_CLIENT_SECRET" in required_terms
@@ -522,6 +546,7 @@ def test_deployment_chart_declares_tenancy_profile_boundaries() -> None:
     ).read_text(encoding="utf-8")
 
     assert "AXIS_DEPLOYMENT_TENANCY_MODE: saas_multi_tenant" in values
+    assert "AXIS_TENANT_ADMISSION_MODE: registered_only" in values
     assert "single_tenant_managed" in values
     assert "private_cloud" in values
     assert "on_prem" in values
@@ -530,6 +555,7 @@ def test_deployment_chart_declares_tenancy_profile_boundaries() -> None:
     assert "AXIS_DEPLOYMENT_OPERATOR_ACCESS_RUNBOOK_CONFIGURED" in values
     assert "AXIS_DEPLOYMENT_BREAK_GLASS_APPROVAL_CONFIGURED" in values
     assert "AXIS_DEPLOYMENT_TENANCY_MODE" in configmap
+    assert "AXIS_TENANT_ADMISSION_MODE" in configmap
     assert "AXIS_DEPLOYMENT_CUSTOMER_ISOLATION_CONFIGURED" in configmap
     assert "AXIS_DEPLOYMENT_DATA_RESIDENCY_CONFIGURED" in configmap
     assert "AXIS_DEPLOYMENT_OPERATOR_ACCESS_RUNBOOK_CONFIGURED" in configmap
@@ -546,6 +572,7 @@ def test_deployment_profiles_are_safe_customer_specific_overlays() -> None:
 
     for file_name, tenancy_mode in expected_modes.items():
         profile = (profile_dir / file_name).read_text(encoding="utf-8")
+        assert "AXIS_TENANT_ADMISSION_MODE: registered_only" in profile
         assert f"AXIS_DEPLOYMENT_TENANCY_MODE: {tenancy_mode}" in profile
         assert "AXIS_DEPLOYMENT_CUSTOMER_ISOLATION_CONFIGURED: \"false\"" in profile
         assert "AXIS_DEPLOYMENT_DATA_RESIDENCY_CONFIGURED: \"false\"" in profile

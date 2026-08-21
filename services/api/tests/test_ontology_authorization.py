@@ -343,6 +343,7 @@ def test_ontology_graph_endpoint_allows_fully_scoped_actor(
     response = client.get(
         "/demo/manufacturing/ontology",
         headers={"Authorization": "Bearer valid-token"},
+        params={"tenant_id": "tenant_demo_manufacturing"},
     )
 
     assert response.status_code == 200
@@ -399,6 +400,7 @@ def test_ontology_entity_endpoint_scope_denial_appends_audit_event(
     response = client.get(
         f"/demo/manufacturing/ontology/entities/{SCOPED_NODE_ID}",
         headers={"Authorization": "Bearer valid-token"},
+        params={"tenant_id": "tenant_demo_manufacturing"},
     )
 
     assert response.status_code == 403
@@ -453,6 +455,7 @@ def test_ontology_entity_endpoint_rejects_malformed_permission_payload(
     response = client.get(
         f"/demo/manufacturing/ontology/entities/{SCOPED_NODE_ID}",
         headers={"Authorization": "Bearer valid-token"},
+        params={"tenant_id": "tenant_demo_manufacturing"},
     )
 
     assert response.status_code == 422
