@@ -21,6 +21,25 @@ class ActorBindingError(PermissionError):
         self.message = message
 
 
+PUBLIC_DEMO_ACTOR_ID = "public-demo-steward"
+
+
+def resolve_declared_actor(
+    request_actor: str | None,
+    principal_actor_id: str | None,
+) -> str:
+    """Attribute a declared write to the verified principal when one exists.
+
+    Unauthenticated demo traffic may name an actor in the body; a verified
+    OIDC principal always overrides it so the body cannot spoof attribution.
+    """
+    if principal_actor_id is not None:
+        return principal_actor_id
+    if request_actor is not None:
+        return request_actor
+    return PUBLIC_DEMO_ACTOR_ID
+
+
 class OidcPrincipal(BaseModel):
     actor_id: str = Field(min_length=1)
     tenant_id: str = Field(min_length=1)

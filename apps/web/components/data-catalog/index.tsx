@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 
 import {
+  ContractSection,
   DataAssetDetail,
   ResourcesSection,
   StewardshipSection,
@@ -136,11 +137,17 @@ export function DataCatalog() {
             ) : selectedAsset ? (
               <div className="grid content-start gap-3.5">
                 <DataAssetDetail asset={selectedAsset} />
-                {/* Keyed by asset so the declare form never carries values
-                    across an asset switch. */}
+                {/* Keyed by asset so forms never carry values across an
+                    asset switch. */}
                 <StewardshipSection
                   asset={selectedAsset}
                   key={selectedAsset.asset_id}
+                  onSuccess={triggerRefresh}
+                  tenantId={tenantId}
+                />
+                <ContractSection
+                  asset={selectedAsset}
+                  key={`contract-${selectedAsset.asset_id}`}
                   onSuccess={triggerRefresh}
                   tenantId={tenantId}
                 />

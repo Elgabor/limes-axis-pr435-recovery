@@ -1134,6 +1134,73 @@ class DataAssetResourceObservation(Base):
     )
 
 
+class DataAssetContractRecord(Base):
+    """Append-only declared expectation set for one data asset.
+
+    A contract declares what must be true about observed evidence: a resource
+    that must exist, the schema fingerprint it must carry, and freshness
+    thresholds for its last observation. Evaluation is always derived from
+    real observations at read time; an undeclared or unobserved asset is
+    ``unknown`` and never green.
+    """
+
+    __tablename__ = "data_asset_contracts"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    asset_id: Mapped[str] = mapped_column(String(220), nullable=False, index=True)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    expected_resource_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    expected_schema_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    freshness_warn_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    freshness_fail_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[list] = mapped_column(JSON, nullable=False)
+    declared_by: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    audit_event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    revises_revision_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    replaced_by_revision_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revision_idempotency_key: Mapped[str | None] = mapped_column(
+        String(200),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "freshness_warn_hours IS NULL OR freshness_warn_hours >= 1",
+            name="ck_data_asset_contracts_warn_hours",
+        ),
+        CheckConstraint(
+            "freshness_fail_hours IS NULL OR freshness_fail_hours >= 1",
+            name="ck_data_asset_contracts_fail_hours",
+        ),
+        CheckConstraint(
+            "freshness_warn_hours IS NULL OR freshness_fail_hours IS NULL "
+            "OR freshness_warn_hours <= freshness_fail_hours",
+            name="ck_data_asset_contracts_freshness_ordering",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "asset_id",
+            "revision_number",
+            name="uq_data_asset_contracts_tenant_asset_revision",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "revision_idempotency_key",
+            name="uq_data_asset_contracts_tenant_idempotency",
+        ),
+    )
+
+
 class ConnectorPromotionPolicy(Base):
     __tablename__ = "connector_promotion_policies"
 

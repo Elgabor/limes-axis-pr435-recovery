@@ -341,6 +341,15 @@ from axis_api.connectors import (
     preview_file_csv_connector,
 )
 from axis_api.csrf import BrowserSessionCsrfMiddleware
+from axis_api.data_asset_contracts import (
+    DataAssetContractConflict,
+    DataAssetContractDeclarationRequest,
+    DataAssetContractEvaluationView,
+    DataAssetContractView,
+    declare_data_asset_contract,
+    evaluate_data_asset_contract,
+    get_data_asset_contract_view,
+)
 from axis_api.data_asset_discovery import (
     DataAssetResourcesView,
     list_data_asset_resources,
@@ -395,6 +404,7 @@ from axis_api.identity import (
     OidcPrincipal,
     RemoteJwksOidcVerifier,
     bind_request_actor,
+    resolve_declared_actor,
 )
 from axis_api.identity_session import (
     IdentityBrowserSessionList,
@@ -4815,6 +4825,107 @@ def create_app(
             asset_id=asset_id,
         )
 
+    @data_router.get(
+        "/assets/{asset_id}/contract",
+        response_model=DataAssetContractView,
+        responses={
+            403: {"description": "Tenant scope read permission denied"},
+            404: {"description": "Tenant or data asset not found"},
+        },
+    )
+    def data_asset_contract_view_route(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        tenant_id: str = Query(min_length=1),
+        asset_id: str = Path(min_length=1),
+    ) -> DataAssetContractView:
+        _authorize_tenant_read(tenant_id, principal)
+        try:
+            ensure_data_asset_in_catalog(repository, tenant_id=tenant_id, asset_id=asset_id)
+        except DataAssetNotInCatalog as exc:
+            raise _data_asset_not_found(tenant_id, asset_id) from exc
+        return get_data_asset_contract_view(
+            repository,
+            tenant_id=tenant_id,
+            asset_id=asset_id,
+        )
+
+    @data_router.put(
+        "/assets/{asset_id}/contract",
+        response_model=DataAssetContractView,
+        responses={
+            403: {"description": "Tenant scope write permission denied"},
+            404: {"description": "Tenant or data asset not found"},
+            409: {"description": "Contract revision or idempotency conflict"},
+        },
+    )
+    def declare_data_asset_contract_route(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_model: DataAssetContractDeclarationRequest,
+        tenant_id: str = Query(min_length=1),
+        asset_id: str = Path(min_length=1),
+    ) -> JSONResponse:
+        _authorize_tenant_read(tenant_id, principal)
+        try:
+            ensure_data_asset_in_catalog(repository, tenant_id=tenant_id, asset_id=asset_id)
+        except DataAssetNotInCatalog as exc:
+            raise _data_asset_not_found(tenant_id, asset_id) from exc
+        try:
+            contract_view, outcome = declare_data_asset_contract(
+                repository,
+                tenant_id=tenant_id,
+                asset_id=asset_id,
+                request=request_model,
+                principal_actor_id=principal.actor_id if principal is not None else None,
+            )
+        except DataAssetContractConflict as exc:
+            detail = {
+                "code": AxisErrorCode.CONFLICT.value,
+                "message": "The data contract declaration conflicts with persisted state.",
+                "reason": exc.reason,
+                "asset_id": exc.asset_id,
+            }
+            if exc.current_revision_number is not None:
+                detail["current_revision"] = exc.current_revision_number
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
+        view = DataAssetContractView(
+            tenant_id=tenant_id,
+            asset_id=asset_id,
+            contract=contract_view,
+        )
+        return JSONResponse(
+            status_code=(
+                status.HTTP_201_CREATED if outcome == "created" else status.HTTP_200_OK
+            ),
+            content=view.model_dump(mode="json"),
+        )
+
+    @data_router.get(
+        "/assets/{asset_id}/contract/evaluation",
+        response_model=DataAssetContractEvaluationView,
+        responses={
+            403: {"description": "Tenant scope read permission denied"},
+            404: {"description": "Tenant or data asset not found"},
+        },
+    )
+    def data_asset_contract_evaluation_route(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        tenant_id: str = Query(min_length=1),
+        asset_id: str = Path(min_length=1),
+    ) -> DataAssetContractEvaluationView:
+        _authorize_tenant_read(tenant_id, principal)
+        try:
+            ensure_data_asset_in_catalog(repository, tenant_id=tenant_id, asset_id=asset_id)
+        except DataAssetNotInCatalog as exc:
+            raise _data_asset_not_found(tenant_id, asset_id) from exc
+        return evaluate_data_asset_contract(
+            repository,
+            tenant_id=tenant_id,
+            asset_id=asset_id,
+        )
+
     @operations_router.get(
         "/connectors/manifests",
         response_model=ManufacturingConnectorManifestRegistry,
@@ -7148,8 +7259,9 @@ def create_app(
                 connector_id=preview_request.connector_id,
                 file_name=result.file_name,
                 columns=list(result.observed_schema.columns),
-                observed_by=(
-                    principal.actor_id if principal is not None else "public-demo-steward"
+                observed_by=resolve_declared_actor(
+                    None,
+                    principal.actor_id if principal is not None else None,
                 ),
             )
         return result

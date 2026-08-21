@@ -10568,6 +10568,30 @@
         "title": "ConnectorTenantConfiguration",
         "type": "object"
       },
+      "ContractCheck": {
+        "properties": {
+          "detail": {
+            "minLength": 1,
+            "title": "Detail",
+            "type": "string"
+          },
+          "kind": {
+            "pattern": "^(presence|schema|freshness)$",
+            "title": "Kind",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/DataContractState"
+          }
+        },
+        "required": [
+          "kind",
+          "state",
+          "detail"
+        ],
+        "title": "ContractCheck",
+        "type": "object"
+      },
       "DailyPlantBriefRecord": {
         "properties": {
           "audit_event_id": {
@@ -10948,6 +10972,242 @@
         "title": "DataAssetClassification",
         "type": "string"
       },
+      "DataAssetContractDeclarationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "declared_by": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared By"
+          },
+          "expected_resource_name": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Expected Resource Name",
+            "type": "string"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "expected_schema_fingerprint": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Schema Fingerprint"
+          },
+          "freshness_fail_hours": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness Fail Hours"
+          },
+          "freshness_warn_hours": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness Warn Hours"
+          },
+          "idempotency_key": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "expected_resource_name",
+          "idempotency_key"
+        ],
+        "title": "DataAssetContractDeclarationRequest",
+        "type": "object"
+      },
+      "DataAssetContractEvaluationView": {
+        "properties": {
+          "asset_id": {
+            "minLength": 1,
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ContractCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "evaluated_at": {
+            "format": "date-time",
+            "title": "Evaluated At",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DataContractState"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "asset_id",
+          "status",
+          "checks",
+          "evaluated_at"
+        ],
+        "title": "DataAssetContractEvaluationView",
+        "type": "object"
+      },
+      "DataAssetContractRecord": {
+        "properties": {
+          "declared_at": {
+            "format": "date-time",
+            "title": "Declared At",
+            "type": "string"
+          },
+          "declared_by": {
+            "minLength": 1,
+            "title": "Declared By",
+            "type": "string"
+          },
+          "expected_resource_name": {
+            "minLength": 1,
+            "title": "Expected Resource Name",
+            "type": "string"
+          },
+          "expected_schema_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Schema Fingerprint"
+          },
+          "freshness_fail_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness Fail Hours"
+          },
+          "freshness_warn_hours": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness Warn Hours"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "revision_number": {
+            "minimum": 1.0,
+            "title": "Revision Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_resource_name",
+          "expected_schema_fingerprint",
+          "freshness_warn_hours",
+          "freshness_fail_hours",
+          "notes",
+          "revision_number",
+          "declared_by",
+          "declared_at"
+        ],
+        "title": "DataAssetContractRecord",
+        "type": "object"
+      },
+      "DataAssetContractView": {
+        "properties": {
+          "asset_id": {
+            "minLength": 1,
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "contract": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataAssetContractRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "asset_id",
+          "contract"
+        ],
+        "title": "DataAssetContractView",
+        "type": "object"
+      },
       "DataAssetEvidence": {
         "enum": [
           "sync_observed",
@@ -11324,6 +11584,16 @@
         ],
         "title": "DataAssetStewardshipView",
         "type": "object"
+      },
+      "DataContractState": {
+        "enum": [
+          "pass",
+          "warn",
+          "fail",
+          "unknown"
+        ],
+        "title": "DataContractState",
+        "type": "string"
       },
       "DemoBootstrapRecordView": {
         "properties": {
@@ -20598,6 +20868,242 @@
           }
         },
         "summary": "Tenant Data Asset Catalog",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/data/assets/{asset_id}/contract": {
+      "get": {
+        "operationId": "data_asset_contract_view_route_data_assets__asset_id__contract_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAssetContractView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Tenant scope read permission denied"
+          },
+          "404": {
+            "description": "Tenant or data asset not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Data Asset Contract View Route",
+        "tags": [
+          "data"
+        ]
+      },
+      "put": {
+        "operationId": "declare_data_asset_contract_route_data_assets__asset_id__contract_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataAssetContractDeclarationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAssetContractView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Tenant scope write permission denied"
+          },
+          "404": {
+            "description": "Tenant or data asset not found"
+          },
+          "409": {
+            "description": "Contract revision or idempotency conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Declare Data Asset Contract Route",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/data/assets/{asset_id}/contract/evaluation": {
+      "get": {
+        "operationId": "data_asset_contract_evaluation_route_data_assets__asset_id__contract_evaluation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAssetContractEvaluationView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Tenant scope read permission denied"
+          },
+          "404": {
+            "description": "Tenant or data asset not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Data Asset Contract Evaluation Route",
         "tags": [
           "data"
         ]

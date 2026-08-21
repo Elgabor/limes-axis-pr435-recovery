@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import type {
   DataAssetCatalog,
+  DataAssetContractEvaluationView,
+  DataAssetContractView,
   DataAssetResourcesView,
   DataAssetStewardshipView,
 } from "../data-assets";
@@ -99,6 +101,39 @@ const dataAssetResourcesView = z.object({
   notes: stringArraySchema,
 });
 
+const dataContractStateSchema = z.enum(["pass", "warn", "fail", "unknown"]);
+
+const contractCheck = z.object({
+  kind: z.enum(["presence", "schema", "freshness"]),
+  state: dataContractStateSchema,
+  detail: z.string(),
+});
+
+const dataAssetContractRecord = z.object({
+  expected_resource_name: z.string(),
+  expected_schema_fingerprint: z.string().nullable(),
+  freshness_warn_hours: z.number().nullable(),
+  freshness_fail_hours: z.number().nullable(),
+  notes: stringArraySchema,
+  revision_number: z.number(),
+  declared_by: z.string(),
+  declared_at: z.string(),
+});
+
+const dataAssetContractView = z.object({
+  tenant_id: z.string(),
+  asset_id: z.string(),
+  contract: dataAssetContractRecord.nullable(),
+});
+
+const dataAssetContractEvaluationView = z.object({
+  tenant_id: z.string(),
+  asset_id: z.string(),
+  status: dataContractStateSchema,
+  checks: z.array(contractCheck),
+  evaluated_at: z.string(),
+});
+
 const dataAsset = z.object({
   asset_id: z.string(),
   tenant_id: z.string(),
@@ -151,5 +186,19 @@ export function parseDataAssetResourcesView(
   value: unknown,
 ): DataAssetResourcesView {
   return parseContract(dataAssetResourcesView, value);
+}
+
+/** Validate without transforming the response, preserving additive API fields. */
+export function parseDataAssetContractView(
+  value: unknown,
+): DataAssetContractView {
+  return parseContract(dataAssetContractView, value);
+}
+
+/** Validate without transforming the response, preserving additive API fields. */
+export function parseDataAssetContractEvaluationView(
+  value: unknown,
+): DataAssetContractEvaluationView {
+  return parseContract(dataAssetContractEvaluationView, value);
 }
 

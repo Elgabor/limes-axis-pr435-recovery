@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from axis_api.data_assets import (
     DataAssetStewardshipSummary,
 )
+from axis_api.identity import resolve_declared_actor
 from axis_api.persistence import (
     AuditEventCreate,
     AxisPersistenceRepository,
@@ -126,11 +127,7 @@ def resolve_declared_by(
 ) -> str:
     """The verified principal owns the declaration when one is present."""
 
-    if principal_actor_id is not None:
-        return principal_actor_id
-    if request.declared_by is not None:
-        return request.declared_by
-    return "public-demo-steward"
+    return resolve_declared_actor(request.declared_by, principal_actor_id)
 
 
 def declare_data_asset_stewardship(

@@ -24,13 +24,18 @@ import type {
 } from "@/lib/data-assets";
 import { formatDateTime } from "@/lib/format";
 import { safeRandomUuid } from "@/lib/ids";
-import { parseDataAssetStewardshipView } from "@/lib/runtime-contracts/data-assets";
+import { parseDataAssetContractView, parseDataAssetStewardshipView } from "@/lib/runtime-contracts/data-assets";
 import { strings } from "@/lib/strings";
 import {
   buildDataAssetStewardshipPath,
   DATA_ASSET_STEWARDSHIP_ENDPOINTS,
   useDataAssetStewardship,
 } from "@/lib/use-data-asset-stewardship";
+import {
+  buildDataAssetContractPath,
+  useDataAssetContract,
+  useDataAssetContractEvaluation,
+} from "@/lib/use-data-asset-contract";
 import {
   DATA_ASSET_RESOURCES_ENDPOINTS,
   useDataAssetResources,
@@ -517,6 +522,364 @@ export function ResourcesSection({
               </ul>
             </details>
           ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
+const FINGERPRINT_LENGTH = 64;
+
+type ContractFormState = {
+  expectedResourceName: string;
+  expectedSchemaFingerprint: string;
+  freshnessWarnHours: string;
+  freshnessFailHours: string;
+};
+
+function contractStatusPillClass(state: string): string {
+  if (state === "pass") {
+    return "signal-ready";
+  }
+  if (state === "warn") {
+    return "signal-watch";
+  }
+  if (state === "fail") {
+    return "signal-action-required";
+  }
+  return "status-checking";
+}
+
+function parseOptionalHours(value: string): number | null | "invalid" {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return "invalid";
+  }
+  return parsed;
+}
+
+function validateContractForm(form: ContractFormState): {
+  errors: Record<string, string>;
+  parsed: {
+    expectedSchemaFingerprint: string | null;
+    freshnessWarnHours: number | null;
+    freshnessFailHours: number | null;
+  };
+} {
+  const copy = strings.dataCatalog.contract.form.errors;
+  const errors: Record<string, string> = {};
+  if (form.expectedResourceName.trim().length === 0) {
+    errors.expectedResourceName = copy.resourceRequired;
+  }
+  const fingerprint = form.expectedSchemaFingerprint.trim().toLowerCase();
+  let parsedFingerprint: string | null = null;
+  if (fingerprint.length > 0) {
+    if (
+      fingerprint.length !== FINGERPRINT_LENGTH
+      || !/^[0-9a-f]+$/.test(fingerprint)
+    ) {
+      errors.expectedSchemaFingerprint = copy.fingerprintInvalid(
+        FINGERPRINT_LENGTH,
+      );
+    } else {
+      parsedFingerprint = fingerprint;
+    }
+  }
+  const warnHours = parseOptionalHours(form.freshnessWarnHours);
+  if (warnHours === "invalid") {
+    errors.freshnessWarnHours = copy.hoursInvalid;
+  }
+  const failHours = parseOptionalHours(form.freshnessFailHours);
+  if (failHours === "invalid") {
+    errors.freshnessFailHours = copy.hoursInvalid;
+  }
+  if (
+    typeof warnHours === "number"
+    && typeof failHours === "number"
+    && warnHours > failHours
+  ) {
+    errors.freshnessFailHours = copy.orderingInvalid;
+  }
+  return {
+    errors,
+    parsed: {
+      expectedSchemaFingerprint: parsedFingerprint,
+      freshnessWarnHours: typeof warnHours === "number" ? warnHours : null,
+      freshnessFailHours: typeof failHours === "number" ? failHours : null,
+    },
+  };
+}
+
+/**
+ * Declared expectations plus their read-time evaluation. The section never
+ * renders green without evidence: an undeclared or unobserved asset shows
+ * the explicit unknown state.
+ */
+export function ContractSection({
+  asset,
+  onSuccess,
+  tenantId,
+}: {
+  asset: DataAsset;
+  onSuccess: () => void;
+  tenantId: string;
+}) {
+  const copy = strings.dataCatalog.contract;
+  const { session } = useOidcConsoleSession();
+  const contractQuery = useDataAssetContract(asset.asset_id, tenantId, true);
+  const evaluationQuery = useDataAssetContractEvaluation(
+    asset.asset_id,
+    tenantId,
+    true,
+  );
+  const [form, setForm] = useState<ContractFormState>({
+    expectedResourceName: "",
+    expectedSchemaFingerprint: "",
+    freshnessWarnHours: "",
+    freshnessFailHours: "",
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [conflict, setConflict] = useState(false);
+  const [error, setError] = useState<AxisOperatorError | null>(null);
+  const [declared, setDeclared] = useState(false);
+
+  function updateField(field: keyof ContractFormState, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submitDeclaration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const { errors: fieldErrors, parsed } = validateContractForm(form);
+    setErrors(fieldErrors);
+    if (Object.keys(fieldErrors).length > 0) {
+      return;
+    }
+
+    setSubmitting(true);
+    setConflict(false);
+    setError(null);
+    try {
+      await axisFetchParsedJson(
+        buildDataAssetContractPath(asset.asset_id, tenantId),
+        (value) => {
+          const decoded = parseDataAssetContractView(value);
+          if (
+            decoded.tenant_id !== tenantId
+            || decoded.asset_id !== asset.asset_id
+          ) {
+            throw new Error("Contract response scope mismatch.");
+          }
+          return decoded;
+        },
+        {
+          body: {
+            expected_resource_name: form.expectedResourceName.trim(),
+            expected_schema_fingerprint: parsed.expectedSchemaFingerprint,
+            freshness_warn_hours: parsed.freshnessWarnHours,
+            freshness_fail_hours: parsed.freshnessFailHours,
+            expected_revision: null,
+            idempotency_key: safeRandomUuid(),
+          },
+          method: "PUT",
+          session,
+        },
+      );
+      setDeclared(true);
+      onSuccess();
+    } catch (caught) {
+      if (
+        caught instanceof AxisApiError
+        && caught.status === 409
+        && caught.reason === "expected_revision_mismatch"
+      ) {
+        setConflict(true);
+      } else {
+        setError(toAxisOperatorError(caught, copy.form.errors.declareFailed));
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const record = contractQuery.data?.contract ?? null;
+
+  return (
+    <Card className="grid content-start gap-4" data-testid="contract-section">
+      <div className="grid gap-1">
+        <Eyebrow>{copy.title}</Eyebrow>
+        <p className="m-0 text-sm text-muted">{copy.description}</p>
+      </div>
+      {contractQuery.isLoading || evaluationQuery.isLoading ? (
+        <LoadingPanel rows={2} />
+      ) : !contractQuery.data
+        || contractQuery.error
+        || !evaluationQuery.data
+        || evaluationQuery.error ? (
+        <ErrorPanel
+          detail={copy.states.error.detail}
+          endpoint={buildDataAssetContractPath(asset.asset_id, tenantId)}
+          reference={contractQuery.errorRequestId ?? undefined}
+          title={copy.states.error.title}
+        />
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`status-pill ${contractStatusPillClass(evaluationQuery.data.status)}`}
+            >
+              {copy.status[evaluationQuery.data.status]}
+            </span>
+            {!record ? (
+              <span className="text-xs text-muted">{copy.status.notDeclared}</span>
+            ) : null}
+          </div>
+          {evaluationQuery.data.checks.length > 0 ? (
+            <ul className="m-0 grid list-none gap-1.5 p-0">
+              {evaluationQuery.data.checks.map((check) => (
+                <li className="grid gap-0.5" key={check.kind}>
+                  <span className="flex items-center gap-2 text-xs font-medium text-ink">
+                    {copy.checks[check.kind]}
+                    <span
+                      className={`status-pill ${contractStatusPillClass(check.state)}`}
+                    >
+                      {copy.status[check.state]}
+                    </span>
+                  </span>
+                  <span className="text-xs text-muted">{check.detail}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {record ? (
+            <DetailGrid>
+              <KeyValueRow label={copy.fields.expectedResource} mono>
+                {record.expected_resource_name}
+              </KeyValueRow>
+              <KeyValueRow label={copy.fields.expectedFingerprint} mono>
+                {record.expected_schema_fingerprint ?? "—"}
+              </KeyValueRow>
+              <KeyValueRow label={copy.fields.warnHours}>
+                {record.freshness_warn_hours ?? "—"}
+              </KeyValueRow>
+              <KeyValueRow label={copy.fields.failHours}>
+                {record.freshness_fail_hours ?? "—"}
+              </KeyValueRow>
+              <KeyValueRow label={copy.fields.revision}>
+                {record.revision_number}
+              </KeyValueRow>
+              <KeyValueRow label={copy.fields.declaredBy}>
+                {record.declared_by}
+              </KeyValueRow>
+              <KeyValueRow label={copy.fields.declaredAt}>
+                {formatDateTime(record.declared_at)}
+              </KeyValueRow>
+            </DetailGrid>
+          ) : (
+            <>
+              <form
+                aria-label={copy.form.title}
+                className="grid gap-3"
+                noValidate
+                onSubmit={(event) => void submitDeclaration(event)}
+              >
+                <p className="m-0 text-sm leading-snug text-muted">
+                  {copy.form.description}
+                </p>
+                <div className="grid gap-3">
+                  <Field label={copy.fields.expectedResource}>
+                    <Input
+                      aria-invalid={Boolean(errors.expectedResourceName)}
+                      disabled={submitting}
+                      onChange={(event) =>
+                        updateField("expectedResourceName", event.target.value)
+                      }
+                      value={form.expectedResourceName}
+                    />
+                    {errors.expectedResourceName ? (
+                      <span className="m-0 text-sm text-danger" role="alert">
+                        {errors.expectedResourceName}
+                      </span>
+                    ) : null}
+                  </Field>
+                  <Field label={copy.fields.expectedFingerprint}>
+                    <Input
+                      aria-invalid={Boolean(errors.expectedSchemaFingerprint)}
+                      disabled={submitting}
+                      onChange={(event) =>
+                        updateField("expectedSchemaFingerprint", event.target.value)
+                      }
+                      value={form.expectedSchemaFingerprint}
+                    />
+                    {errors.expectedSchemaFingerprint ? (
+                      <span className="m-0 text-sm text-danger" role="alert">
+                        {errors.expectedSchemaFingerprint}
+                      </span>
+                    ) : null}
+                  </Field>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label={copy.fields.warnHours}>
+                      <Input
+                        aria-invalid={Boolean(errors.freshnessWarnHours)}
+                        disabled={submitting}
+                        inputMode="numeric"
+                        onChange={(event) =>
+                          updateField("freshnessWarnHours", event.target.value)
+                        }
+                        value={form.freshnessWarnHours}
+                      />
+                      {errors.freshnessWarnHours ? (
+                        <span className="m-0 text-sm text-danger" role="alert">
+                          {errors.freshnessWarnHours}
+                        </span>
+                      ) : null}
+                    </Field>
+                    <Field label={copy.fields.failHours}>
+                      <Input
+                        aria-invalid={Boolean(errors.freshnessFailHours)}
+                        disabled={submitting}
+                        inputMode="numeric"
+                        onChange={(event) =>
+                          updateField("freshnessFailHours", event.target.value)
+                        }
+                        value={form.freshnessFailHours}
+                      />
+                      {errors.freshnessFailHours ? (
+                        <span className="m-0 text-sm text-danger" role="alert">
+                          {errors.freshnessFailHours}
+                        </span>
+                      ) : null}
+                    </Field>
+                  </div>
+                </div>
+                <div className="flex flex-wrap justify-end">
+                  <Button loading={submitting} type="submit">
+                    {submitting ? copy.form.submitting : copy.form.submit}
+                  </Button>
+                </div>
+              </form>
+              {conflict ? (
+                <p className="m-0 text-sm text-danger" role="alert">
+                  {copy.form.errors.conflict}
+                </p>
+              ) : null}
+              {error ? (
+                <InlineOperatorError
+                  error={error}
+                  prefix={copy.form.errors.declareFailed}
+                />
+              ) : null}
+              {declared ? (
+                <p className="m-0 text-sm text-muted" role="status">
+                  {copy.form.success}
+                </p>
+              ) : null}
+            </>
+          )}
         </>
       )}
     </Card>

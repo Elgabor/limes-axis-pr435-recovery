@@ -34,6 +34,7 @@ from axis_api.models import (
     ConnectorRun,
     ConnectorSyncCheckpoint,
     ConnectorSyncCheckpointClaim,
+    DataAssetContractRecord,
     DataAssetResourceObservation,
     DataAssetStewardshipRecord,
     DemoReferenceRecord,
@@ -315,6 +316,24 @@ class DataResourceObservationCreate(BaseModel):
     drift_state: str = Field(min_length=1, max_length=20)
     observed_by: str = Field(min_length=1)
     audit_event_type: str = Field(default="data.resource.observed", min_length=1)
+
+
+class DataAssetContractCreate(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    asset_id: str = Field(min_length=1)
+    revision_number: int = Field(ge=1)
+    expected_resource_name: str = Field(min_length=1, max_length=240)
+    expected_schema_fingerprint: str | None = Field(
+        default=None, min_length=64, max_length=64
+    )
+    freshness_warn_hours: int | None = Field(default=None, ge=1)
+    freshness_fail_hours: int | None = Field(default=None, ge=1)
+    notes: list[str] = Field(default_factory=list)
+    declared_by: str = Field(min_length=1)
+    audit_event_type: str = Field(default="data.contract.declared", min_length=1)
+    revises_revision_number: int | None = None
+    replaced_by_revision_number: int | None = None
+    revision_idempotency_key: str | None = None
 
 
 class ConnectorCredentialHandleCreate(BaseModel):
@@ -2650,6 +2669,21 @@ class AxisPersistenceRepository:
         )
         return self.session.scalars(statement).first()
 
+    def get_data_resource_observation_for_asset(
+        self,
+        tenant_id: str,
+        asset_id: str,
+        resource_name: str,
+    ) -> DataAssetResourceObservation | None:
+        """Contract evaluation resolves observations by catalog asset ID."""
+
+        statement = select(DataAssetResourceObservation).where(
+            DataAssetResourceObservation.tenant_id == tenant_id,
+            DataAssetResourceObservation.asset_id == asset_id,
+            DataAssetResourceObservation.resource_name == resource_name,
+        )
+        return self.session.scalars(statement).first()
+
     def list_data_resource_observations_by_asset(
         self,
         tenant_id: str,
@@ -2728,6 +2762,99 @@ class AxisPersistenceRepository:
             "axis:data-resource-observation:"
             f"{len(tenant_id)}:{tenant_id}{len(connector_id)}:{connector_id}"
             f"{len(resource_name)}:{resource_name}"
+        )
+        self.session.execute(
+            select(
+                func.pg_advisory_xact_lock(
+                    func.hashtextextended(lock_key, 0)
+                )
+            )
+        )
+
+    def create_data_asset_contract_record(
+        self,
+        record: DataAssetContractCreate,
+    ) -> DataAssetContractRecord:
+        contract = DataAssetContractRecord(
+            tenant_id=record.tenant_id,
+            asset_id=record.asset_id,
+            revision_number=record.revision_number,
+            expected_resource_name=record.expected_resource_name,
+            expected_schema_fingerprint=record.expected_schema_fingerprint,
+            freshness_warn_hours=record.freshness_warn_hours,
+            freshness_fail_hours=record.freshness_fail_hours,
+            notes=record.notes,
+            declared_by=record.declared_by,
+            audit_event_type=record.audit_event_type,
+            revises_revision_number=record.revises_revision_number,
+            replaced_by_revision_number=record.replaced_by_revision_number,
+            revision_idempotency_key=record.revision_idempotency_key,
+        )
+        self.session.add(contract)
+        self.session.flush()
+        return contract
+
+    def get_current_data_asset_contract(
+        self,
+        tenant_id: str,
+        asset_id: str,
+    ) -> DataAssetContractRecord | None:
+        statement = (
+            select(DataAssetContractRecord)
+            .where(
+                DataAssetContractRecord.tenant_id == tenant_id,
+                DataAssetContractRecord.asset_id == asset_id,
+                DataAssetContractRecord.replaced_by_revision_number.is_(None),
+            )
+            .order_by(DataAssetContractRecord.revision_number.desc())
+        )
+        return self.session.scalars(statement).first()
+
+    def get_data_asset_contract_by_revision_idempotency_key(
+        self,
+        tenant_id: str,
+        idempotency_key: str,
+    ) -> DataAssetContractRecord | None:
+        statement = select(DataAssetContractRecord).where(
+            DataAssetContractRecord.tenant_id == tenant_id,
+            DataAssetContractRecord.revision_idempotency_key == idempotency_key,
+        )
+        return self.session.scalars(statement).first()
+
+    def append_data_asset_contract_revision(
+        self,
+        current_contract: DataAssetContractRecord,
+        record: DataAssetContractCreate,
+    ) -> DataAssetContractRecord:
+        current_contract.replaced_by_revision_number = record.revision_number
+        current_contract.updated_at = utc_now()
+        self.session.flush()
+        return self.create_data_asset_contract_record(record)
+
+    def acquire_data_asset_contract_lock(
+        self,
+        *,
+        tenant_id: str,
+        asset_id: str,
+    ) -> None:
+        """Serialize contract declarations for one tenant asset.
+
+        Mirrors the stewardship lock: the first declaration has no row to
+        ``SELECT ... FOR UPDATE``, so coordination uses an advisory
+        transaction key. SQLite (local/test profiles) needs no extra
+        primitive.
+        """
+        dialect_name = self.session.get_bind().dialect.name
+        if dialect_name == "sqlite":
+            return
+        if dialect_name != "postgresql":
+            raise NotImplementedError(
+                "Data asset contract locking is not supported for "
+                f"dialect {dialect_name!r}."
+            )
+        lock_key = (
+            "axis:data-contract:"
+            f"{len(tenant_id)}:{tenant_id}{len(asset_id)}:{asset_id}"
         )
         self.session.execute(
             select(

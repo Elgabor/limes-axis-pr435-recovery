@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   parseDataAssetCatalog,
+  parseDataAssetContractEvaluationView,
+  parseDataAssetContractView,
   parseDataAssetResourcesView,
   parseDataAssetStewardshipView,
 } from "./data-assets";
@@ -255,5 +257,62 @@ describe("parseDataAssetResourcesView", () => {
     };
 
     expect(() => parseDataAssetResourcesView(payload)).toThrow();
+  });
+});
+
+describe("parseDataAssetContractView / parseDataAssetContractEvaluationView", () => {
+  const contractView = {
+    tenant_id: "tenant_demo_manufacturing",
+    asset_id: "source:file_csv_manufacturing_assets:default",
+    contract: {
+      expected_resource_name: "assets.csv",
+      expected_schema_fingerprint: null,
+      freshness_warn_hours: 12,
+      freshness_fail_hours: null,
+      notes: [],
+      revision_number: 2,
+      declared_by: "actor-1",
+      declared_at: "2026-08-21T10:00:00Z",
+    },
+  };
+
+  it("accepts a valid contract view and preserves additive fields", () => {
+    const parsed = parseDataAssetContractView({
+      ...contractView,
+      future_field: 1,
+    });
+
+    expect(parsed.contract?.revision_number).toBe(2);
+    expect((parsed as Record<string, unknown>).future_field).toBe(1);
+  });
+
+  it("accepts an evaluation with checks and rejects unknown statuses", () => {
+    const evaluation = {
+      tenant_id: "tenant_demo_manufacturing",
+      asset_id: "source:x:default",
+      status: "warn",
+      checks: [
+        { kind: "presence", state: "pass", detail: "seen" },
+        { kind: "freshness", state: "warn", detail: "13h old" },
+      ],
+      evaluated_at: "2026-08-21T10:00:00Z",
+    };
+
+    const parsed = parseDataAssetContractEvaluationView(evaluation);
+    expect(parsed.status).toBe("warn");
+    expect(parsed.checks[0]?.kind).toBe("presence");
+
+    expect(() =>
+      parseDataAssetContractEvaluationView({
+        ...evaluation,
+        status: "green",
+      }),
+    ).toThrow();
+    expect(() =>
+      parseDataAssetContractEvaluationView({
+        ...evaluation,
+        checks: [{ kind: "invented", state: "pass", detail: "x" }],
+      }),
+    ).toThrow();
   });
 });

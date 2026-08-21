@@ -1481,6 +1481,57 @@ export const strings = {
         },
       },
     },
+    contract: {
+      title: "Data contract",
+      description:
+        "Declared expectations evaluated against observed evidence at read time. Undeclared or unobserved assets are unknown, never green.",
+      status: {
+        pass: "Pass",
+        warn: "Warn",
+        fail: "Fail",
+        unknown: "Unknown",
+        notDeclared: "No contract declared",
+      },
+      checks: {
+        presence: "Presence",
+        schema: "Schema",
+        freshness: "Freshness",
+      },
+      fields: {
+        expectedResource: "Expected resource",
+        expectedFingerprint: "Expected schema fingerprint",
+        warnHours: "Freshness warn threshold (hours)",
+        failHours: "Freshness fail threshold (hours)",
+        revision: "Revision",
+        declaredBy: "Declared by",
+        declaredAt: "Declared at",
+      },
+      form: {
+        title: "Declare a data contract",
+        description:
+          "State the resource this asset must keep observing, optionally the exact header fingerprint it must carry and how fresh the last observation must be.",
+        submit: "Declare contract",
+        submitting: "Declaring…",
+        success: "Contract declared. Evaluation now runs against real observations.",
+        errors: {
+          resourceRequired: "The expected resource name is required.",
+          fingerprintInvalid: (limit: number) =>
+            `The schema fingerprint must be ${limit} hexadecimal characters.`,
+          hoursInvalid: "Thresholds must be whole numbers of at least 1 hour.",
+          orderingInvalid: "The warn threshold cannot exceed the fail threshold.",
+          declareFailed: "The data contract declaration was not applied.",
+          conflict:
+            "Someone else updated this asset's contract while you were editing. Reload the asset and try again with the current record.",
+        },
+      },
+      states: {
+        error: {
+          title: "Data contract unavailable",
+          detail:
+            "Axis could not load this asset's contract. Nothing is shown rather than showing a stale or invented declaration.",
+        },
+      },
+    },
     resources: {
       title: "Observed resources",
       description:

@@ -92,6 +92,43 @@ export type DataAssetResourcesView = {
   notes: string[];
 };
 
+export type DataContractState = "pass" | "warn" | "fail" | "unknown";
+
+export type ContractCheckKind = "presence" | "schema" | "freshness";
+
+export type ContractCheck = {
+  kind: ContractCheckKind;
+  state: DataContractState;
+  detail: string;
+};
+
+export type DataAssetContractRecord = {
+  expected_resource_name: string;
+  expected_schema_fingerprint: string | null;
+  freshness_warn_hours: number | null;
+  freshness_fail_hours: number | null;
+  notes: string[];
+  revision_number: number;
+  declared_by: string;
+  declared_at: string;
+};
+
+/** GET/PUT envelope for the per-asset contract endpoint. */
+export type DataAssetContractView = {
+  tenant_id: string;
+  asset_id: string;
+  contract: DataAssetContractRecord | null;
+};
+
+/** Read-time evaluation of the declared contract against observed evidence. */
+export type DataAssetContractEvaluationView = {
+  tenant_id: string;
+  asset_id: string;
+  status: DataContractState;
+  checks: ContractCheck[];
+  evaluated_at: string;
+};
+
 export type DataAsset = {
   asset_id: string;
   tenant_id: string;
