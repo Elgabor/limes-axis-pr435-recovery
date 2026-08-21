@@ -341,6 +341,7 @@ from axis_api.connectors import (
     preview_file_csv_connector,
 )
 from axis_api.csrf import BrowserSessionCsrfMiddleware
+from axis_api.data_assets import DataAssetCatalog, build_data_asset_catalog
 from axis_api.db import create_session_factory, session_scope
 from axis_api.demo import (
     ManufacturingActionRegistry,
@@ -2497,6 +2498,9 @@ def create_app(
         lifespan=_lifespan,
     )
     operations_router = APIRouter()
+    # The data plane is a first-class surface: it stays outside the demo
+    # namespace and never receives the legacy /demo/manufacturing alias.
+    data_router = APIRouter(tags=["data"])
 
     @app.exception_handler(ManufacturingTenantNotFound)
     async def manufacturing_tenant_not_found_handler(
@@ -4650,6 +4654,27 @@ def create_app(
                     "surface": "connectors",
                 },
             ) from exc
+
+    @data_router.get(
+        "/assets",
+        response_model=DataAssetCatalog,
+        responses={
+            403: {"description": "Tenant scope read permission denied"},
+            404: {"description": "Tenant not found"},
+        },
+    )
+    def tenant_data_asset_catalog(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        tenant_id: str = Query(min_length=1),
+    ) -> DataAssetCatalog:
+        _authorize_tenant_read(tenant_id, principal)
+        return build_data_asset_catalog(
+            get_persisted_manufacturing_connector_registry(
+                repository,
+                tenant_id=tenant_id,
+            )
+        )
 
     @operations_router.get(
         "/connectors/manifests",
@@ -8925,6 +8950,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="Ontology entity not found")
         return detail
 
+    app.include_router(data_router, prefix="/data")
     app.include_router(operations_router, prefix="/operations")
     # Keep the legacy prefix visible as deprecated until clients finish migrating.
     app.include_router(

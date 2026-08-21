@@ -17,6 +17,7 @@ export type NavIcon =
   | "receipt"
   | "flask"
   | "cable"
+  | "database"
   | "building"
   | "settings";
 
@@ -48,6 +49,7 @@ export const navGroups: NavGroup[] = [
   {
     label: strings.nav.dataAndModels,
     items: [
+      { href: "/data", label: pages.data.title, icon: "database" },
       { href: "/ontology", label: pages.ontology.title, icon: "network" },
       { href: "/connectors", label: pages.connectors.title, icon: "cable" },
       { href: "/model-routing", label: pages["model-routing"].title, icon: "route" },

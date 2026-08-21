@@ -4,6 +4,7 @@ import {
   AiBrain01Icon,
   Building01Icon,
   DashboardSquare01Icon,
+  Database01Icon,
   ElectricPlugsIcon,
   HierarchySquare01Icon,
   Invoice01Icon,
@@ -47,6 +48,7 @@ export const navIconMap: Record<NavIcon, NavIconComponent> = {
   receipt: navIcon(Invoice01Icon),
   flask: navIcon(TestTube01Icon),
   cable: navIcon(ElectricPlugsIcon),
+  database: navIcon(Database01Icon),
   building: navIcon(Building01Icon),
   settings: navIcon(Settings01Icon),
 };

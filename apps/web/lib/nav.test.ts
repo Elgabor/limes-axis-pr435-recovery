@@ -12,11 +12,11 @@ describe("grouped navigation model", () => {
     ]);
   });
 
-  it("keeps all 12 grouped console routes addressable exactly once", () => {
+  it("keeps all 13 grouped console routes addressable exactly once", () => {
     const hrefs = navItems.map((item) => item.href);
 
-    expect(hrefs).toHaveLength(12);
-    expect(new Set(hrefs).size).toBe(12);
+    expect(hrefs).toHaveLength(13);
+    expect(new Set(hrefs).size).toBe(13);
     expect([...hrefs].sort()).toEqual(
       [
         "/",
@@ -24,6 +24,7 @@ describe("grouped navigation model", () => {
         "/approvals",
         "/audit",
         "/connectors",
+        "/data",
         "/model-routing",
         "/ontology",
         "/policies",

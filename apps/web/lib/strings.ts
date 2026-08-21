@@ -117,6 +117,12 @@ const pages = {
     description:
       "Bring data in from files and external systems, with every sync governed and recorded.",
   },
+  data: {
+    eyebrow: nav.dataAndModels,
+    title: "Data",
+    description:
+      "See every data asset the platform knows about, what has actually been observed, and where stewardship is still missing.",
+  },
   "model-routing": {
     eyebrow: nav.dataAndModels,
     title: "Models",
@@ -1385,6 +1391,70 @@ export const strings = {
   agents,
   approvals,
   audit,
+  dataCatalog: {
+    searchLabel: "Search data assets",
+    searchPlaceholder: "Search by name or connector",
+    evidenceFilterLabel: "Filter by evidence",
+    evidence: {
+      all: "All evidence",
+      sync_observed: "Sync observed",
+      preview_only: "Preview only",
+      declared_only: "Declared only",
+    },
+    governance: {
+      declared: "Governance declared",
+      partial: "Governance partial",
+      not_declared: "Governance not declared",
+    },
+    listTitle: "Assets",
+    detail: {
+      assetId: "Asset ID",
+      connector: "Connector",
+      kind: "Asset kind",
+      evidence: "Evidence",
+      governance: "Governance",
+      sourceType: "Source type",
+      runtimeBoundary: "Runtime boundary",
+      egressPolicy: "Egress policy",
+      payloadPolicy: "Payload policy",
+      syncModes: "Sync modes",
+      lastSync: "Last successful sync",
+      manifestRevision: "Manifest revision",
+      registryOrigin: "Registry origin",
+      schemaTitle: "Declared schema mapping",
+      schemaEmpty: "This source has no declared field mapping yet.",
+      ontologyTargets: "Ontology targets",
+      notes: "Catalog notes",
+      columns: {
+        source: "Source column",
+        target: "Target field",
+        ontology: "Ontology target",
+        type: "Type",
+        required: "Required",
+      },
+    },
+    states: {
+      error: {
+        title: "Data catalog unavailable",
+        detail:
+          "Axis did not receive a valid data asset catalog. Nothing is shown rather than showing stale or invented assets.",
+      },
+      empty: {
+        title: "No data assets yet",
+        detail:
+          "Register and sync a connector to project its first governed data asset into the catalog.",
+      },
+      noMatches: {
+        title: "No assets match the current filters",
+        detail: "Adjust the search or evidence filter to see the rest of the catalog.",
+      },
+      unknownAsset: {
+        title: "This data asset does not exist in the catalog",
+        detail:
+          "The requested asset ID is not part of this tenant's catalog. Axis does not substitute a different asset for an unknown deep link.",
+      },
+    },
+  },
   connectors,
   models,
   onboarding,

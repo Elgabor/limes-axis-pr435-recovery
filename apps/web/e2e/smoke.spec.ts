@@ -456,6 +456,7 @@ test.describe("Axis console smoke", () => {
       "Approvals",
       "Workflows",
       "Agents",
+      "Data",
       "Ontology",
       "Connectors",
       "Models",

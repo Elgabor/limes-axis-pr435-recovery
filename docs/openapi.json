@@ -10689,6 +10689,276 @@
         "title": "DailyPlantBriefRequest",
         "type": "object"
       },
+      "DataAsset": {
+        "properties": {
+          "asset_id": {
+            "minLength": 1,
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "connector_type": {
+            "minLength": 1,
+            "title": "Connector Type",
+            "type": "string"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "egress_policy": {
+            "minLength": 1,
+            "title": "Egress Policy",
+            "type": "string"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/DataAssetEvidence"
+          },
+          "governance": {
+            "$ref": "#/components/schemas/DataAssetGovernanceState"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DataAssetKind",
+            "default": "default"
+          },
+          "last_successful_sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorSyncObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manifest_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest Revision"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "ontology_targets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ontology Targets",
+            "type": "array"
+          },
+          "payload_policy": {
+            "minLength": 1,
+            "title": "Payload Policy",
+            "type": "string"
+          },
+          "registry_origin": {
+            "$ref": "#/components/schemas/ConnectorRegistryOrigin"
+          },
+          "runtime_boundary": {
+            "minLength": 1,
+            "title": "Runtime Boundary",
+            "type": "string"
+          },
+          "schema_fields": {
+            "items": {
+              "$ref": "#/components/schemas/DataAssetSchemaField"
+            },
+            "title": "Schema Fields",
+            "type": "array"
+          },
+          "source_type": {
+            "minLength": 1,
+            "title": "Source Type",
+            "type": "string"
+          },
+          "sync_modes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sync Modes",
+            "type": "array"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "asset_id",
+          "tenant_id",
+          "connector_id",
+          "display_name",
+          "evidence",
+          "governance",
+          "source_type",
+          "connector_type",
+          "runtime_boundary",
+          "egress_policy",
+          "payload_policy",
+          "registry_origin"
+        ],
+        "title": "DataAsset",
+        "type": "object"
+      },
+      "DataAssetCatalog": {
+        "properties": {
+          "assets": {
+            "items": {
+              "$ref": "#/components/schemas/DataAsset"
+            },
+            "title": "Assets",
+            "type": "array"
+          },
+          "catalog_status": {
+            "$ref": "#/components/schemas/OverviewStatus"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/OverviewMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "plant_name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plant Name"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ManufacturingResponseProvenance"
+          },
+          "scenario": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "provenance",
+          "catalog_status"
+        ],
+        "title": "DataAssetCatalog",
+        "type": "object"
+      },
+      "DataAssetEvidence": {
+        "enum": [
+          "sync_observed",
+          "preview_only",
+          "declared_only"
+        ],
+        "title": "DataAssetEvidence",
+        "type": "string"
+      },
+      "DataAssetGovernanceState": {
+        "enum": [
+          "declared",
+          "partial",
+          "not_declared"
+        ],
+        "title": "DataAssetGovernanceState",
+        "type": "string"
+      },
+      "DataAssetKind": {
+        "enum": [
+          "default",
+          "table",
+          "view",
+          "file",
+          "folder",
+          "object_prefix",
+          "topic",
+          "api_resource",
+          "document_collection"
+        ],
+        "title": "DataAssetKind",
+        "type": "string"
+      },
+      "DataAssetSchemaField": {
+        "properties": {
+          "data_type": {
+            "minLength": 1,
+            "title": "Data Type",
+            "type": "string"
+          },
+          "description": {
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "ontology_target": {
+            "minLength": 1,
+            "title": "Ontology Target",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "source_column": {
+            "minLength": 1,
+            "title": "Source Column",
+            "type": "string"
+          },
+          "target_field": {
+            "minLength": 1,
+            "title": "Target Field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_column",
+          "target_field",
+          "ontology_target",
+          "data_type",
+          "required",
+          "description"
+        ],
+        "title": "DataAssetSchemaField",
+        "type": "object"
+      },
       "DemoBootstrapRecordView": {
         "properties": {
           "audit_event_id": {
@@ -19902,6 +20172,71 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/data/assets": {
+      "get": {
+        "operationId": "tenant_data_asset_catalog_data_assets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAssetCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Tenant scope read permission denied"
+          },
+          "404": {
+            "description": "Tenant not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Tenant Data Asset Catalog",
+        "tags": [
+          "data"
+        ]
+      }
+    },
     "/demo/manufacturing/actions": {
       "get": {
         "deprecated": true,

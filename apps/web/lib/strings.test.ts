@@ -8,6 +8,7 @@ const consoleRoutes = [
   "approvals",
   "audit",
   "connectors",
+  "data",
   "model-routing",
   "ontology",
   "policies",
@@ -32,7 +33,7 @@ const glossaryKeys = [
 const navGroupLabels = ["Operate", "Data & Models", "Governance", "Platform"];
 
 describe("strings.pages", () => {
-  it("has an entry for each of the 12 console routes", () => {
+  it("has an entry for each of the 13 console routes", () => {
     for (const route of consoleRoutes) {
       expect(strings.pages[route], `missing page strings for "${route}"`).toBeDefined();
     }
