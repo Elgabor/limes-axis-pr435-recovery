@@ -341,6 +341,16 @@ from axis_api.connectors import (
     preview_file_csv_connector,
 )
 from axis_api.csrf import BrowserSessionCsrfMiddleware
+from axis_api.data_asset_stewardship import (
+    DataAssetNotFound,
+    DataAssetStewardshipConflict,
+    DataAssetStewardshipDeclarationRequest,
+    DataAssetStewardshipView,
+    declare_data_asset_stewardship,
+    ensure_data_asset_in_catalog,
+    get_data_asset_stewardship_view,
+    stewardship_summary_for_asset,
+)
 from axis_api.data_assets import DataAssetCatalog, build_data_asset_catalog
 from axis_api.db import create_session_factory, session_scope
 from axis_api.demo import (
@@ -4669,11 +4679,104 @@ def create_app(
         tenant_id: str = Query(min_length=1),
     ) -> DataAssetCatalog:
         _authorize_tenant_read(tenant_id, principal)
+        stewardship_by_asset = {
+            record.asset_id: stewardship_summary_for_asset(record)
+            for record in repository.list_all_current_data_asset_stewardship(tenant_id)
+        }
         return build_data_asset_catalog(
             get_persisted_manufacturing_connector_registry(
                 repository,
                 tenant_id=tenant_id,
+            ),
+            stewardship_by_asset=stewardship_by_asset,
+        )
+
+    def _data_asset_not_found(tenant_id: str, asset_id: str) -> HTTPException:
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": AxisErrorCode.NOT_FOUND.value,
+                "message": "Data asset is not part of this tenant catalog.",
+                "tenant_id": tenant_id,
+                "surface": "data",
+                "asset_id": asset_id,
+            },
+        )
+
+    @data_router.get(
+        "/assets/{asset_id}/stewardship",
+        response_model=DataAssetStewardshipView,
+        responses={
+            403: {"description": "Tenant scope read permission denied"},
+            404: {"description": "Tenant or data asset not found"},
+        },
+    )
+    def data_asset_stewardship_view_route(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        tenant_id: str = Query(min_length=1),
+        asset_id: str = Path(min_length=1),
+    ) -> DataAssetStewardshipView:
+        _authorize_tenant_read(tenant_id, principal)
+        try:
+            ensure_data_asset_in_catalog(repository, tenant_id=tenant_id, asset_id=asset_id)
+        except DataAssetNotFound as exc:
+            raise _data_asset_not_found(tenant_id, asset_id) from exc
+        return get_data_asset_stewardship_view(
+            repository,
+            tenant_id=tenant_id,
+            asset_id=asset_id,
+        )
+
+    @data_router.put(
+        "/assets/{asset_id}/stewardship",
+        response_model=DataAssetStewardshipView,
+        responses={
+            403: {"description": "Tenant scope write permission denied"},
+            404: {"description": "Tenant or data asset not found"},
+            409: {"description": "Stewardship revision or idempotency conflict"},
+        },
+    )
+    def declare_data_asset_stewardship_route(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_model: DataAssetStewardshipDeclarationRequest,
+        tenant_id: str = Query(min_length=1),
+        asset_id: str = Path(min_length=1),
+    ) -> JSONResponse:
+        _authorize_tenant_read(tenant_id, principal)
+        try:
+            ensure_data_asset_in_catalog(repository, tenant_id=tenant_id, asset_id=asset_id)
+        except DataAssetNotFound as exc:
+            raise _data_asset_not_found(tenant_id, asset_id) from exc
+        try:
+            record_view, outcome = declare_data_asset_stewardship(
+                repository,
+                tenant_id=tenant_id,
+                asset_id=asset_id,
+                request=request_model,
+                principal_actor_id=principal.actor_id if principal is not None else None,
             )
+        except DataAssetStewardshipConflict as exc:
+            detail = {
+                "code": AxisErrorCode.CONFLICT.value,
+                "message": "The stewardship declaration conflicts with persisted state.",
+                "reason": exc.reason,
+                "asset_id": exc.asset_id,
+            }
+            if exc.current_revision_number is not None:
+                detail["current_revision"] = exc.current_revision_number
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
+        view = DataAssetStewardshipView(
+            tenant_id=tenant_id,
+            asset_id=asset_id,
+            stewardship=record_view,
+        )
+        return JSONResponse(
+            status_code=(
+                status.HTTP_201_CREATED if outcome == "created" else status.HTTP_200_OK
+            ),
+            content=view.model_dump(mode="json"),
         )
 
     @operations_router.get(

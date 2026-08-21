@@ -1028,6 +1028,62 @@ class ConnectorOntologyPromotion(Base):
     )
 
 
+class DataAssetStewardshipRecord(Base):
+    """Append-only stewardship declaration history for one data asset.
+
+    Every accepted declaration inserts a new revision; the current revision is
+    the row whose ``replaced_by_revision_number`` is null. Stewardship
+    attributes are declared, never inferred, so no inference metadata exists
+    here by design.
+    """
+
+    __tablename__ = "data_asset_stewardship_records"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    asset_id: Mapped[str] = mapped_column(String(220), nullable=False, index=True)
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    owner: Mapped[str] = mapped_column(String(200), nullable=False)
+    classification: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    residency: Mapped[str] = mapped_column(String(80), nullable=False)
+    retention: Mapped[str] = mapped_column(String(80), nullable=False)
+    notes: Mapped[list] = mapped_column(JSON, nullable=False)
+    declared_by: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    audit_event_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    audit_event_type: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    revises_revision_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    replaced_by_revision_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revision_idempotency_key: Mapped[str | None] = mapped_column(
+        String(200),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "classification IN ('public', 'internal', 'confidential', 'restricted')",
+            name="ck_data_asset_stewardship_classification",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "asset_id",
+            "revision_number",
+            name="uq_data_asset_stewardship_tenant_asset_revision",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "revision_idempotency_key",
+            name="uq_data_asset_stewardship_tenant_idempotency",
+        ),
+    )
+
+
 class ConnectorPromotionPolicy(Base):
     __tablename__ = "connector_promotion_policies"
 

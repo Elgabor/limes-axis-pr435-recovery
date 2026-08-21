@@ -57,6 +57,16 @@ class DataAssetSchemaField(BaseModel):
     description: str = Field(min_length=1)
 
 
+class DataAssetStewardshipSummary(BaseModel):
+    """Metadata-only projection of the current stewardship declaration."""
+
+    owner: str = Field(min_length=1)
+    classification: str = Field(min_length=1)
+    residency: str = Field(min_length=1)
+    retention: str = Field(min_length=1)
+    revision_number: int = Field(ge=1)
+
+
 class DataAsset(BaseModel):
     asset_id: str = Field(min_length=1)
     tenant_id: str = Field(min_length=1)
@@ -76,6 +86,7 @@ class DataAsset(BaseModel):
     last_successful_sync: ConnectorSyncObservation | None = None
     registry_origin: ConnectorRegistryOrigin
     manifest_revision: int | None = None
+    stewardship: DataAssetStewardshipSummary | None = None
     notes: list[str] = Field(default_factory=list)
 
 
@@ -95,10 +106,16 @@ def data_asset_id_for_connector(connector_id: str) -> str:
     return f"source:{connector_id}:default"
 
 
-def _governance_state(schema_fields: list[ConnectorSchemaField]) -> DataAssetGovernanceState:
-    # Semantic field mappings may be declared in the manifest, but stewardship
-    # metadata (owner, classification, residency, retention) has no declared
-    # home yet, so a fully mapped asset is still only partially governed.
+def _governance_state(
+    schema_fields: list[ConnectorSchemaField],
+    *,
+    stewardship_declared: bool,
+) -> DataAssetGovernanceState:
+    # Stewardship is declared only when an operator has explicitly declared
+    # owner, classification, residency and retention; semantic field mappings
+    # alone leave the asset partially governed.
+    if stewardship_declared:
+        return DataAssetGovernanceState.DECLARED
     if not schema_fields:
         return DataAssetGovernanceState.NOT_DECLARED
     return DataAssetGovernanceState.PARTIAL
@@ -134,7 +151,12 @@ def _asset_notes(item: ConnectorRegistryItem, evidence: DataAssetEvidence) -> li
     return notes
 
 
-def data_asset_for_connector(item: ConnectorRegistryItem, tenant_id: str) -> DataAsset:
+def data_asset_for_connector(
+    item: ConnectorRegistryItem,
+    tenant_id: str,
+    *,
+    stewardship: DataAssetStewardshipSummary | None = None,
+) -> DataAsset:
     manifest: ConnectorManifest = item.manifest
     evidence = _evidence(item)
     return DataAsset(
@@ -144,7 +166,10 @@ def data_asset_for_connector(item: ConnectorRegistryItem, tenant_id: str) -> Dat
         display_name=manifest.display_name,
         kind=DataAssetKind.DEFAULT,
         evidence=evidence,
-        governance=_governance_state(manifest.schema_fields),
+        governance=_governance_state(
+            manifest.schema_fields,
+            stewardship_declared=stewardship is not None,
+        ),
         source_type=manifest.source_type,
         connector_type=manifest.connector_type,
         runtime_boundary=manifest.runtime_boundary,
@@ -168,6 +193,7 @@ def data_asset_for_connector(item: ConnectorRegistryItem, tenant_id: str) -> Dat
         manifest_revision=(
             item.persisted_manifest.revision_number if item.persisted_manifest else None
         ),
+        stewardship=stewardship,
         notes=_asset_notes(item, evidence),
     )
 
@@ -229,9 +255,19 @@ def _catalog_notes(assets: list[DataAsset]) -> list[str]:
     return notes
 
 
-def build_data_asset_catalog(registry: ManufacturingConnectorRegistry) -> DataAssetCatalog:
+def build_data_asset_catalog(
+    registry: ManufacturingConnectorRegistry,
+    *,
+    stewardship_by_asset: dict[str, DataAssetStewardshipSummary] | None = None,
+) -> DataAssetCatalog:
+    stewardship = stewardship_by_asset or {}
     assets = [
-        data_asset_for_connector(item, registry.tenant_id) for item in registry.connectors
+        data_asset_for_connector(
+            item,
+            registry.tenant_id,
+            stewardship=stewardship.get(data_asset_id_for_connector(item.manifest.connector_id)),
+        )
+        for item in registry.connectors
     ]
     return DataAssetCatalog(
         tenant_id=registry.tenant_id,

@@ -10786,6 +10786,16 @@
             "title": "Source Type",
             "type": "string"
           },
+          "stewardship": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataAssetStewardshipSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "sync_modes": {
             "items": {
               "type": "string"
@@ -10883,6 +10893,16 @@
         "title": "DataAssetCatalog",
         "type": "object"
       },
+      "DataAssetClassification": {
+        "enum": [
+          "public",
+          "internal",
+          "confidential",
+          "restricted"
+        ],
+        "title": "DataAssetClassification",
+        "type": "string"
+      },
       "DataAssetEvidence": {
         "enum": [
           "sync_observed",
@@ -10957,6 +10977,204 @@
           "description"
         ],
         "title": "DataAssetSchemaField",
+        "type": "object"
+      },
+      "DataAssetStewardshipDeclarationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "classification": {
+            "$ref": "#/components/schemas/DataAssetClassification"
+          },
+          "declared_by": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Declared By"
+          },
+          "expected_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Revision"
+          },
+          "idempotency_key": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "owner": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Owner",
+            "type": "string"
+          },
+          "residency": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Residency",
+            "type": "string"
+          },
+          "retention": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Retention",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner",
+          "classification",
+          "residency",
+          "retention",
+          "idempotency_key"
+        ],
+        "title": "DataAssetStewardshipDeclarationRequest",
+        "type": "object"
+      },
+      "DataAssetStewardshipRecord": {
+        "properties": {
+          "classification": {
+            "$ref": "#/components/schemas/DataAssetClassification"
+          },
+          "declared_at": {
+            "format": "date-time",
+            "title": "Declared At",
+            "type": "string"
+          },
+          "declared_by": {
+            "minLength": 1,
+            "title": "Declared By",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "owner": {
+            "minLength": 1,
+            "title": "Owner",
+            "type": "string"
+          },
+          "residency": {
+            "minLength": 1,
+            "title": "Residency",
+            "type": "string"
+          },
+          "retention": {
+            "minLength": 1,
+            "title": "Retention",
+            "type": "string"
+          },
+          "revision_number": {
+            "minimum": 1.0,
+            "title": "Revision Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner",
+          "classification",
+          "residency",
+          "retention",
+          "notes",
+          "revision_number",
+          "declared_by",
+          "declared_at"
+        ],
+        "title": "DataAssetStewardshipRecord",
+        "type": "object"
+      },
+      "DataAssetStewardshipSummary": {
+        "description": "Metadata-only projection of the current stewardship declaration.",
+        "properties": {
+          "classification": {
+            "minLength": 1,
+            "title": "Classification",
+            "type": "string"
+          },
+          "owner": {
+            "minLength": 1,
+            "title": "Owner",
+            "type": "string"
+          },
+          "residency": {
+            "minLength": 1,
+            "title": "Residency",
+            "type": "string"
+          },
+          "retention": {
+            "minLength": 1,
+            "title": "Retention",
+            "type": "string"
+          },
+          "revision_number": {
+            "minimum": 1.0,
+            "title": "Revision Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner",
+          "classification",
+          "residency",
+          "retention",
+          "revision_number"
+        ],
+        "title": "DataAssetStewardshipSummary",
+        "type": "object"
+      },
+      "DataAssetStewardshipView": {
+        "properties": {
+          "asset_id": {
+            "minLength": 1,
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "stewardship": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataAssetStewardshipRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "asset_id",
+          "stewardship"
+        ],
+        "title": "DataAssetStewardshipView",
         "type": "object"
       },
       "DemoBootstrapRecordView": {
@@ -20232,6 +20450,167 @@
           }
         },
         "summary": "Tenant Data Asset Catalog",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/data/assets/{asset_id}/stewardship": {
+      "get": {
+        "operationId": "data_asset_stewardship_view_route_data_assets__asset_id__stewardship_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAssetStewardshipView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Tenant scope read permission denied"
+          },
+          "404": {
+            "description": "Tenant or data asset not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Data Asset Stewardship View Route",
+        "tags": [
+          "data"
+        ]
+      },
+      "put": {
+        "operationId": "declare_data_asset_stewardship_route_data_assets__asset_id__stewardship_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataAssetStewardshipDeclarationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAssetStewardshipView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Tenant scope write permission denied"
+          },
+          "404": {
+            "description": "Tenant or data asset not found"
+          },
+          "409": {
+            "description": "Stewardship revision or idempotency conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Declare Data Asset Stewardship Route",
         "tags": [
           "data"
         ]

@@ -34,6 +34,7 @@ from axis_api.models import (
     ConnectorRun,
     ConnectorSyncCheckpoint,
     ConnectorSyncCheckpointClaim,
+    DataAssetStewardshipRecord,
     DemoReferenceRecord,
     ManufacturingDailyBrief,
     ManufacturingOperationRecord,
@@ -285,6 +286,23 @@ class ConnectorManifestLifecycleUpdate(BaseModel):
         min_length=1,
     )
     note: str = Field(min_length=1)
+
+
+class DataAssetStewardshipCreate(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    asset_id: str = Field(min_length=1)
+    revision_number: int = Field(ge=1)
+    owner: str = Field(min_length=1, max_length=200)
+    classification: str = Field(min_length=1, max_length=40)
+    residency: str = Field(min_length=1, max_length=80)
+    retention: str = Field(min_length=1, max_length=80)
+    declared_by: str = Field(min_length=1)
+    audit_event_id: UUID | None = None
+    audit_event_type: str = Field(default="data.stewardship.declared", min_length=1)
+    revises_revision_number: int | None = None
+    replaced_by_revision_number: int | None = None
+    revision_idempotency_key: str | None = None
+    notes: list[str] = Field(default_factory=list)
 
 
 class ConnectorCredentialHandleCreate(BaseModel):
@@ -2472,6 +2490,117 @@ class AxisPersistenceRepository:
             ConnectorManifestRecord.revision_idempotency_key == idempotency_key,
         )
         return self.session.scalars(statement).first()
+
+    def create_data_asset_stewardship_record(
+        self,
+        record: DataAssetStewardshipCreate,
+    ) -> DataAssetStewardshipRecord:
+        stewardship = DataAssetStewardshipRecord(
+            tenant_id=record.tenant_id,
+            asset_id=record.asset_id,
+            revision_number=record.revision_number,
+            owner=record.owner,
+            classification=record.classification,
+            residency=record.residency,
+            retention=record.retention,
+            notes=record.notes,
+            declared_by=record.declared_by,
+            audit_event_id=record.audit_event_id,
+            audit_event_type=record.audit_event_type,
+            revises_revision_number=record.revises_revision_number,
+            replaced_by_revision_number=record.replaced_by_revision_number,
+            revision_idempotency_key=record.revision_idempotency_key,
+        )
+        self.session.add(stewardship)
+        self.session.flush()
+        return stewardship
+
+    def get_current_data_asset_stewardship(
+        self,
+        tenant_id: str,
+        asset_id: str,
+    ) -> DataAssetStewardshipRecord | None:
+        statement = (
+            select(DataAssetStewardshipRecord)
+            .where(
+                DataAssetStewardshipRecord.tenant_id == tenant_id,
+                DataAssetStewardshipRecord.asset_id == asset_id,
+                DataAssetStewardshipRecord.replaced_by_revision_number.is_(None),
+            )
+            .order_by(DataAssetStewardshipRecord.revision_number.desc())
+        )
+        return self.session.scalars(statement).first()
+
+    def get_data_asset_stewardship_by_revision_idempotency_key(
+        self,
+        tenant_id: str,
+        idempotency_key: str,
+    ) -> DataAssetStewardshipRecord | None:
+        statement = select(DataAssetStewardshipRecord).where(
+            DataAssetStewardshipRecord.tenant_id == tenant_id,
+            DataAssetStewardshipRecord.revision_idempotency_key == idempotency_key,
+        )
+        return self.session.scalars(statement).first()
+
+    def append_data_asset_stewardship_revision(
+        self,
+        current_record: DataAssetStewardshipRecord,
+        record: DataAssetStewardshipCreate,
+    ) -> DataAssetStewardshipRecord:
+        current_record.replaced_by_revision_number = record.revision_number
+        current_record.updated_at = utc_now()
+        self.session.flush()
+        return self.create_data_asset_stewardship_record(record)
+
+    def list_all_current_data_asset_stewardship(
+        self,
+        tenant_id: str,
+    ) -> list[DataAssetStewardshipRecord]:
+        """Materialize one consistent tenant stewardship view in a single query."""
+
+        statement = (
+            select(DataAssetStewardshipRecord)
+            .where(
+                DataAssetStewardshipRecord.tenant_id == tenant_id,
+                DataAssetStewardshipRecord.replaced_by_revision_number.is_(None),
+            )
+            .order_by(DataAssetStewardshipRecord.asset_id.asc())
+        )
+        return list(self.session.scalars(statement))
+
+    def acquire_data_asset_stewardship_lock(
+        self,
+        *,
+        tenant_id: str,
+        asset_id: str,
+    ) -> None:
+        """Serialize stewardship declarations for one tenant asset.
+
+        The first declaration on an asset has no row to ``SELECT ... FOR
+        UPDATE``, so the write path is serialized with an advisory transaction
+        lock instead. PostgreSQL coordinates across API processes and
+        replicas; SQLite serializes writes at the database level and is used
+        only by local/test profiles.
+        """
+        dialect_name = self.session.get_bind().dialect.name
+        if dialect_name == "sqlite":
+            return
+        if dialect_name != "postgresql":
+            raise NotImplementedError(
+                "Data asset stewardship locking is not supported for "
+                f"dialect {dialect_name!r}."
+            )
+        lock_key = (
+            "axis:data-stewardship:"
+            f"{len(tenant_id)}:{tenant_id}{len(asset_id)}:{asset_id}"
+        )
+        self.session.execute(
+            select(
+                func.pg_advisory_xact_lock(
+                    func.hashtextextended(lock_key, 0)
+                )
+            )
+        )
 
     def append_connector_manifest_revision(
         self,

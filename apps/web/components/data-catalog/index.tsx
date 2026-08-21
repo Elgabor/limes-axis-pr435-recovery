@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 
-import { DataAssetDetail, UnknownDataAssetPanel } from "./detail";
+import { DataAssetDetail, StewardshipSection, UnknownDataAssetPanel } from "./detail";
 import {
   DataAssetList,
   dataAssetEvidenceFilterValues,
@@ -22,6 +22,7 @@ import type { DataAssetEvidenceState } from "@/lib/data-assets";
 import { strings } from "@/lib/strings";
 import { useConsoleTenantScope } from "@/lib/use-console-tenant-scope";
 import { DATA_ASSET_ENDPOINTS, useDataAssetCatalog } from "@/lib/use-data-asset-catalog";
+import { useConsole } from "@/providers/console-provider";
 
 const dataCatalogUrlSchema = {
   assetId: opaqueStringUrlField("asset_id"),
@@ -49,6 +50,10 @@ export function DataCatalog() {
   const { tenantId, tenantQueriesEnabled } = useConsoleTenantScope();
   const [urlState, setUrlState] = useConsoleUrlState(dataCatalogUrlSchema);
   const catalog = useDataAssetCatalog(tenantId, tenantQueriesEnabled);
+  // A stewardship declaration must converge the whole page: the refresh bus
+  // re-runs every live query, so the catalog metrics and this section pick up
+  // the new revision together.
+  const { triggerRefresh } = useConsole();
   const copy = strings.dataCatalog;
 
   const filteredAssets = useMemo(() => {
@@ -71,7 +76,7 @@ export function DataCatalog() {
     });
   }, [catalog.data, urlState.evidence, urlState.q]);
 
-  if (!tenantQueriesEnabled || catalog.isLoading) {
+  if (!tenantQueriesEnabled || tenantId === null || catalog.isLoading) {
     return <LoadingPanel layout="detail" />;
   }
 
@@ -124,7 +129,17 @@ export function DataCatalog() {
             unknownAssetRequested ? (
               <UnknownDataAssetPanel assetId={requestedAssetId} />
             ) : selectedAsset ? (
-              <DataAssetDetail asset={selectedAsset} />
+              <div className="grid content-start gap-3.5">
+                <DataAssetDetail asset={selectedAsset} />
+                {/* Keyed by asset so the declare form never carries values
+                    across an asset switch. */}
+                <StewardshipSection
+                  asset={selectedAsset}
+                  key={selectedAsset.asset_id}
+                  onSuccess={triggerRefresh}
+                  tenantId={tenantId}
+                />
+              </div>
             ) : (
               <Card>
                 <EmptyPanel

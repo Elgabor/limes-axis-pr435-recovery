@@ -32,11 +32,35 @@ the latest successful run, mirroring the connector registry read model.
 
 Governance is declared honestly and nothing is invented:
 
-- `declared` — reserved until stewardship attributes (owner, classification,
-  residency, retention) have a declared home.
-- `partial` — the manifest declares semantic field mappings, stewardship
-  attributes do not exist yet.
-- `not_declared` — the manifest carries no schema mapping at all.
+- `declared` — an operator declared owner, classification, residency and
+  retention through the persistent stewardship registry.
+- `partial` — the manifest declares semantic field mappings, no stewardship
+  declaration exists yet.
+- `not_declared` — no schema mapping and no stewardship declaration.
+
+## Stewardship registry
+
+Stewardship lives in its own append-only revision history
+(`data_asset_stewardship_records`, migration 0058), never inside the
+connector manifest. Declarations are addressed by catalog asset ID:
+
+- `GET /data/assets/{asset_id}/stewardship` returns the current declaration
+  or null.
+- `PUT /data/assets/{asset_id}/stewardship` declares a new revision with
+  optimistic concurrency (`expected_revision`) and idempotency keys.
+  Structured `409`s distinguish a stale revision from a replayed key with a
+  changed payload.
+- Writes resolve the asset against the live catalog first: stewardship for an
+  unknown asset fails closed instead of orphaning evidence.
+- Advisory transaction locks serialize declarations across replicas,
+  including the first declaration where no row exists to lock.
+- Verified OIDC principals own their declarations; the request body cannot
+  spoof `declared_by`.
+- Every accepted declaration appends `data.stewardship.declared` or
+  `data.stewardship.updated` audit evidence.
+
+The console renders the current declaration in the asset detail pane and
+offers an inline declare form when none exists.
 
 ## Metadata-only boundary
 

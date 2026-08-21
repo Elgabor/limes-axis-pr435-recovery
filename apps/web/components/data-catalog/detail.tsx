@@ -1,12 +1,33 @@
 "use client";
 
+import { useState, type FormEvent } from "react";
+
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { DetailGrid, KeyValueRow } from "@/components/ui/detail-grid";
 import { Eyebrow } from "@/components/ui/eyebrow";
-import { EmptyPanel } from "@/components/ui/states";
-import type { DataAsset } from "@/lib/data-assets";
+import { Field } from "@/components/ui/field";
+import { InlineOperatorError } from "@/components/ui/inline-operator-error";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
+import {
+  AxisApiError,
+  axisFetchParsedJson,
+  toAxisOperatorError,
+  type AxisOperatorError,
+} from "@/lib/axis-api";
+import type { DataAsset, DataAssetClassification } from "@/lib/data-assets";
 import { formatDateTime } from "@/lib/format";
+import { safeRandomUuid } from "@/lib/ids";
+import { parseDataAssetStewardshipView } from "@/lib/runtime-contracts/data-assets";
 import { strings } from "@/lib/strings";
+import {
+  buildDataAssetStewardshipPath,
+  DATA_ASSET_STEWARDSHIP_ENDPOINTS,
+  useDataAssetStewardship,
+} from "@/lib/use-data-asset-stewardship";
+import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 
 /** Data asset detail pane: metadata-only by contract, mirroring the API. */
 export function DataAssetDetail({ asset }: { asset: DataAsset }) {
@@ -137,6 +158,266 @@ export function UnknownDataAssetPanel({ assetId }: { assetId: string }) {
     <Card className="grid content-start gap-4">
       <EmptyPanel detail={copy.detail} title={copy.title} />
       <p className="m-0 font-mono text-xs break-all text-muted">{assetId}</p>
+    </Card>
+  );
+}
+
+const CLASSIFICATION_VALUES = [
+  "public",
+  "internal",
+  "confidential",
+  "restricted",
+] as const;
+
+/** Mirrors the PUT /data/assets/{id}/stewardship field constraints. */
+const OWNER_LIMIT = 200;
+const SHORT_FIELD_LIMIT = 80;
+
+type StewardshipFormState = {
+  owner: string;
+  classification: DataAssetClassification;
+  residency: string;
+  retention: string;
+};
+
+type StewardshipFieldErrors = Partial<
+  Record<"owner" | "residency" | "retention", string>
+>;
+
+function validateStewardshipForm(
+  form: StewardshipFormState,
+): StewardshipFieldErrors {
+  const copy = strings.dataCatalog.stewardship.form.errors;
+  const errors: StewardshipFieldErrors = {};
+  const owner = form.owner.trim();
+  if (owner.length === 0) {
+    errors.owner = copy.ownerRequired;
+  } else if (owner.length > OWNER_LIMIT) {
+    errors.owner = copy.ownerTooLong(OWNER_LIMIT);
+  }
+  const residency = form.residency.trim();
+  if (residency.length === 0) {
+    errors.residency = copy.residencyRequired;
+  } else if (residency.length > SHORT_FIELD_LIMIT) {
+    errors.residency = copy.residencyTooLong(SHORT_FIELD_LIMIT);
+  }
+  const retention = form.retention.trim();
+  if (retention.length === 0) {
+    errors.retention = copy.retentionRequired;
+  } else if (retention.length > SHORT_FIELD_LIMIT) {
+    errors.retention = copy.retentionTooLong(SHORT_FIELD_LIMIT);
+  }
+  return errors;
+}
+
+/**
+ * Per-asset stewardship: the declared record when one exists, otherwise an
+ * inline declare form. The declaration PUT is idempotent and revision-guarded;
+ * a successful declare asks the parent to refresh so the catalog and this
+ * section converge on the new revision.
+ */
+export function StewardshipSection({
+  asset,
+  onSuccess,
+  tenantId,
+}: {
+  asset: DataAsset;
+  onSuccess: () => void;
+  tenantId: string;
+}) {
+  const copy = strings.dataCatalog.stewardship;
+  const { session } = useOidcConsoleSession();
+  const stewardshipQuery = useDataAssetStewardship(asset.asset_id, tenantId, true);
+  const [form, setForm] = useState<StewardshipFormState>({
+    classification: "internal",
+    owner: "",
+    residency: "",
+    retention: "",
+  });
+  const [fieldErrors, setFieldErrors] = useState<StewardshipFieldErrors>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [conflict, setConflict] = useState(false);
+  const [error, setError] = useState<AxisOperatorError | null>(null);
+  const [declared, setDeclared] = useState(false);
+
+  function updateField<K extends keyof StewardshipFormState>(
+    field: K,
+    value: StewardshipFormState[K],
+  ) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function submitDeclaration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const errors = validateStewardshipForm(form);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
+
+    setSubmitting(true);
+    setConflict(false);
+    setError(null);
+    try {
+      await axisFetchParsedJson(
+        buildDataAssetStewardshipPath(asset.asset_id, tenantId),
+        (value) => {
+          const decoded = parseDataAssetStewardshipView(value);
+          if (decoded.tenant_id !== tenantId || decoded.asset_id !== asset.asset_id) {
+            throw new Error("Stewardship response scope mismatch.");
+          }
+          return decoded;
+        },
+        {
+          body: {
+            classification: form.classification,
+            expected_revision: null,
+            idempotency_key: safeRandomUuid(),
+            owner: form.owner.trim(),
+            residency: form.residency.trim(),
+            retention: form.retention.trim(),
+          },
+          method: "PUT",
+          session,
+        },
+      );
+      setDeclared(true);
+      onSuccess();
+    } catch (caught) {
+      if (
+        caught instanceof AxisApiError
+        && caught.status === 409
+        && caught.reason === "expected_revision_mismatch"
+      ) {
+        setConflict(true);
+      } else {
+        setError(toAxisOperatorError(caught, copy.form.errors.declareFailed));
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const record = stewardshipQuery.data?.stewardship ?? null;
+
+  return (
+    <Card className="grid content-start gap-4">
+      <div className="grid gap-1">
+        <Eyebrow>{copy.title}</Eyebrow>
+        <p className="m-0 text-sm text-muted">{copy.description}</p>
+      </div>
+      {stewardshipQuery.isLoading ? (
+        <LoadingPanel rows={2} />
+      ) : !stewardshipQuery.data || stewardshipQuery.error ? (
+        <ErrorPanel
+          detail={copy.states.error.detail}
+          endpoint={DATA_ASSET_STEWARDSHIP_ENDPOINTS.stewardship}
+          reference={stewardshipQuery.errorRequestId ?? undefined}
+          title={copy.states.error.title}
+        />
+      ) : record ? (
+        <DetailGrid>
+          <KeyValueRow label={copy.fields.owner}>{record.owner}</KeyValueRow>
+          <KeyValueRow label={copy.fields.classification}>
+            {copy.classificationLabels[record.classification]}
+          </KeyValueRow>
+          <KeyValueRow label={copy.fields.residency}>{record.residency}</KeyValueRow>
+          <KeyValueRow label={copy.fields.retention}>{record.retention}</KeyValueRow>
+          <KeyValueRow label={copy.fields.revision}>{record.revision_number}</KeyValueRow>
+          <KeyValueRow label={copy.fields.declaredBy}>{record.declared_by}</KeyValueRow>
+          <KeyValueRow label={copy.fields.declaredAt}>
+            {formatDateTime(record.declared_at)}
+          </KeyValueRow>
+        </DetailGrid>
+      ) : (
+        <>
+          <form
+            aria-label={copy.form.title}
+            className="grid gap-3"
+            noValidate
+            onSubmit={(event) => void submitDeclaration(event)}
+          >
+            <p className="m-0 text-sm leading-snug text-muted">{copy.form.description}</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={copy.fields.owner}>
+                <Input
+                  aria-invalid={Boolean(fieldErrors.owner)}
+                  disabled={submitting}
+                  onChange={(event) => updateField("owner", event.target.value)}
+                  value={form.owner}
+                />
+                {fieldErrors.owner ? (
+                  <span className="m-0 text-sm text-danger" role="alert">
+                    {fieldErrors.owner}
+                  </span>
+                ) : null}
+              </Field>
+              <Field label={copy.fields.classification}>
+                <Select
+                  disabled={submitting}
+                  onChange={(event) =>
+                    updateField(
+                      "classification",
+                      event.target.value as DataAssetClassification,
+                    )
+                  }
+                  value={form.classification}
+                >
+                  {CLASSIFICATION_VALUES.map((value) => (
+                    <option key={value} value={value}>
+                      {copy.classificationLabels[value]}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label={copy.fields.residency}>
+                <Input
+                  aria-invalid={Boolean(fieldErrors.residency)}
+                  disabled={submitting}
+                  onChange={(event) => updateField("residency", event.target.value)}
+                  value={form.residency}
+                />
+                {fieldErrors.residency ? (
+                  <span className="m-0 text-sm text-danger" role="alert">
+                    {fieldErrors.residency}
+                  </span>
+                ) : null}
+              </Field>
+              <Field label={copy.fields.retention}>
+                <Input
+                  aria-invalid={Boolean(fieldErrors.retention)}
+                  disabled={submitting}
+                  onChange={(event) => updateField("retention", event.target.value)}
+                  value={form.retention}
+                />
+                {fieldErrors.retention ? (
+                  <span className="m-0 text-sm text-danger" role="alert">
+                    {fieldErrors.retention}
+                  </span>
+                ) : null}
+              </Field>
+            </div>
+            <div className="flex flex-wrap justify-end">
+              <Button loading={submitting} type="submit">
+                {submitting ? copy.form.submitting : copy.form.submit}
+              </Button>
+            </div>
+          </form>
+          {conflict ? (
+            <p className="m-0 text-sm text-danger" role="alert">
+              {copy.form.errors.conflict}
+            </p>
+          ) : null}
+          {error ? (
+            <InlineOperatorError error={error} prefix={copy.form.errors.declareFailed} />
+          ) : null}
+          {declared ? (
+            <p className="m-0 text-sm text-muted" role="status">
+              {copy.form.success}
+            </p>
+          ) : null}
+        </>
+      )}
     </Card>
   );
 }

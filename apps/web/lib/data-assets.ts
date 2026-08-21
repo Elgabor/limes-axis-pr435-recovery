@@ -34,6 +34,36 @@ export type DataAssetSchemaField = {
   description: string;
 };
 
+export type DataAssetClassification =
+  | "public"
+  | "internal"
+  | "confidential"
+  | "restricted";
+
+export type DataAssetStewardshipRecord = {
+  owner: string;
+  classification: DataAssetClassification;
+  residency: string;
+  retention: string;
+  notes: string[];
+  revision_number: number;
+  declared_by: string;
+  declared_at: string;
+};
+
+/** Stewardship projection embedded in catalog asset objects. */
+export type DataAssetStewardshipSummary = Pick<
+  DataAssetStewardshipRecord,
+  "owner" | "classification" | "residency" | "retention" | "revision_number"
+>;
+
+/** GET/PUT envelope for the per-asset stewardship endpoint. */
+export type DataAssetStewardshipView = {
+  tenant_id: string;
+  asset_id: string;
+  stewardship: DataAssetStewardshipRecord | null;
+};
+
 export type DataAssetSyncObservation = {
   run_id: string;
   completed_at: string;
@@ -60,6 +90,7 @@ export type DataAsset = {
   registry_origin: DataAssetRegistryOrigin;
   manifest_revision: number | null;
   notes: string[];
+  stewardship: DataAssetStewardshipSummary | null;
 };
 
 export type DataAssetCatalogMetric = {

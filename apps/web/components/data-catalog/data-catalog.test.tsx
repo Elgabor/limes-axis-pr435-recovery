@@ -7,8 +7,10 @@ import { strings } from "@/lib/strings";
 
 const mocks = vi.hoisted(() => ({
   setUrlState: vi.fn(),
+  triggerRefresh: vi.fn(),
   urlState: { assetId: "", evidence: "all", q: "" },
   useDataAssetCatalog: vi.fn(),
+  useDataAssetStewardship: vi.fn(),
 }));
 
 vi.mock("@/lib/use-console-tenant-scope", () => ({
@@ -18,9 +20,21 @@ vi.mock("@/lib/use-console-tenant-scope", () => ({
   }),
 }));
 
+vi.mock("@/providers/console-provider", () => ({
+  useConsole: () => ({
+    refreshNonce: 0,
+    triggerRefresh: mocks.triggerRefresh,
+  }),
+}));
+
 vi.mock("@/lib/use-data-asset-catalog", () => ({
   DATA_ASSET_ENDPOINTS: { assets: "/data/assets" },
   useDataAssetCatalog: mocks.useDataAssetCatalog,
+}));
+
+vi.mock("@/lib/use-data-asset-stewardship", () => ({
+  DATA_ASSET_STEWARDSHIP_ENDPOINTS: { stewardship: "/data/assets/stewardship" },
+  useDataAssetStewardship: mocks.useDataAssetStewardship,
 }));
 
 vi.mock("@/lib/console-url-state", () => ({
@@ -92,6 +106,7 @@ function catalogFixture(overrides: Partial<DataAssetCatalog> = {}): DataAssetCat
         registry_origin: "reference",
         manifest_revision: null,
         notes: [],
+        stewardship: null,
       },
       {
         asset_id: "source:external_db_operational_mirror:default",
@@ -113,6 +128,7 @@ function catalogFixture(overrides: Partial<DataAssetCatalog> = {}): DataAssetCat
         registry_origin: "persisted_manifest",
         manifest_revision: 3,
         notes: [],
+        stewardship: null,
       },
     ],
     notes: [],
@@ -132,6 +148,13 @@ function loadedCatalog(data: DataAssetCatalog | null) {
 beforeEach(() => {
   mocks.urlState = { assetId: "", evidence: "all", q: "" };
   mocks.setUrlState.mockClear();
+  mocks.useDataAssetStewardship.mockReset();
+  mocks.useDataAssetStewardship.mockReturnValue({
+    data: null,
+    error: null,
+    errorRequestId: null,
+    isLoading: false,
+  });
 });
 
 describe("DataCatalog", () => {

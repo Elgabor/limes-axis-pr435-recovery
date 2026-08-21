@@ -1433,6 +1433,54 @@ export const strings = {
         required: "Required",
       },
     },
+    stewardship: {
+      title: "Stewardship",
+      description:
+        "Declared ownership and handling constraints for this asset. Declarations are revisioned and idempotent.",
+      fields: {
+        owner: "Owner",
+        classification: "Classification",
+        residency: "Residency",
+        retention: "Retention",
+        revision: "Revision",
+        declaredBy: "Declared by",
+        declaredAt: "Declared at",
+      },
+      classificationLabels: {
+        public: "Public",
+        internal: "Internal",
+        confidential: "Confidential",
+        restricted: "Restricted",
+      },
+      form: {
+        title: "Declare stewardship",
+        description:
+          "Declare an owner and handling constraints for this asset. The first declaration creates revision 1; later updates go through the same endpoint.",
+        submit: "Declare stewardship",
+        submitting: "Declaring…",
+        success: "Stewardship declared.",
+        errors: {
+          ownerRequired: "Owner is required.",
+          ownerTooLong: (limit: number) => `Owner must be at most ${limit} characters.`,
+          residencyRequired: "Residency is required.",
+          residencyTooLong: (limit: number) =>
+            `Residency must be at most ${limit} characters.`,
+          retentionRequired: "Retention is required.",
+          retentionTooLong: (limit: number) =>
+            `Retention must be at most ${limit} characters.`,
+          declareFailed: "The stewardship declaration was not applied.",
+          conflict:
+            "Someone else updated this asset's stewardship while you were editing. Reload the asset and try again with the current record.",
+        },
+      },
+      states: {
+        error: {
+          title: "Stewardship unavailable",
+          detail:
+            "Axis could not load this asset's stewardship record. Nothing is shown rather than showing a stale or invented declaration.",
+        },
+      },
+    },
     states: {
       error: {
         title: "Data catalog unavailable",

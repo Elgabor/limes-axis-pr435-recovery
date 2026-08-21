@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-import type { DataAssetCatalog } from "../data-assets";
+import type {
+  DataAssetCatalog,
+  DataAssetStewardshipView,
+} from "../data-assets";
 import {
   manufacturingProvenanceSchema,
   nullableStringSchema,
@@ -16,6 +19,12 @@ const dataAssetEvidenceSchema = z.enum([
   "declared_only",
 ]);
 const dataAssetGovernanceSchema = z.enum(["declared", "partial", "not_declared"]);
+const dataAssetClassificationSchema = z.enum([
+  "public",
+  "internal",
+  "confidential",
+  "restricted",
+]);
 const dataAssetKindSchema = z.enum([
   "default",
   "table",
@@ -44,6 +53,31 @@ const dataAssetSyncObservation = z.object({
   records_read: z.number(),
 });
 
+const dataAssetStewardshipSummary = z.object({
+  owner: z.string(),
+  classification: dataAssetClassificationSchema,
+  residency: z.string(),
+  retention: z.string(),
+  revision_number: z.number(),
+});
+
+const dataAssetStewardshipRecord = z.object({
+  owner: z.string(),
+  classification: dataAssetClassificationSchema,
+  residency: z.string(),
+  retention: z.string(),
+  notes: stringArraySchema,
+  revision_number: z.number(),
+  declared_by: z.string(),
+  declared_at: z.string(),
+});
+
+const dataAssetStewardshipView = z.object({
+  tenant_id: z.string(),
+  asset_id: z.string(),
+  stewardship: dataAssetStewardshipRecord.nullable(),
+});
+
 const dataAsset = z.object({
   asset_id: z.string(),
   tenant_id: z.string(),
@@ -64,6 +98,7 @@ const dataAsset = z.object({
   registry_origin: dataAssetRegistryOriginSchema,
   manifest_revision: z.number().nullable(),
   notes: stringArraySchema,
+  stewardship: dataAssetStewardshipSummary.nullable(),
 });
 
 const dataAssetCatalog = z.object({
@@ -80,5 +115,12 @@ const dataAssetCatalog = z.object({
 /** Validate without transforming the response, preserving additive API fields. */
 export function parseDataAssetCatalog(value: unknown): DataAssetCatalog {
   return parseContract(dataAssetCatalog, value);
+}
+
+/** Validate without transforming the response, preserving additive API fields. */
+export function parseDataAssetStewardshipView(
+  value: unknown,
+): DataAssetStewardshipView {
+  return parseContract(dataAssetStewardshipView, value);
 }
 
