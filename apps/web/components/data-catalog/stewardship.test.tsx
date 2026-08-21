@@ -71,6 +71,7 @@ function assetFixture(): DataAsset {
     manifest_revision: null,
     notes: [],
     stewardship: null,
+    observed_resource_count: null,
   };
 }
 

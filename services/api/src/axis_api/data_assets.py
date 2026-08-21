@@ -12,6 +12,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
+from axis_api.connector_reference import get_persisted_manufacturing_connector_registry
 from axis_api.connectors import (
     ConnectorManifest,
     ConnectorRegistryItem,
@@ -22,6 +23,37 @@ from axis_api.connectors import (
 )
 from axis_api.demo import OverviewMetric, OverviewStatus
 from axis_api.manufacturing_metadata import ManufacturingResponseProvenance
+
+
+class DataAssetNotInCatalog(LookupError):
+    """Raised when an asset ID does not resolve in a tenant catalog."""
+
+    def __init__(self, tenant_id: str, asset_id: str) -> None:
+        super().__init__(
+            f"Data asset {asset_id!r} is not part of tenant {tenant_id!r} catalog"
+        )
+        self.tenant_id = tenant_id
+        self.asset_id = asset_id
+
+
+def ensure_data_asset_in_catalog(
+    repository,
+    *,
+    tenant_id: str,
+    asset_id: str,
+) -> None:
+    """Fail closed when an operation targets an asset outside the catalog."""
+
+    registry = get_persisted_manufacturing_connector_registry(
+        repository,
+        tenant_id=tenant_id,
+    )
+    known_asset_ids = {
+        data_asset_id_for_connector(item.manifest.connector_id)
+        for item in registry.connectors
+    }
+    if asset_id not in known_asset_ids:
+        raise DataAssetNotInCatalog(tenant_id, asset_id)
 
 
 class DataAssetKind(StrEnum):
@@ -87,6 +119,7 @@ class DataAsset(BaseModel):
     registry_origin: ConnectorRegistryOrigin
     manifest_revision: int | None = None
     stewardship: DataAssetStewardshipSummary | None = None
+    observed_resource_count: int | None = Field(default=None, ge=0)
     notes: list[str] = Field(default_factory=list)
 
 
@@ -156,6 +189,7 @@ def data_asset_for_connector(
     tenant_id: str,
     *,
     stewardship: DataAssetStewardshipSummary | None = None,
+    observed_resource_count: int | None = None,
 ) -> DataAsset:
     manifest: ConnectorManifest = item.manifest
     evidence = _evidence(item)
@@ -194,6 +228,7 @@ def data_asset_for_connector(
             item.persisted_manifest.revision_number if item.persisted_manifest else None
         ),
         stewardship=stewardship,
+        observed_resource_count=observed_resource_count,
         notes=_asset_notes(item, evidence),
     )
 
@@ -259,13 +294,18 @@ def build_data_asset_catalog(
     registry: ManufacturingConnectorRegistry,
     *,
     stewardship_by_asset: dict[str, DataAssetStewardshipSummary] | None = None,
+    observed_resource_counts: dict[str, int] | None = None,
 ) -> DataAssetCatalog:
     stewardship = stewardship_by_asset or {}
+    resource_counts = observed_resource_counts or {}
     assets = [
         data_asset_for_connector(
             item,
             registry.tenant_id,
             stewardship=stewardship.get(data_asset_id_for_connector(item.manifest.connector_id)),
+            observed_resource_count=resource_counts.get(
+                data_asset_id_for_connector(item.manifest.connector_id)
+            ),
         )
         for item in registry.connectors
     ]

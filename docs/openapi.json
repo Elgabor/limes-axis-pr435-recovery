@@ -4177,6 +4177,16 @@
             "title": "File Name",
             "type": "string"
           },
+          "observed_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorObservedSchema"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "preview_notes": {
             "items": {
               "type": "string"
@@ -7165,6 +7175,29 @@
           "created_at"
         ],
         "title": "ConnectorManualImportRecord",
+        "type": "object"
+      },
+      "ConnectorObservedSchema": {
+        "description": "Header names actually observed on a source file, never row values.",
+        "properties": {
+          "columns": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fingerprint"
+        ],
+        "title": "ConnectorObservedSchema",
         "type": "object"
       },
       "ConnectorOntologyPromotionRecord": {
@@ -10754,6 +10787,18 @@
             "title": "Notes",
             "type": "array"
           },
+          "observed_resource_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Resource Count"
+          },
           "ontology_targets": {
             "items": {
               "type": "string"
@@ -10935,6 +10980,109 @@
         ],
         "title": "DataAssetKind",
         "type": "string"
+      },
+      "DataAssetResourceObservationView": {
+        "properties": {
+          "drift_state": {
+            "pattern": "^(added|changed|unchanged)$",
+            "title": "Drift State",
+            "type": "string"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "observation_count": {
+            "minimum": 1.0,
+            "title": "Observation Count",
+            "type": "integer"
+          },
+          "observed_by": {
+            "minLength": 1,
+            "title": "Observed By",
+            "type": "string"
+          },
+          "previous_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Fingerprint"
+          },
+          "resource_name": {
+            "minLength": 1,
+            "title": "Resource Name",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Fingerprint"
+          }
+        },
+        "required": [
+          "resource_name",
+          "schema_fingerprint",
+          "previous_fingerprint",
+          "drift_state",
+          "first_seen_at",
+          "last_seen_at",
+          "observation_count",
+          "observed_by"
+        ],
+        "title": "DataAssetResourceObservationView",
+        "type": "object"
+      },
+      "DataAssetResourcesView": {
+        "properties": {
+          "asset_id": {
+            "minLength": 1,
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/DataAssetResourceObservationView"
+            },
+            "title": "Resources",
+            "type": "array"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "asset_id",
+          "resources"
+        ],
+        "title": "DataAssetResourcesView",
+        "type": "object"
       },
       "DataAssetSchemaField": {
         "properties": {
@@ -20450,6 +20598,81 @@
           }
         },
         "summary": "Tenant Data Asset Catalog",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/data/assets/{asset_id}/resources": {
+      "get": {
+        "operationId": "data_asset_resources_route_data_assets__asset_id__resources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAssetResourcesView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Tenant scope read permission denied"
+          },
+          "404": {
+            "description": "Tenant or data asset not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Data Asset Resources Route",
         "tags": [
           "data"
         ]

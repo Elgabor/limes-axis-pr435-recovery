@@ -1481,6 +1481,33 @@ export const strings = {
         },
       },
     },
+    resources: {
+      title: "Observed resources",
+      description:
+        "Source files Axis actually observed through governed preview boundaries. Metadata only — header names and fingerprints, never row values.",
+      countSummary: (count: number) =>
+        count === 1 ? "1 resource observed" : `${count} resources observed`,
+      empty: {
+        title: "No observed resources yet",
+        detail:
+          "Run a successful connector preview to record the first observation for this asset.",
+      },
+      drift: {
+        added: "Added",
+        changed: "Changed",
+        unchanged: "Unchanged",
+      },
+      observations: (count: number) =>
+        count === 1 ? "1 observation" : `${count} observations`,
+      notesTitle: "How observation works",
+      states: {
+        error: {
+          title: "Resource observations unavailable",
+          detail:
+            "Axis could not load this asset's observed resources. Nothing is shown rather than showing a stale or invented list.",
+        },
+      },
+    },
     states: {
       error: {
         title: "Data catalog unavailable",

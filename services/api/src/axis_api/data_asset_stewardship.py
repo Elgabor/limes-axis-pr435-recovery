@@ -12,10 +12,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from axis_api.connector_reference import get_persisted_manufacturing_connector_registry
 from axis_api.data_assets import (
     DataAssetStewardshipSummary,
-    data_asset_id_for_connector,
 )
 from axis_api.persistence import (
     AuditEventCreate,
@@ -29,15 +27,6 @@ class DataAssetClassification(StrEnum):
     INTERNAL = "internal"
     CONFIDENTIAL = "confidential"
     RESTRICTED = "restricted"
-
-
-class DataAssetNotFound(LookupError):
-    def __init__(self, tenant_id: str, asset_id: str) -> None:
-        super().__init__(
-            f"Data asset {asset_id!r} is not part of tenant {tenant_id!r} catalog"
-        )
-        self.tenant_id = tenant_id
-        self.asset_id = asset_id
 
 
 class DataAssetStewardshipConflict(ValueError):
@@ -129,26 +118,6 @@ def stewardship_summary_for_asset(
         retention=record.retention,
         revision_number=record.revision_number,
     )
-
-
-def ensure_data_asset_in_catalog(
-    repository: AxisPersistenceRepository,
-    *,
-    tenant_id: str,
-    asset_id: str,
-) -> None:
-    """Fail closed when stewardship targets an asset outside the catalog."""
-
-    registry = get_persisted_manufacturing_connector_registry(
-        repository,
-        tenant_id=tenant_id,
-    )
-    known_asset_ids = {
-        data_asset_id_for_connector(item.manifest.connector_id)
-        for item in registry.connectors
-    }
-    if asset_id not in known_asset_ids:
-        raise DataAssetNotFound(tenant_id, asset_id)
 
 
 def resolve_declared_by(

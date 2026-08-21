@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type {
   DataAssetCatalog,
+  DataAssetResourcesView,
   DataAssetStewardshipView,
 } from "../data-assets";
 import {
@@ -78,6 +79,26 @@ const dataAssetStewardshipView = z.object({
   stewardship: dataAssetStewardshipRecord.nullable(),
 });
 
+const dataAssetResourceDriftSchema = z.enum(["added", "changed", "unchanged"]);
+
+const dataAssetResourceObservation = z.object({
+  resource_name: z.string(),
+  schema_fingerprint: z.string().nullable(),
+  previous_fingerprint: z.string().nullable(),
+  drift_state: dataAssetResourceDriftSchema,
+  first_seen_at: z.string(),
+  last_seen_at: z.string(),
+  observation_count: z.number(),
+  observed_by: z.string(),
+});
+
+const dataAssetResourcesView = z.object({
+  tenant_id: z.string(),
+  asset_id: z.string(),
+  resources: z.array(dataAssetResourceObservation),
+  notes: stringArraySchema,
+});
+
 const dataAsset = z.object({
   asset_id: z.string(),
   tenant_id: z.string(),
@@ -99,6 +120,7 @@ const dataAsset = z.object({
   manifest_revision: z.number().nullable(),
   notes: stringArraySchema,
   stewardship: dataAssetStewardshipSummary.nullable(),
+  observed_resource_count: z.number().nullable(),
 });
 
 const dataAssetCatalog = z.object({
@@ -122,5 +144,12 @@ export function parseDataAssetStewardshipView(
   value: unknown,
 ): DataAssetStewardshipView {
   return parseContract(dataAssetStewardshipView, value);
+}
+
+/** Validate without transforming the response, preserving additive API fields. */
+export function parseDataAssetResourcesView(
+  value: unknown,
+): DataAssetResourcesView {
+  return parseContract(dataAssetResourcesView, value);
 }
 

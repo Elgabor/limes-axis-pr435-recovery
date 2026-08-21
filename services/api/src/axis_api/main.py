@@ -341,17 +341,25 @@ from axis_api.connectors import (
     preview_file_csv_connector,
 )
 from axis_api.csrf import BrowserSessionCsrfMiddleware
+from axis_api.data_asset_discovery import (
+    DataAssetResourcesView,
+    list_data_asset_resources,
+    record_data_resource_observation,
+)
 from axis_api.data_asset_stewardship import (
-    DataAssetNotFound,
     DataAssetStewardshipConflict,
     DataAssetStewardshipDeclarationRequest,
     DataAssetStewardshipView,
     declare_data_asset_stewardship,
-    ensure_data_asset_in_catalog,
     get_data_asset_stewardship_view,
     stewardship_summary_for_asset,
 )
-from axis_api.data_assets import DataAssetCatalog, build_data_asset_catalog
+from axis_api.data_assets import (
+    DataAssetCatalog,
+    DataAssetNotInCatalog,
+    build_data_asset_catalog,
+    ensure_data_asset_in_catalog,
+)
 from axis_api.db import create_session_factory, session_scope
 from axis_api.demo import (
     ManufacturingActionRegistry,
@@ -4689,6 +4697,9 @@ def create_app(
                 tenant_id=tenant_id,
             ),
             stewardship_by_asset=stewardship_by_asset,
+            observed_resource_counts=repository.count_data_resource_observations_by_asset(
+                tenant_id
+            ),
         )
 
     def _data_asset_not_found(tenant_id: str, asset_id: str) -> HTTPException:
@@ -4720,7 +4731,7 @@ def create_app(
         _authorize_tenant_read(tenant_id, principal)
         try:
             ensure_data_asset_in_catalog(repository, tenant_id=tenant_id, asset_id=asset_id)
-        except DataAssetNotFound as exc:
+        except DataAssetNotInCatalog as exc:
             raise _data_asset_not_found(tenant_id, asset_id) from exc
         return get_data_asset_stewardship_view(
             repository,
@@ -4747,7 +4758,7 @@ def create_app(
         _authorize_tenant_read(tenant_id, principal)
         try:
             ensure_data_asset_in_catalog(repository, tenant_id=tenant_id, asset_id=asset_id)
-        except DataAssetNotFound as exc:
+        except DataAssetNotInCatalog as exc:
             raise _data_asset_not_found(tenant_id, asset_id) from exc
         try:
             record_view, outcome = declare_data_asset_stewardship(
@@ -4777,6 +4788,31 @@ def create_app(
                 status.HTTP_201_CREATED if outcome == "created" else status.HTTP_200_OK
             ),
             content=view.model_dump(mode="json"),
+        )
+
+    @data_router.get(
+        "/assets/{asset_id}/resources",
+        response_model=DataAssetResourcesView,
+        responses={
+            403: {"description": "Tenant scope read permission denied"},
+            404: {"description": "Tenant or data asset not found"},
+        },
+    )
+    def data_asset_resources_route(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        tenant_id: str = Query(min_length=1),
+        asset_id: str = Path(min_length=1),
+    ) -> DataAssetResourcesView:
+        _authorize_tenant_read(tenant_id, principal)
+        try:
+            ensure_data_asset_in_catalog(repository, tenant_id=tenant_id, asset_id=asset_id)
+        except DataAssetNotInCatalog as exc:
+            raise _data_asset_not_found(tenant_id, asset_id) from exc
+        return list_data_asset_resources(
+            repository,
+            tenant_id=tenant_id,
+            asset_id=asset_id,
         )
 
     @operations_router.get(
@@ -7084,7 +7120,7 @@ def create_app(
                 preview_request.tenant_id,
                 preview_request.connector_id,
             )
-            return preview_file_csv_connector(registry, preview_request)
+            result = preview_file_csv_connector(registry, preview_request)
         except ConnectorReferenceRecordNotFound as exc:
             raise HTTPException(
                 status_code=404,
@@ -7103,6 +7139,20 @@ def create_app(
                     "surface": "connectors",
                 },
             ) from exc
+        # A ready preview is a real observation of the file's header schema:
+        # recording it keeps discovery evidence-derived instead of invented.
+        if result.preview_status == "ready" and result.observed_schema is not None:
+            record_data_resource_observation(
+                repository,
+                tenant_id=preview_request.tenant_id,
+                connector_id=preview_request.connector_id,
+                file_name=result.file_name,
+                columns=list(result.observed_schema.columns),
+                observed_by=(
+                    principal.actor_id if principal is not None else "public-demo-steward"
+                ),
+            )
+        return result
 
     @operations_router.post(
         "/connectors/external-db/preview",

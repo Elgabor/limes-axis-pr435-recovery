@@ -1084,6 +1084,56 @@ class DataAssetStewardshipRecord(Base):
     )
 
 
+class DataAssetResourceObservation(Base):
+    """Current observation state for one discovered source resource.
+
+    A row exists only for resources Axis actually observed through a governed
+    boundary (today: successful CSV previews). Absence of a row never means a
+    resource is gone: only complete scans could prove that, and none exist
+    yet, so there is no ``missing`` drift state by design.
+    """
+
+    __tablename__ = "data_asset_resource_observations"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    connector_id: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    asset_id: Mapped[str] = mapped_column(String(220), nullable=False, index=True)
+    resource_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    schema_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    previous_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    drift_state: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    last_source_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    observation_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    observed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    audit_event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "drift_state IN ('added', 'changed', 'unchanged')",
+            name="ck_data_asset_resource_observations_drift",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "connector_id",
+            "resource_name",
+            name="uq_data_asset_res_obs_tenant_connector_resource",
+        ),
+    )
+
+
 class ConnectorPromotionPolicy(Base):
     __tablename__ = "connector_promotion_policies"
 

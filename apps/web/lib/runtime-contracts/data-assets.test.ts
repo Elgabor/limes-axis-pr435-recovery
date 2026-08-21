@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { parseDataAssetCatalog, parseDataAssetStewardshipView } from "./data-assets";
+import {
+  parseDataAssetCatalog,
+  parseDataAssetResourcesView,
+  parseDataAssetStewardshipView,
+} from "./data-assets";
 
 function catalogFixture() {
   return {
@@ -50,6 +54,7 @@ function catalogFixture() {
         },
         registry_origin: "reference",
         manifest_revision: null,
+        observed_resource_count: null,
         notes: ["Sync observation present."],
         stewardship: {
           classification: "internal",
@@ -200,5 +205,55 @@ describe("parseDataAssetStewardshipView", () => {
     delete (payload as { tenant_id?: unknown }).tenant_id;
 
     expect(() => parseDataAssetStewardshipView(payload)).toThrow();
+  });
+});
+
+describe("parseDataAssetResourcesView", () => {
+  it("accepts a valid resources payload and preserves additive fields", () => {
+    const payload = {
+      tenant_id: "tenant_demo_manufacturing",
+      asset_id: "source:file_csv_manufacturing_assets:default",
+      resources: [
+        {
+          resource_name: "assets.csv",
+          schema_fingerprint: "a".repeat(64),
+          previous_fingerprint: null,
+          drift_state: "added",
+          first_seen_at: "2026-08-21T10:00:00Z",
+          last_seen_at: "2026-08-21T10:00:00Z",
+          observation_count: 1,
+          observed_by: "actor-1",
+        },
+      ],
+      notes: ["Observations come from governed preview boundaries."],
+      future_field: true,
+    };
+
+    const parsed = parseDataAssetResourcesView(payload);
+
+    expect(parsed.resources[0]?.resource_name).toBe("assets.csv");
+    expect((parsed as Record<string, unknown>).future_field).toBe(true);
+  });
+
+  it("rejects an unknown drift state", () => {
+    const payload = {
+      tenant_id: "tenant_demo_manufacturing",
+      asset_id: "source:x:default",
+      resources: [
+        {
+          resource_name: "assets.csv",
+          schema_fingerprint: null,
+          previous_fingerprint: null,
+          drift_state: "missing",
+          first_seen_at: "2026-08-21T10:00:00Z",
+          last_seen_at: "2026-08-21T10:00:00Z",
+          observation_count: 1,
+          observed_by: "actor-1",
+        },
+      ],
+      notes: [],
+    };
+
+    expect(() => parseDataAssetResourcesView(payload)).toThrow();
   });
 });

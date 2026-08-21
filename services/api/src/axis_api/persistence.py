@@ -34,6 +34,7 @@ from axis_api.models import (
     ConnectorRun,
     ConnectorSyncCheckpoint,
     ConnectorSyncCheckpointClaim,
+    DataAssetResourceObservation,
     DataAssetStewardshipRecord,
     DemoReferenceRecord,
     ManufacturingDailyBrief,
@@ -303,6 +304,17 @@ class DataAssetStewardshipCreate(BaseModel):
     replaced_by_revision_number: int | None = None
     revision_idempotency_key: str | None = None
     notes: list[str] = Field(default_factory=list)
+
+
+class DataResourceObservationCreate(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    connector_id: str = Field(min_length=1)
+    asset_id: str = Field(min_length=1)
+    resource_name: str = Field(min_length=1, max_length=240)
+    schema_fingerprint: str | None = Field(default=None, min_length=64, max_length=64)
+    drift_state: str = Field(min_length=1, max_length=20)
+    observed_by: str = Field(min_length=1)
+    audit_event_type: str = Field(default="data.resource.observed", min_length=1)
 
 
 class ConnectorCredentialHandleCreate(BaseModel):
@@ -2593,6 +2605,129 @@ class AxisPersistenceRepository:
         lock_key = (
             "axis:data-stewardship:"
             f"{len(tenant_id)}:{tenant_id}{len(asset_id)}:{asset_id}"
+        )
+        self.session.execute(
+            select(
+                func.pg_advisory_xact_lock(
+                    func.hashtextextended(lock_key, 0)
+                )
+            )
+        )
+
+    def create_data_resource_observation(
+        self,
+        record: DataResourceObservationCreate,
+    ) -> DataAssetResourceObservation:
+        observation = DataAssetResourceObservation(
+            tenant_id=record.tenant_id,
+            connector_id=record.connector_id,
+            asset_id=record.asset_id,
+            resource_name=record.resource_name,
+            schema_fingerprint=record.schema_fingerprint,
+            previous_fingerprint=None,
+            drift_state=record.drift_state,
+            first_seen_at=utc_now(),
+            last_seen_at=utc_now(),
+            last_source_kind="csv_preview",
+            observation_count=1,
+            observed_by=record.observed_by,
+            audit_event_type=record.audit_event_type,
+        )
+        self.session.add(observation)
+        self.session.flush()
+        return observation
+
+    def get_data_resource_observation(
+        self,
+        tenant_id: str,
+        connector_id: str,
+        resource_name: str,
+    ) -> DataAssetResourceObservation | None:
+        statement = select(DataAssetResourceObservation).where(
+            DataAssetResourceObservation.tenant_id == tenant_id,
+            DataAssetResourceObservation.connector_id == connector_id,
+            DataAssetResourceObservation.resource_name == resource_name,
+        )
+        return self.session.scalars(statement).first()
+
+    def list_data_resource_observations_by_asset(
+        self,
+        tenant_id: str,
+        asset_id: str,
+    ) -> list[DataAssetResourceObservation]:
+        statement = (
+            select(DataAssetResourceObservation)
+            .where(
+                DataAssetResourceObservation.tenant_id == tenant_id,
+                DataAssetResourceObservation.asset_id == asset_id,
+            )
+            .order_by(DataAssetResourceObservation.resource_name.asc())
+        )
+        return list(self.session.scalars(statement))
+
+    def count_data_resource_observations_by_asset(
+        self,
+        tenant_id: str,
+    ) -> dict[str, int]:
+        """One grouped query materializing per-asset observation counts."""
+
+        statement = (
+            select(
+                DataAssetResourceObservation.asset_id,
+                func.count(DataAssetResourceObservation.id),
+            )
+            .where(DataAssetResourceObservation.tenant_id == tenant_id)
+            .group_by(DataAssetResourceObservation.asset_id)
+        )
+        return {
+            asset_id: count
+            for asset_id, count in self.session.execute(statement).all()
+        }
+
+    def record_repeat_data_resource_observation(
+        self,
+        existing: DataAssetResourceObservation,
+        *,
+        schema_fingerprint: str | None,
+        drift_state: str,
+        observed_by: str,
+    ) -> DataAssetResourceObservation:
+        """Update the current observation row in place; history stays in audit."""
+
+        existing.previous_fingerprint = existing.schema_fingerprint
+        existing.schema_fingerprint = schema_fingerprint
+        existing.drift_state = drift_state
+        existing.last_seen_at = utc_now()
+        existing.observation_count += 1
+        existing.observed_by = observed_by
+        self.session.flush()
+        return existing
+
+    def acquire_data_resource_observation_lock(
+        self,
+        *,
+        tenant_id: str,
+        connector_id: str,
+        resource_name: str,
+    ) -> None:
+        """Serialize resource observation upserts across replicas.
+
+        Mirrors the stewardship lock: the first observation of a resource has
+        no row to lock, so coordination uses an advisory transaction key.
+        SQLite (local/test profiles) needs no extra primitive.
+        """
+        dialect_name = self.session.get_bind().dialect.name
+        if dialect_name == "sqlite":
+            return
+        if dialect_name != "postgresql":
+            raise NotImplementedError(
+                "Data resource observation locking is not supported for "
+                f"dialect {dialect_name!r}."
+            )
+        lock_key = (
+            "axis:data-resource-observation:"
+            f"{len(tenant_id)}:{tenant_id}{len(connector_id)}:{connector_id}"
+            f"{len(resource_name)}:{resource_name}"
         )
         self.session.execute(
             select(

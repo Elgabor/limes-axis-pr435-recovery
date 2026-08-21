@@ -70,6 +70,28 @@ export type DataAssetSyncObservation = {
   records_read: number;
 };
 
+export type DataAssetResourceDriftState = "added" | "changed" | "unchanged";
+
+/** One observed source resource; metadata-only, never row values. */
+export type DataAssetResourceObservation = {
+  resource_name: string;
+  schema_fingerprint: string | null;
+  previous_fingerprint: string | null;
+  drift_state: DataAssetResourceDriftState;
+  first_seen_at: string;
+  last_seen_at: string;
+  observation_count: number;
+  observed_by: string;
+};
+
+/** GET envelope for the per-asset resource observations endpoint. */
+export type DataAssetResourcesView = {
+  tenant_id: string;
+  asset_id: string;
+  resources: DataAssetResourceObservation[];
+  notes: string[];
+};
+
 export type DataAsset = {
   asset_id: string;
   tenant_id: string;
@@ -91,6 +113,7 @@ export type DataAsset = {
   manifest_revision: number | null;
   notes: string[];
   stewardship: DataAssetStewardshipSummary | null;
+  observed_resource_count: number | null;
 };
 
 export type DataAssetCatalogMetric = {

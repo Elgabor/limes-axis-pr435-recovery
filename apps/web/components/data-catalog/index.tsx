@@ -2,7 +2,12 @@
 
 import { useMemo } from "react";
 
-import { DataAssetDetail, StewardshipSection, UnknownDataAssetPanel } from "./detail";
+import {
+  DataAssetDetail,
+  ResourcesSection,
+  StewardshipSection,
+  UnknownDataAssetPanel,
+} from "./detail";
 import {
   DataAssetList,
   dataAssetEvidenceFilterValues,
@@ -137,6 +142,11 @@ export function DataCatalog() {
                   asset={selectedAsset}
                   key={selectedAsset.asset_id}
                   onSuccess={triggerRefresh}
+                  tenantId={tenantId}
+                />
+                <ResourcesSection
+                  asset={selectedAsset}
+                  key={`resources-${selectedAsset.asset_id}`}
                   tenantId={tenantId}
                 />
               </div>

@@ -17,7 +17,11 @@ import {
   toAxisOperatorError,
   type AxisOperatorError,
 } from "@/lib/axis-api";
-import type { DataAsset, DataAssetClassification } from "@/lib/data-assets";
+import type {
+  DataAsset,
+  DataAssetClassification,
+  DataAssetResourceObservation,
+} from "@/lib/data-assets";
 import { formatDateTime } from "@/lib/format";
 import { safeRandomUuid } from "@/lib/ids";
 import { parseDataAssetStewardshipView } from "@/lib/runtime-contracts/data-assets";
@@ -27,6 +31,10 @@ import {
   DATA_ASSET_STEWARDSHIP_ENDPOINTS,
   useDataAssetStewardship,
 } from "@/lib/use-data-asset-stewardship";
+import {
+  DATA_ASSET_RESOURCES_ENDPOINTS,
+  useDataAssetResources,
+} from "@/lib/use-data-asset-resources";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 
 /** Data asset detail pane: metadata-only by contract, mirroring the API. */
@@ -415,6 +423,99 @@ export function StewardshipSection({
             <p className="m-0 text-sm text-muted" role="status">
               {copy.form.success}
             </p>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function driftPillClass(driftState: string): string {
+  if (driftState === "added") {
+    return "signal-watch";
+  }
+  if (driftState === "changed") {
+    return "signal-action-required";
+  }
+  return "signal-ready";
+}
+
+function ResourceRow({ resource }: { resource: DataAssetResourceObservation }) {
+  const copy = strings.dataCatalog.resources;
+
+  return (
+    <div
+      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2 dark:border-white/10"
+      data-resource-name={resource.resource_name}
+    >
+      <span className="min-w-0">
+        <span className="block truncate font-mono text-xs text-ink">
+          {resource.resource_name}
+        </span>
+        <span className="text-xs text-muted">
+          {copy.observations(resource.observation_count)} ·{" "}
+          {formatDateTime(resource.last_seen_at)}
+        </span>
+      </span>
+      <span className={`status-pill ${driftPillClass(resource.drift_state)}`}>
+        {copy.drift[resource.drift_state]}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Read-only observation log for one asset: resources Axis actually saw
+ * through governed preview boundaries, with evidence-derived drift states.
+ */
+export function ResourcesSection({
+  asset,
+  tenantId,
+}: {
+  asset: DataAsset;
+  tenantId: string;
+}) {
+  const copy = strings.dataCatalog.resources;
+  const resourcesQuery = useDataAssetResources(asset.asset_id, tenantId, true);
+
+  return (
+    <Card className="grid content-start gap-4" data-testid="resources-section">
+      <div className="grid gap-1">
+        <Eyebrow>{copy.title}</Eyebrow>
+        <p className="m-0 text-sm text-muted">{copy.description}</p>
+      </div>
+      {resourcesQuery.isLoading ? (
+        <LoadingPanel rows={2} />
+      ) : !resourcesQuery.data || resourcesQuery.error ? (
+        <ErrorPanel
+          detail={copy.states.error.detail}
+          endpoint={DATA_ASSET_RESOURCES_ENDPOINTS.resources}
+          reference={resourcesQuery.errorRequestId ?? undefined}
+          title={copy.states.error.title}
+        />
+      ) : (
+        <>
+          <p className="m-0 text-sm text-ink">
+            {copy.countSummary(resourcesQuery.data.resources.length)}
+          </p>
+          {resourcesQuery.data.resources.length === 0 ? (
+            <EmptyPanel detail={copy.empty.detail} title={copy.empty.title} />
+          ) : (
+            <div className="grid gap-2">
+              {resourcesQuery.data.resources.map((resource) => (
+                <ResourceRow key={resource.resource_name} resource={resource} />
+              ))}
+            </div>
+          )}
+          {resourcesQuery.data.notes.length > 0 ? (
+            <details className="text-xs text-muted">
+              <summary className="cursor-pointer">{copy.notesTitle}</summary>
+              <ul className="m-0 mt-1 grid list-disc gap-1 pl-4">
+                {resourcesQuery.data.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            </details>
           ) : null}
         </>
       )}

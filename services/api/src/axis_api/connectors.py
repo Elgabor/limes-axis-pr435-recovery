@@ -1,4 +1,6 @@
 import csv
+import hashlib
+import json
 from datetime import datetime
 from enum import StrEnum
 from io import StringIO
@@ -7,6 +9,23 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from axis_api.demo import OverviewMetric, OverviewStatus
 from axis_api.manufacturing_metadata import ManufacturingResponseProvenance
+
+
+def csv_header_fingerprint(columns: list[str]) -> str:
+    """Stable SHA-256 over the trimmed header names; metadata only."""
+
+    normalized = json.dumps(
+        [column.strip() for column in columns],
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+class ConnectorObservedSchema(BaseModel):
+    """Header names actually observed on a source file, never row values."""
+
+    columns: list[str] = Field(default_factory=list)
+    fingerprint: str = Field(min_length=64, max_length=64)
 
 
 class ConnectorCredentialRequirements(BaseModel):
@@ -144,6 +163,7 @@ class ConnectorCsvPreviewResult(BaseModel):
     validation_issues: list[str] = Field(default_factory=list)
     proposed_entities: list[ProposedOntologyEntity] = Field(default_factory=list)
     audit_event_preview: ConnectorAuditEventPreview
+    observed_schema: ConnectorObservedSchema | None = None
     preview_notes: list[str] = Field(default_factory=list)
 
 
@@ -360,6 +380,14 @@ def preview_file_csv_connector(
                 "accepted_record_count": str(accepted_count),
                 "rejected_record_count": str(rejected_count),
             },
+        ),
+        observed_schema=(
+            ConnectorObservedSchema(
+                columns=list(headers),
+                fingerprint=csv_header_fingerprint(headers),
+            )
+            if headers
+            else None
         ),
         preview_notes=[
             "CSV content is parsed only for preview and is not persisted.",
