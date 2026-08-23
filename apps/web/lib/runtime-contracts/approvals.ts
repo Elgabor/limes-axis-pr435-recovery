@@ -13,6 +13,20 @@ import {
 } from "./shared";
 
 const approvalDecision = z.enum(["approve", "reject", "request_changes"]);
+const approvalDecisionHistoryEntry = z.object({
+  approval_id: z.string(),
+  action: z.string(),
+  risk_level: z.string(),
+  status: z.string(),
+  decision: z.string(),
+  domain: nullableStringSchema,
+  workflow_id: nullableStringSchema,
+  decided_by: nullableStringSchema,
+  decided_at: nullableStringSchema,
+  rationale: nullableStringSchema,
+  audit_event_id: nullableStringSchema,
+  follow_through_status: nullableStringSchema,
+});
 const approvalInbox = z.object({
   tenant_id: z.string(),
   plant_name: nullableStringSchema,
@@ -21,6 +35,8 @@ const approvalInbox = z.object({
   as_of: z.string(),
   queue_status: platformStatusSchema,
   policy_notes: stringArraySchema,
+  // Older deployments predate the history projection; default keeps one type.
+  decision_history: z.array(approvalDecisionHistoryEntry).default([]),
   approvals: z.array(z.object({
     approval_id: z.string(),
     action_run_id: z.string().nullable().optional(),

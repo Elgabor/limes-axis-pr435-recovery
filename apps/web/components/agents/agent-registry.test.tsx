@@ -17,6 +17,10 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+vi.mock("@/lib/use-identity-session", () => ({
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 vi.mock("@/providers/tenant-vocabulary-provider", () => ({
   useTenantVocabulary: mocks.useTenantVocabulary,
 }));
@@ -44,6 +48,7 @@ const publicIdentity: IdentitySessionReadModel = {
   capabilities: [],
   limitations: [],
   notes: [],
+  unauthenticated_reason: null,
 };
 
 function queryResult(result: {

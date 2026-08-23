@@ -27,7 +27,7 @@ const toneText: Record<NonNullable<Metric["tone"]>, string> = {
  * warns in development if given more — metrics must describe user-relevant
  * state, not enumerate internal invariants.
  */
-export function MetricStrip({ metrics }: { metrics: Metric[] }) {
+export function MetricStrip({ metrics, label }: { metrics: Metric[]; label?: string }) {
   if (process.env.NODE_ENV !== "production" && metrics.length > MAX_METRICS) {
     console.warn(
       `MetricStrip renders at most ${MAX_METRICS} metrics; received ${metrics.length}. Extra metrics are dropped — move detail into the page body or an Inspect drawer.`,
@@ -37,7 +37,7 @@ export function MetricStrip({ metrics }: { metrics: Metric[] }) {
   const visible = metrics.slice(0, MAX_METRICS);
 
   return (
-    <div className="flex min-w-0 flex-wrap gap-3" role="list">
+    <div role="list" aria-label={label} className="flex min-w-0 flex-wrap gap-3">
       {visible.map((metric) => (
         <article
           key={metric.label}

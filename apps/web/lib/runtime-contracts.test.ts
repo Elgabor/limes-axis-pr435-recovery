@@ -324,6 +324,7 @@ describe("production runtime contracts", () => {
       capabilities: ["browser_session_rotation"],
       limitations: [],
       notes: [],
+      unauthenticated_reason: null,
       future_additive_field: "accepted",
     };
 

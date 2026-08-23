@@ -148,7 +148,7 @@ def lease_result_evidence() -> dict:
     return {
         "status": "lease_executed",
         "provider_lease_ref": f"env://axis/leases/{TENANT_ID}/{EXTERNAL_DB_LEASE_ID}",
-        "secret_material_returned": False,
+        "secret_material_returned": "false",
     }
 
 
@@ -263,8 +263,8 @@ def seed_env_secret_credentials(repository: AxisPersistenceRepository) -> None:
             secret_ref=f"env://{ENV_SECRET_VAR}",
             vault_kms_policy={"ttl_seconds": "900", "max_ttl_seconds": "1800"},
             permission_decision={
-                "allowed": "true",
-                "scope": "connectors:credential_lease:request",
+                "allowed": True,
+                "reason": "all_required_scopes_present",
             },
             lease_result={
                 "adapter": "axis-provider-specific-vault-kms-lease-adapter",
@@ -272,7 +272,7 @@ def seed_env_secret_credentials(repository: AxisPersistenceRepository) -> None:
                 "provider_lease_ref": (
                     f"env://axis/leases/{TENANT_ID}/{EXTERNAL_DB_LEASE_ID}"
                 ),
-                "secret_material_returned": False,
+                "secret_material_returned": "false",
             },
             granted_at=now,
             expires_at=now.replace(year=now.year + 1),

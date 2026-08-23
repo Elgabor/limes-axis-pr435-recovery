@@ -27,6 +27,7 @@ from axis_api.manufacturing_metadata import (
 )
 from axis_api.persistence import (
     AxisPersistenceRepository,
+    ConnectorLifecycleEventCreate,
     ConnectorManifestCreate,
     ConnectorManifestLifecycleUpdate,
     PersistenceRecordNotFound,
@@ -201,11 +202,35 @@ class ConnectorManifestRecordView(BaseModel):
     created_at: datetime
 
 
+class ConnectorManifestTransitionView(BaseModel):
+    """One governed lifecycle transition of one connector, newest first.
+
+    Deliberately typed operator evidence only: statuses, actor, reason and
+    evidence references. Raw audit payloads stay in the ledger.
+    """
+
+    from_status: str = Field(min_length=1)
+    target_status: str = Field(min_length=1)
+    transitioned_by: str = Field(min_length=1)
+    transition_reason: str = Field(min_length=1)
+    evidence_refs: list[str] = Field(default_factory=list)
+    audit_event_id: UUID
+    audit_event_type: str = Field(min_length=1)
+    transitioned_at: datetime
+
+
+# Transitions returned per manifest detail response. The projection is
+# append-only per connector, so the cap keeps responses bounded without any
+# client-side scanning.
+MANIFEST_TRANSITION_HISTORY_LIMIT = 20
+
+
 class ConnectorManifestDetail(BaseModel):
     tenant_id: str = Field(min_length=1)
     connector_id: str = Field(min_length=1)
     current_revision: ConnectorManifestRecordView
     revisions: list[ConnectorManifestRecordView] = Field(min_length=1)
+    transitions: list[ConnectorManifestTransitionView] = Field(default_factory=list)
 
 
 class ManufacturingConnectorManifestRegistry(BaseModel):
@@ -576,11 +601,29 @@ def get_connector_manifest_detail(
         ),
         records[-1],
     )
+    transitions = [
+        ConnectorManifestTransitionView(
+            from_status=event.from_status,
+            target_status=event.target_status,
+            transitioned_by=event.transitioned_by,
+            transition_reason=event.transition_reason,
+            evidence_refs=list(event.evidence_refs),
+            audit_event_id=event.audit_event_id,
+            audit_event_type=event.audit_event_type,
+            transitioned_at=event.created_at,
+        )
+        for event in repository.list_connector_lifecycle_events(
+            tenant_id,
+            connector_id,
+            limit=MANIFEST_TRANSITION_HISTORY_LIMIT,
+        )
+    ]
     return ConnectorManifestDetail(
         tenant_id=tenant_id,
         connector_id=connector_id,
         current_revision=current_revision,
         revisions=records,
+        transitions=transitions,
     )
 
 
@@ -763,6 +806,7 @@ def transition_demo_connector_manifest_lifecycle(
         else "connector.manifest.lifecycle_transitioned"
     )
     live_sync_enabled = "true" if request.target_status == ACTIVE_LIVE_STATUS else "false"
+    from_status = manifest.status
     audit_event = repository.append_audit_event(
         AuditEventCreate(
             tenant_id=request.tenant_id,
@@ -797,6 +841,19 @@ def transition_demo_connector_manifest_lifecycle(
             "Connector manifest was not found.",
             "manifest_not_found",
         ) from exc
+    repository.append_connector_lifecycle_event(
+        ConnectorLifecycleEventCreate(
+            tenant_id=request.tenant_id,
+            connector_id=connector_id,
+            from_status=from_status,
+            target_status=request.target_status,
+            transitioned_by=request.transitioned_by,
+            transition_reason=request.transition_reason,
+            evidence_refs=request.evidence_refs,
+            audit_event_id=audit_event.id,
+            audit_event_type=audit_event_type,
+        )
+    )
     return _record_from_persistence(updated)
 
 

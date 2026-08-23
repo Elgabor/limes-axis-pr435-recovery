@@ -9,6 +9,7 @@ describe("InlineOperatorError", () => {
       <InlineOperatorError
         error={{
           code: "WRITE_FAILED",
+          reason: null,
           message: "The policy could not be saved.",
           requestId: "request-policy-503",
           status: 503,
@@ -28,6 +29,7 @@ describe("InlineOperatorError", () => {
       <InlineOperatorError
         error={{
           code: null,
+          reason: null,
           message: "Fix the highlighted fields; nothing was sent.",
           requestId: null,
           status: null,

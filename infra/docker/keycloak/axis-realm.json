@@ -21,6 +21,18 @@
         "description": "Generate manufacturing daily briefs."
       },
       {
+        "name": "connectors:manifest:lifecycle",
+        "description": "Activate and deprecate connector manifests within governed preview boundaries."
+      },
+      {
+        "name": "connectors:manifest:enable_live",
+        "description": "Enable live connector operation behind the governed live-enablement gate."
+      },
+      {
+        "name": "connectors:source:discover",
+        "description": "Verify external source connectivity and run bounded schema discovery for connectors."
+      },
+      {
         "name": "maintenance:read",
         "description": "Read maintenance operations evidence."
       },
@@ -39,6 +51,30 @@
       {
         "name": "workflows:read",
         "description": "Read workflow evidence."
+      },
+      {
+        "name": "platform:policy:author",
+        "description": "Author new Axis governance policies."
+      },
+      {
+        "name": "platform:policy:revise",
+        "description": "Revise existing Axis governance policies."
+      },
+      {
+        "name": "platform:policy:read",
+        "description": "Read Axis governance policies."
+      },
+      {
+        "name": "platform:policy:evaluate",
+        "description": "Evaluate requests against Axis governance policies."
+      },
+      {
+        "name": "platform:tenant:operator",
+        "description": "Operate tenants on this Axis deployment."
+      },
+      {
+        "name": "platform:tenant:read",
+        "description": "Read tenant registry records on this Axis deployment."
       }
     ]
   },

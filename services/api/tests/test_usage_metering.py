@@ -761,9 +761,16 @@ def test_api_request_admission_is_committed_before_handler_and_survives_500() ->
 def test_api_request_rejected_by_auth_is_not_metered() -> None:
     client, factory = _build_client(_metering_settings(oidc_auth_required=True))
 
-    response = client.get("/identity/session")
+    # A protected route still rejects anonymous callers with 401...
+    rejected = client.get(f"/operations/approvals?tenant_id={TENANT_ID}")
+    assert rejected.status_code == 401
 
-    assert response.status_code == 401
+    # ...while the deliberately public session report answers without any
+    # principal attached. Neither response may record tenant usage.
+    report = client.get("/identity/session")
+    assert report.status_code == 200
+    assert report.json()["authenticated"] is False
+
     assert _usage_events(factory, TENANT_ID) == []
 
 

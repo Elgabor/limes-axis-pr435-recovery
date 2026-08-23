@@ -181,6 +181,7 @@ const identitySession = z.object({
   capabilities: stringArraySchema,
   limitations: stringArraySchema,
   notes: stringArraySchema,
+  unauthenticated_reason: nullableStringSchema,
 });
 
 const operationsArtifactResponse = z.object({

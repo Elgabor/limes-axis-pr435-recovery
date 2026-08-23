@@ -24,6 +24,7 @@ import {
   findActiveLeaseForConnector,
   manifestAllowsRuns,
 } from "@/lib/connectors-console";
+import { deriveGovernedActor } from "@/lib/governed-action";
 import {
   formatConnectorLabel,
   type ConnectorCsvPreviewResult,
@@ -135,15 +136,15 @@ export function ConnectorRuns({
     new Date(),
   );
   const runsAllowed = manifestAllowsRuns(connector.persisted_manifest);
-  // Gate only when the API enforces OIDC (see the wizard's identical rule).
-  const ssoBlocked = identitySession != null
-    && identitySession.api_auth_required
-    && !identitySession.authenticated;
-  const actorId = identitySession?.actor_id ?? CONNECTOR_CONSOLE_ACTOR;
+  const { actorId, ssoBlocked } = deriveGovernedActor(identitySession, CONNECTOR_CONSOLE_ACTOR);
+  const registeredOnly =
+    connector.persisted_manifest?.status === "registered_preview_only";
   const syncBlockedReason = ssoBlocked
     ? copy.sync.ssoGate
     : !runsAllowed
-      ? copy.sync.manifestMissing
+      ? registeredOnly
+        ? copy.sync.activateFirst
+        : copy.sync.manifestMissing
       : !lease
         ? copy.sync.leaseMissing
         : null;

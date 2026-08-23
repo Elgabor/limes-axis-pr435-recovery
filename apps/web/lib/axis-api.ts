@@ -64,6 +64,8 @@ export class AxisApiDecodeError extends Error {
 /** Safe, display-oriented failure metadata retained by mutation UIs. */
 export type AxisOperatorError = {
   code: string | null;
+  /** The API's machine-readable denial/validation class, when it sent one. */
+  reason: string | null;
   message: string;
   requestId: string | null;
   status: number | null;
@@ -80,6 +82,7 @@ export function toAxisOperatorError(
   if (caught instanceof AxisApiError) {
     return {
       code: caught.code,
+      reason: caught.reason,
       message: caught.message,
       requestId: caught.requestId,
       status: caught.status,
@@ -88,6 +91,7 @@ export function toAxisOperatorError(
   if (caught instanceof AxisApiDecodeError) {
     return {
       code: null,
+      reason: null,
       message: caught.message,
       requestId: caught.requestId,
       status: null,
@@ -95,6 +99,7 @@ export function toAxisOperatorError(
   }
   return {
     code: null,
+    reason: null,
     message: fallbackMessage,
     requestId: null,
     status: null,
@@ -315,7 +320,7 @@ export async function axisFetchParsedJson<T>(
   options: AxisFetchOptions = {},
 ): Promise<T> {
   const response = await axisFetch(path, options);
-  const body = await readResponseBody(response);
+  const body = await readAxisResponseBody(response);
   const requestId = axisResponseRequestId(response);
 
   if (!response.ok) {
@@ -382,7 +387,8 @@ function readDecodeIssues(error: unknown): AxisDecodeIssue[] {
   });
 }
 
-async function readResponseBody(response: Response): Promise<unknown> {
+/** Read a response body as parsed JSON, falling back to raw text. */
+export async function readAxisResponseBody(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text.trim()) {
     return null;

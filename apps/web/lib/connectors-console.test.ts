@@ -8,16 +8,28 @@ import type {
   ConnectorRegistryItem,
 } from "./connectors-demo";
 import {
+  allLiveRequirementsMet,
   buildCsvFromPreviewSample,
   buildExternalDbPreviewRequest,
   buildManifestCreateRequest,
+  buildManifestLifecycleRequest,
   buildPreviewSyncPlan,
   connectorWithCurrentManifest,
   deriveConnectorId,
   findActiveLeaseForConnector,
+  liveEnablementRequirements,
   manifestAllowsRuns,
+  manifestLifecycleTargets,
+  missingLiveEvidenceCategories,
   parseCsvText,
   pendingProposalCount,
+  buildSourceDiscoveryRequest,
+  buildSourceIngestionReadPath,
+  buildSourceIngestionRedispatchRequest,
+  buildSourceIngestionRequest,
+  buildSourceVerifyRequest,
+  SOURCE_INGESTION_ENDPOINTS,
+  SOURCE_INGESTION_SCOPE,
 } from "./connectors-console";
 
 const previewSample: ConnectorPreviewSample = {
@@ -120,6 +132,7 @@ function buildManifestDetail(
     connector_id: currentRevision.connector_id,
     current_revision: currentRevision,
     revisions: [currentRevision],
+    transitions: [],
   };
 }
 
@@ -392,6 +405,7 @@ describe("connectorWithCurrentManifest", () => {
       connector_id: currentRevision.connector_id,
       current_revision: currentRevision,
       revisions: [currentRevision],
+      transitions: [],
     };
 
     const effective = connectorWithCurrentManifest(connector, detail);
@@ -503,5 +517,238 @@ describe("connectorWithCurrentManifest", () => {
     expect(connectorWithCurrentManifest(templateConnector, retainedMatchingDetail)).toBe(
       templateConnector,
     );
+  });
+});
+
+describe("connector manifest lifecycle", () => {
+  it("mirrors the API transition table per current status", () => {
+    expect(manifestLifecycleTargets("registered_preview_only")).toEqual([
+      "active_preview",
+      "deprecated",
+    ]);
+    expect(manifestLifecycleTargets("active_preview")).toEqual(["active_live", "deprecated"]);
+    expect(manifestLifecycleTargets("active_live")).toEqual(["deprecated"]);
+    expect(manifestLifecycleTargets("deprecated")).toEqual([]);
+    expect(manifestLifecycleTargets(null)).toEqual([]);
+  });
+
+  it("builds lifecycle requests with the scope the API requires for live enablement", () => {
+    const activate = buildManifestLifecycleRequest({
+      tenantId: "tenant_demo_manufacturing",
+      actorId: "operator",
+      targetStatus: "active_preview",
+      reason: "Activated from the connector console.",
+    });
+    expect(activate).toMatchObject({
+      tenant_id: "tenant_demo_manufacturing",
+      transitioned_by: "operator",
+      target_status: "active_preview",
+      required_scope: "connectors:manifest:lifecycle",
+      // Demo-mode writes declare the grant they run under; the API still
+      // enforces it and re-stamps scopes from the token for SSO sessions.
+      actor_scopes: ["connectors:manifest:lifecycle"],
+      evidence_refs: [],
+    });
+
+    const enableLive = buildManifestLifecycleRequest({
+      tenantId: "tenant_demo_manufacturing",
+      actorId: "operator",
+      targetStatus: "active_live",
+      reason: "Enable live sync…",
+      evidenceRefs: ["approval:ap-1", "policy:pol-1", "credential:cred-1"],
+    });
+    // The API checks both scopes for live enablement
+    // (_required_scopes_for_target), so a demo-mode submission declares both.
+    expect(enableLive.required_scope).toBe("connectors:manifest:lifecycle");
+    expect(enableLive.actor_scopes).toEqual([
+      "connectors:manifest:lifecycle",
+      "connectors:manifest:enable_live",
+    ]);
+    expect(enableLive.evidence_refs).toHaveLength(3);
+  });
+
+  it("reports exactly which evidence categories are missing for live enablement", () => {
+    expect(missingLiveEvidenceCategories([])).toEqual(["approval", "policy", "credential"]);
+    expect(
+      missingLiveEvidenceCategories(["approval:ap-1"]),
+    ).toEqual(["policy", "credential"]);
+    // The API accepts secret:/vault: handles as credential evidence too.
+    expect(
+      missingLiveEvidenceCategories([
+        "approval: ap-1",
+        "policy:pol-1",
+        "vault://prod/db-readonly",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("reports which live-enablement gates the manifest already satisfies", () => {
+    const dormant = liveEnablementRequirements(templateConnector);
+    expect(dormant.liveSyncMode.met).toBe(false);
+    expect(dormant.liveOperationsAllowed.met).toBe(false);
+    expect(dormant.egressBoundaryNamed.met).toBe(false);
+
+    const liveReady = liveEnablementRequirements({
+      ...templateConnector,
+      manifest: {
+        ...templateConnector.manifest,
+        sync_modes: ["live_sync"],
+      },
+      runtime_policy: {
+        ...templateConnector.runtime_policy,
+        allowed_operations: ["preview", "live_query", "external_egress"],
+        blocked_operations: [],
+        egress_policy: "egress_eu_west_readonly",
+      },
+    });
+    expect(allLiveRequirementsMet(liveReady)).toBe(true);
+  });
+});
+
+describe("buildSourceVerifyRequest / buildSourceDiscoveryRequest", () => {
+  const baseInput = {
+    tenantId: "tenant_demo_manufacturing",
+    actorId: "axis-operator",
+    refs: {
+      connectionProfileId: "profile_postgres_discovery_readonly",
+      schemaName: "operations",
+      credentialLeaseId: "lease_external_db_readonly_001",
+      egressPolicyId: "egress_policy_private_endpoint_ops",
+    },
+    token: "ABC-123",
+  };
+
+  it("names references only and declares the discovery scope", () => {
+    const payload = buildSourceVerifyRequest(baseInput);
+    expect(payload).toMatchObject({
+      tenant_id: "tenant_demo_manufacturing",
+      connector_id: "external_db_operational_mirror",
+      verification_id: "verify_console_abc123",
+      requested_by: "axis-operator",
+      connection_profile_id: "profile_postgres_discovery_readonly",
+      credential_lease_id: "lease_external_db_readonly_001",
+      egress_policy_id: "egress_policy_private_endpoint_ops",
+      actor_scopes: ["connectors:source:discover"],
+    });
+    // Evidence is resolved server-side; the request must not carry it.
+    expect(payload).not.toHaveProperty("credential_lease_result");
+    expect(payload).not.toHaveProperty("egress_policy_evidence");
+  });
+
+  it("includes the requested schema for discovery with a stable id", () => {
+    const payload = buildSourceDiscoveryRequest(baseInput);
+    expect(payload.discovery_id).toBe("discovery_console_abc123");
+    expect(payload.schema_name).toBe("operations");
+    expect(payload.actor_scopes).toEqual(["connectors:source:discover"]);
+  });
+
+  it("refuses to build a discovery request without a schema", () => {
+    expect(() =>
+      buildSourceDiscoveryRequest({
+        ...baseInput,
+        refs: { ...baseInput.refs, schemaName: "" },
+      }),
+    ).toThrow(/Schema name is required/);
+  });
+});
+
+describe("buildSourceIngestionRequest", () => {
+  const baseInput = {
+    tenantId: "tenant_demo_manufacturing",
+    actorId: "axis-operator",
+    requestId: "ingest_console_abc123",
+    reason: "Nightly governed validation before extraction design review.",
+    bindingIds: ["binding_console_a", "binding_console_b"],
+  };
+
+  it("names bindings only and declares the ingestion scope", () => {
+    const payload = buildSourceIngestionRequest(baseInput);
+    expect(payload).toMatchObject({
+      tenant_id: "tenant_demo_manufacturing",
+      connector_id: "external_db_operational_mirror",
+      request_id: "ingest_console_abc123",
+      requested_by: "axis-operator",
+      selections: [
+        { binding_id: "binding_console_a" },
+        { binding_id: "binding_console_b" },
+      ],
+      actor_scopes: [SOURCE_INGESTION_SCOPE],
+    });
+    // Fingerprints are pinned server-side from the active bindings; the
+    // client never supplies one and the payload must prove it.
+    expect(JSON.stringify(payload)).not.toContain("fingerprint");
+  });
+
+  it("deduplicates repeated binding ids instead of double-submitting them", () => {
+    const payload = buildSourceIngestionRequest({
+      ...baseInput,
+      bindingIds: ["binding_console_a", "binding_console_a"],
+    });
+    expect(payload.selections).toEqual([{ binding_id: "binding_console_a" }]);
+  });
+
+  it("refuses to build without a reason, request id, or any binding", () => {
+    expect(() => buildSourceIngestionRequest({ ...baseInput, reason: "   " }))
+      .toThrow(/governance reason is required/i);
+    expect(() => buildSourceIngestionRequest({ ...baseInput, requestId: " " }))
+      .toThrow(/request ID is required/i);
+    expect(() => buildSourceIngestionRequest({ ...baseInput, bindingIds: [] }))
+      .toThrow(/At least one pending binding/);
+  });
+
+  it("builds read paths with tenant, connector, and the demo read scope", () => {
+    expect(buildSourceIngestionReadPath({
+      endpoint: SOURCE_INGESTION_ENDPOINTS.eligibility,
+      tenantId: "tenant_demo_manufacturing",
+      connectorId: "external_db_operational_mirror",
+    })).toBe(
+      `${SOURCE_INGESTION_ENDPOINTS.eligibility}`
+      + "?tenant_id=tenant_demo_manufacturing"
+      + "&connector_id=external_db_operational_mirror"
+      + "&actor_scopes=connectors%3Asource%3Aingest%3Aread",
+    );
+    expect(buildSourceIngestionReadPath({
+      endpoint: SOURCE_INGESTION_ENDPOINTS.requests,
+      tenantId: "tenant_demo_manufacturing",
+      requestId: "ingest_console_abc123",
+    })).toBe(
+      `${SOURCE_INGESTION_ENDPOINTS.requests}/ingest_console_abc123`
+      + "?tenant_id=tenant_demo_manufacturing"
+      + "&actor_scopes=connectors%3Asource%3Aingest%3Aread",
+    );
+  });
+});
+
+describe("buildSourceIngestionRedispatchRequest", () => {
+  it("requires the remediation reason and carries the explicit idempotency key", () => {
+    expect(() =>
+      buildSourceIngestionRedispatchRequest({
+        tenantId: "t",
+        actorId: "a",
+        reason: "   ",
+        idempotencyKey: "requeue_1",
+      }),
+    ).toThrow(/remediation reason is required/i);
+    expect(() =>
+      buildSourceIngestionRedispatchRequest({
+        tenantId: "t",
+        actorId: "a",
+        reason: "ok",
+        idempotencyKey: " ",
+      }),
+    ).toThrow(/idempotency key is required/i);
+    const payload = buildSourceIngestionRedispatchRequest({
+      tenantId: "t",
+      actorId: "a",
+      reason: "Fresh discovery done.",
+      idempotencyKey: "requeue_lane_001",
+    });
+    expect(payload).toMatchObject({
+      tenant_id: "t",
+      requeued_by: "a",
+      reason: "Fresh discovery done.",
+      idempotency_key: "requeue_lane_001",
+      actor_scopes: ["connectors:source:ingest"],
+    });
   });
 });

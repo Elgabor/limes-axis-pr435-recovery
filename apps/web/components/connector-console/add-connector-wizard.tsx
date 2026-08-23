@@ -25,6 +25,7 @@ import {
   axisFetch,
   axisResponseRequestId,
   decodeAxisJson,
+  readAxisResponseBody,
   toAxisOperatorError,
   type AxisOperatorError,
 } from "@/lib/axis-api";
@@ -44,6 +45,7 @@ import type {
 } from "@/lib/connectors-demo";
 import { formatNumber } from "@/lib/format";
 import type { IdentitySessionReadModel } from "@/lib/platform-overview";
+import { deriveGovernedActor } from "@/lib/governed-action";
 import {
   parseConnectorCsvPreviewResult,
   parseConnectorExternalDbPreviewResult,
@@ -86,18 +88,6 @@ const DEFAULT_DB_FORM: DbForm = {
   tableName: "production_orders",
   credentialHandleId: "cred_external_db_readonly",
 };
-
-async function readAxisResponseBody(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text.trim()) {
-    return null;
-  }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
-}
 
 function operatorErrorWithMessage(caught: unknown, message: string): AxisOperatorError {
   return { ...toAxisOperatorError(caught, message), message };
@@ -195,9 +185,10 @@ export function AddConnectorWizard({
   // Submission is gated only when the API confirms it enforces OIDC and the
   // browser session is unauthenticated; in public-evaluation deployments
   // (api_auth_required=false) unauthenticated demo writes are accepted.
-  const ssoBlocked = identitySession != null
-    && identitySession.api_auth_required
-    && !identitySession.authenticated;
+  const { actorId, ssoBlocked } = deriveGovernedActor(
+    identitySession,
+    CONNECTOR_CONSOLE_ACTOR,
+  );
 
   const sourceReady =
     choice === "file_csv"
@@ -416,7 +407,7 @@ export function AddConnectorWizard({
         session,
         body: buildManifestCreateRequest({
           tenantId,
-          registeredBy: identitySession?.actor_id ?? CONNECTOR_CONSOLE_ACTOR,
+          registeredBy: actorId,
           template,
           connectorId: connectorId.trim(),
           displayName: displayName.trim(),

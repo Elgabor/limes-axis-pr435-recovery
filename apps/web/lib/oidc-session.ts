@@ -26,6 +26,15 @@ export function normalizeOidcReturnTo(value: string | null | undefined): string 
   return candidate;
 }
 
+/** The browser path to return to after an SSO round-trip. */
+export function currentReturnPath(): string {
+  if (typeof window === "undefined") {
+    return "/";
+  }
+
+  return `${window.location.pathname}${window.location.search}`;
+}
+
 export function buildOidcAuthorizeUrl(apiBaseUrl: string, returnTo: string | null | undefined): string {
   const authorizeUrl = new URL("/identity/oidc/authorize", apiBaseUrl.endsWith("/") ? apiBaseUrl : `${apiBaseUrl}/`);
   authorizeUrl.searchParams.set("return_to", normalizeOidcReturnTo(returnTo));

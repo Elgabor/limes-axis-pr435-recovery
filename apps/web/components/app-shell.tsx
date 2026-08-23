@@ -2,20 +2,23 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import { AxisMark } from "@/components/axis-mark";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { navIconMap } from "@/components/nav-icons";
 import { SidebarAccount } from "@/components/sidebar-account";
+import { SignInGate } from "@/components/sign-in-gate";
 import type { ManufacturingApprovalInbox } from "@/lib/approval-demo";
 import { cn } from "@/lib/cn";
-import type { IdentitySessionReadModel } from "@/lib/platform-overview";
 import { ToastProvider } from "@/components/ui/toast";
 import { desktopNavGroups, isNavActive, type NavItem } from "@/lib/nav";
 import { useAxisQuery } from "@/lib/use-axis-query";
 import { parseManufacturingApprovalInbox } from "@/lib/runtime-contracts/approvals";
-import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
+import {
+  startIdentitySessionHeartbeat,
+  useIdentitySession,
+} from "@/lib/use-identity-session";
 import {
   buildTenantScopedPath,
   DEMO_TENANT_ID,
@@ -137,17 +140,30 @@ function Navigation({
 
 /**
  * Shell body. Split from `AppShell` because it reads console context via
- * `useAxisQuery`, and `AppShell` is the component that mounts the provider —
- * calling the hook there runs it outside the provider it is creating.
+ * `useIdentitySession`, and `AppShell` is the component that mounts the
+ * provider — calling the hook there runs it outside the provider it is
+ * creating.
  */
 function ConsoleShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const identity = useAxisQuery<IdentitySessionReadModel>("/identity/session", {
-    parse: parseIdentitySessionReadModel,
-  });
+  const identity = useIdentitySession();
   const tenantScope = resolveConsoleTenantScope(identity.data);
   const vocabularyTenantId = resolveVocabularyTenantId(pathname, tenantScope.tenantId);
-  const approvalsBadge = (
+  // One bounded background loop for enforced-SSO deployments: it re-verifies
+  // the session so an expiry or revocation converges to the sign-in gate
+  // promptly instead of waiting for the next unrelated request.
+  useEffect(() => startIdentitySessionHeartbeat(), []);
+  // One gate for enforced-SSO deployments: when the API says "sign-in
+  // required" and no session verified, surfaces never mount — so no surface
+  // can render generic error panels or stale tenant data behind the gate.
+  const signInRequired =
+    identity.source === "api"
+    && identity.data !== null
+    && identity.data.api_auth_required
+    && !identity.data.authenticated;
+  // Behind the gate no tenant scope exists yet; the demo-tenant fallback would
+  // only produce doomed 401 requests from the shell chrome.
+  const approvalsBadge = signInRequired ? null : (
     <ApprovalsBadge
       identitySource={identity.source}
       tenantId={tenantScope.tenantId}
@@ -156,7 +172,7 @@ function ConsoleShell({ children }: { children: ReactNode }) {
 
   return (
     <TenantVocabularyProvider
-      enabled={identity.source === "api" && vocabularyTenantId !== null}
+      enabled={!signInRequired && identity.source === "api" && vocabularyTenantId !== null}
       tenantId={vocabularyTenantId}
     >
       <>
@@ -199,7 +215,11 @@ function ConsoleShell({ children }: { children: ReactNode }) {
             tabIndex={-1}
           >
             <MobileNavigation badge={approvalsBadge} pathname={pathname} />
-            {children}
+            {signInRequired && identity.data ? (
+              <SignInGate identitySession={identity.data} />
+            ) : (
+              children
+            )}
           </main>
         </div>
       </>

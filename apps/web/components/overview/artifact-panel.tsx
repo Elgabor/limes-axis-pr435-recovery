@@ -24,21 +24,19 @@ import {
 } from "@/lib/operations-artifacts";
 import {
   platformStatusClass,
-  type IdentitySessionReadModel,
   type ManufacturingOperationsSnapshot,
 } from "@/lib/platform-overview";
 import { strings } from "@/lib/strings";
 import {
-  parseIdentitySessionReadModel,
   parseOperationsArtifactResponse,
 } from "@/lib/runtime-contracts/overview";
-import { useAxisQuery } from "@/lib/use-axis-query";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
 
 import { buildAuditEventHref } from "@/lib/audit-demo";
 import { PanelHeader, StatusDot, type OverviewQuery } from "./overview-shared";
 import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
+import { useIdentitySession } from "@/lib/use-identity-session";
 
 /*
  * Compact governed-evidence generation panel: one card, one action row, the
@@ -65,10 +63,9 @@ export function ArtifactPanel({
   const searchParams = useSearchParams();
   const { apiBaseUrl } = useConsole();
   const { session } = useOidcConsoleSession();
-  const { data: identitySession, isUnavailable: identitySessionUnavailable } =
-    useAxisQuery<IdentitySessionReadModel>("/identity/session", {
-      parse: parseIdentitySessionReadModel,
-    });
+  const identity = useIdentitySession();
+  const identitySession = identity.data;
+  const identitySessionUnavailable = identity.isUnavailable;
   const [pendingKind, setPendingKind] = useState<OperationsArtifactKind | null>(null);
   const [artifact, setArtifact] = useState<{
     actionLabel: string;

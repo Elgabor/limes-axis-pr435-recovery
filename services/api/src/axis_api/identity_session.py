@@ -59,9 +59,7 @@ def decode_session_cursor(cursor: str | None) -> tuple[datetime | None, UUID | N
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
         payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
-        created_at = datetime.fromisoformat(
-            str(payload["created_at"]).replace("Z", "+00:00")
-        )
+        created_at = datetime.fromisoformat(str(payload["created_at"]).replace("Z", "+00:00"))
         row_id = UUID(str(payload["row_id"]))
     except (
         KeyError,
@@ -98,6 +96,7 @@ class IdentitySessionReadModel(BaseModel):
     capabilities: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+    unauthenticated_reason: str | None = Field(default=None, min_length=1)
 
 
 def build_identity_session_read_model(
@@ -105,6 +104,7 @@ def build_identity_session_read_model(
     settings: Settings,
     oidc_readiness_report: dict[str, object],
     principal: OidcPrincipal | None,
+    unauthenticated_reason: str | None = None,
 ) -> IdentitySessionReadModel:
     authenticated = principal is not None
     capabilities = _session_capabilities(principal)
@@ -113,6 +113,15 @@ def build_identity_session_read_model(
         principal=principal,
         oidc_readiness_report=oidc_readiness_report,
     )
+    notes = [
+        "The API never returns bearer token material.",
+        "The browser may attach a bearer token, but API validation owns the session truth.",
+    ]
+    if unauthenticated_reason is not None:
+        notes.append(
+            "unauthenticated_reason names why no API-verified actor is attached; "
+            "it is the same public class a 401 response would report."
+        )
 
     return IdentitySessionReadModel(
         authenticated=authenticated,
@@ -128,16 +137,12 @@ def build_identity_session_read_model(
         audience=str(oidc_readiness_report.get("audience") or settings.oidc_audience),
         jwks_source=str(oidc_readiness_report.get("jwks_source", "unknown")),
         session_boundary=(
-            _session_boundary(principal)
-            if authenticated
-            else "no_authenticated_api_actor"
+            _session_boundary(principal) if authenticated else "no_authenticated_api_actor"
         ),
         capabilities=capabilities,
         limitations=limitations,
-        notes=[
-            "The API never returns bearer token material.",
-            "The browser may attach a bearer token, but API validation owns the session truth.",
-        ],
+        notes=notes,
+        unauthenticated_reason=unauthenticated_reason,
     )
 
 

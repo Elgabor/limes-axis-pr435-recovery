@@ -1091,6 +1091,50 @@ scheduler/dispatch/execution evidence. The self-hosted sync executor is opt-in
 for local/demo execution and does not represent provider-specific production
 egress.
 
+### Manifest Lifecycle Control
+
+The connector detail Overview tab renders the persisted manifest's activation
+state with an operator-facing description of what each state allows, and drives
+the governed transition endpoint
+(`POST /demo/manufacturing/connectors/manifests/{connector_id}/lifecycle`) for
+the transitions the API permits from the current status:
+
+- `registered_preview_only` offers **Activate for previews** (target
+  `active_preview`); runs, credential leases and ontology proposals stay
+  gated until activation.
+- `active_preview` offers live enablement behind a requirement list derived
+  from the manifest (a declared live sync mode, allowed
+  `live_query`/`external_egress` operations, a named egress boundary) plus
+  required approval/policy/credential evidence references; the API re-validates
+  every gate and the `connectors:manifest:enable_live` scope at submit time.
+- Any non-terminal state can be deprecated through a two-step confirm;
+  deprecation is final and disables further transitions and runs.
+
+Every submit carries the operator's verified actor binding, renders conflict,
+validation and permission denials as concise operator copy while retaining the
+API request reference, and refreshes registry and revision data only after the
+transition is recorded. The Add Connector wizard registers manifests in
+`registered_preview_only`, so activation is the explicit next step of the
+connect-data journey; the guided-setup checklist counts a connector as
+connected only once its manifest reaches an active state.
+
+#### Per-Connector Transition History
+
+Lifecycle transitions update the current manifest revision in place, so the
+revision table alone cannot answer "which transitions happened to this
+connector". Each transition therefore also appends one row to the dedicated
+`connector_lifecycle_events` projection — committed in the same transaction as
+its ledger event and manifest update, indexed on
+`(tenant_id, connector_id, created_at)`. The manifest detail envelope exposes
+this trail as typed `transitions` (from/to status, actor, reason, evidence
+references, audit event reference), capped at the 20 most recent entries;
+raw audit payloads never leave the ledger. The console renders two distinct
+trails in the lifecycle panel: **Revision history** for manifest content
+changes (registration, replacement) and **Transition history** for governed
+activation changes. Rows written before migration `0061` exist only in the
+audit ledger and are not projected retroactively — an accepted, documented
+limitation of the local demo data set.
+
 ### Redesigned Console Surfaces
 
 The console redesign restructures `/connectors` as a master–detail registry
@@ -1161,6 +1205,248 @@ persists one committed checkpoint per batch, and always releases the claim
 with a completion or failure reason so the next tick can resume from the last
 committed checkpoint.
 
+## Bounded Source Discovery
+
+The external DB connector gained a second real source boundary next to the
+allowlisted live read: **connectivity verification** and **bounded schema
+discovery** against the configured Postgres source. Both are metadata-only by
+contract — `information_schema` enumeration of base tables and column names;
+row data is never read, returned, or persisted, and column fingerprints cover
+names alone.
+
+```text
+POST /demo/manufacturing/connectors/external-db/verify-source
+POST /demo/manufacturing/connectors/external-db/discover
+```
+
+Both routes require the `connectors:source:discover` scope-shaped realm role
+(canonical in `idp_bootstrap.py` and the local realm import), bind the tenant
+to the verified OIDC principal, and resolve all evidence server-side:
+
+- the request references an existing credential lease and egress policy by
+  ID only (`extra="forbid"`); lease results, secret refs and policy
+  documents can never be smuggled through the payload;
+- the lease must belong to the connector AND carry executed posture —
+  status `lease_executed`/`lease_renewed`, a provider lease reference and
+  `secret_material_returned=false` — identical to the live-read preflight
+  (`credential_lease_not_executed` otherwise);
+- the egress policy must be active, approved-private-endpoint, and bound to
+  the same connector and connection profile.
+
+Connection posture mirrors the live read exactly: dual-mode profile (static
+`AXIS_EXTERNAL_DB_LIVE_QUERY_DSN` or lease-scoped resolution with the pinned
+`..._ENDPOINT_TARGET_SHA256`), connect-time egress enforcement against the
+actual dial target when enabled, session hardening via the shared
+`read_only_session_connect_kwargs` helper, per-transaction
+`SET TRANSACTION READ ONLY`, and bounded introspection.
+
+### Discovery bounds and flags
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `AXIS_EXTERNAL_DB_DISCOVERY_ENABLED` | `false` | Master gate; off returns deferred adapters |
+| `AXIS_EXTERNAL_DB_DISCOVERY_SCHEMAS` | `["operations"]` | Allowlist; requested schemas outside it fail closed as `schema_not_allowlisted` |
+| `AXIS_EXTERNAL_DB_DISCOVERY_MAX_TABLES` | `25` (≤200) | Hard cap; truncation is reported honestly, never hidden |
+| `AXIS_EXTERNAL_DB_DISCOVERY_MAX_COLUMNS_PER_TABLE` | `40` (≤200) | Per-table cap with a per-table truncated flag |
+
+Failures classify into stable reasons — `source_unreachable`,
+`auth_denied`, `permission_denied`, `source_database_missing`,
+`query_failed` — derived from SQLSTATE plus driver-level classification.
+Raw driver messages, DSNs and host names never reach API payloads, audit
+evidence or operator copy; blocked outcomes render as actionable copy in the
+console's *Verify & discover* panel (connector detail → Overview, shown for
+the external-DB connector) instead of invented success.
+
+### Catalog evidence
+
+Every completed discovery records one resource observation per discovered
+table (`schema.table`) through the existing governed observation seam with
+`last_source_kind=postgres_discovery`, fingerprint-based drift
+(`added`/`changed`/`unchanged`), audit events
+(`connector.source.verify`, `connector.source.discover`,
+`data.resource.observed`), and correlation refs. Repeat discoveries track
+schema drift automatically; concurrent observers are honest — whichever
+governed run observes a table first records `added`.
+
+Honest limits: observations prove what Axis saw, never that a resource is
+absent (no complete scanner exists); views are not enumerated yet; discovery
+is bounded, so truncation is surfaced rather than silently accepted as the
+full schema.
+
+## Governed Source Ingestion Requests (validation stage)
+
+Activation leaves every binding honestly `pending_ingestion`. The governed
+ingestion boundary is where that state is consumed — and, for now, only where
+schemas are re-validated: **no source is dialed, no row is read, nothing is
+extracted or stored**. Evidence records exactly that.
+
+```text
+GET  /operations/connectors/external-db/source-ingestion/eligibility
+GET  /operations/connectors/external-db/source-ingestion/overview
+POST /operations/connectors/external-db/source-ingestion-requests
+GET  /operations/connectors/external-db/source-ingestion-requests
+GET  /operations/connectors/external-db/source-ingestion-requests/{request_id}
+```
+
+Writes require `connectors:source:ingest`; reads require
+`connectors:source:ingest:read` (demo traffic declares scopes via body/query,
+identical to discovery). The server pins each selection's schema fingerprint
+FROM the active binding at request time — clients never supply fingerprints.
+Creation is idempotent per `(tenant_id, request_id)`: identical asks replay the
+stored request (`outcome=replayed`, no duplicate audit); a used ID with a
+different connector, reason, or binding list conflicts (`409
+request_id_conflict`). Stale, inactive, unknown, not-pending, duplicate, empty,
+or oversized selections fail closed with precise public-safe reasons before any
+write. A required governance reason (1–600 chars) is stored as evidence.
+
+Dispatch mirrors the approval-decision outbox exactly: lease-fenced claims
+(`skip_locked`, claim tokens), jittered exponential retry backoff, dead-letter
+on permanent failure. The shipped runtime is the validation stage only — each
+pinned fingerprint is compared against Axis' CURRENT observations
+(`stale_fingerprint`, `observation_missing`, `binding_inactive`) and terminal
+evidence always states `source_dial_performed=false`,
+`extraction_performed=false`. Validation failures are permanent (fingerprints
+do not self-heal; operators re-discover and activate fresh schemas instead);
+operational failures retry then dead-letter after `AXIS_SOURCE_INGESTION_MAX_ATTEMPTS`.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `AXIS_CONNECTOR_SOURCE_INGESTION_MAX_SELECTIONS` | `20` (≤100) | Per-request selection bound |
+| `AXIS_SOURCE_INGESTION_DISPATCH_ENABLED` | `false` | Worker dispatch loop gate |
+| `AXIS_SOURCE_INGESTION_DISPATCH_INTERVAL_SECONDS` | `15` (≥1) | Empty-poll interval |
+| `AXIS_SOURCE_INGESTION_BATCH_SIZE` | `10` (≤100) | Claims per pass |
+| `AXIS_SOURCE_INGESTION_CLAIM_TIMEOUT_SECONDS` | `120` (≥5) | Lease window; expired leases are reclaimed |
+| `AXIS_SOURCE_INGESTION_RETRY_BASE_SECONDS` | `2` (≥0) | Backoff base |
+| `AXIS_SOURCE_INGESTION_RETRY_MAX_SECONDS` | `60` (≥1) | Backoff cap |
+| `AXIS_SOURCE_INGESTION_MAX_ATTEMPTS` | `3` (≤20) | Attempts before dead-letter |
+
+### Extraction stage (default-off)
+
+When the deployment enables both dispatch and extraction gates, a request may
+declare `stage="extract"`: after the validation gates pass per selection, the
+worker performs **one bounded, read-only read** of that bound table — session
+and transaction READ ONLY with statement timeout, identifiers derived solely
+from the binding's qualified name, schema revalidated immediately before
+reading. Ordering uses a verified single-column primary key (keyset pages,
+deterministic watermark) or an explicit no-watermark single pass; caps on rows,
+bytes, page size and wall-clock time are honest successes (`truncated=true`
+with `row_limit`/`byte_limit`/`time_budget`; one oversized row is refused as
+`row_too_large`). Payloads go only to the governed object store under a
+deterministic tenant-scoped key; Postgres stores counts, digests, watermarks,
+provenance and classification — never row values, in any view, audit event,
+log or error. Stage is part of request identity: re-submitting an ID with a
+different stage is a `request_id_conflict`, never a silent mutation.
+
+Pending requests can be cancelled (write scope, fenced, audited once;
+identical repeats replay, dispatched/terminal states conflict). Object-store
+writes and metadata inserts are not atomic — deterministic keys make retries
+converge, and a dead-lettered request may leave an untracked object to
+reconcile by tenant key prefix.
+
+### Batch evidence and reconciliation (read-only)
+
+Extraction batch metadata is a first-class operator surface:
+
+```text
+GET /operations/connectors/external-db/source-ingestion-requests/{request_id}/batches
+GET /operations/connectors/external-db/source-ingestion-requests/{request_id}/batches/reconciliation?dry_run=true
+```
+
+Batches are metadata-only (counts, digests, watermarks as presence, storage
+references), deterministically ordered by `batch_key`, keyset-paginated via an
+opaque cursor (`limit` 1–200) with `binding_id`/`truncated` filters, and gated
+by `connectors:source:ingest:read`. The watermark VALUE never leaves the
+database. Reconciliation is dry-run only: it compares the deterministic
+tenant/request key prefixes against recorded metadata and reports
+`clean_match` / `digest_mismatch` / `missing_object` / `orphaned_object` with
+keys and digests — no deletion, mutation, repair, network egress, or scans
+beyond the request's own namespace. Its HTTP surface supports only the local
+filesystem adapter (others answer `store_adapter_unsupported`; no cloud client
+is ever constructed by this read-only path). Store writes and metadata inserts remain
+non-atomic by design: deterministic keys make retries converge, and any
+residual divergence is exactly what reconciliation surfaces.
+
+### Stewardship classification and governed re-dispatch
+
+Every extraction batch records the data asset's CURRENT declared stewardship
+classification (`public`/`internal`/`confidential`/`restricted`) at execution
+time, or `undeclared` when no declaration exists — classification is declared
+metadata, never inferred from row values.
+
+Dead-lettered requests can be re-dispatched by operators after remediation:
+
+```text
+POST /operations/connectors/external-db/source-ingestion-requests/{request_id}/requeue
+```
+
+Write scope required; the ask carries an operator identity, a REQUIRED
+governance reason, and an explicit idempotency key. Only terminally
+dead-lettered requests transition (`pending`, attempts reset); identical asks
+replay without a second audit event, different asks conflict. Pinned
+selections and stage are immutable; the next dispatch pass revalidates current
+fingerprints, so remediation (fresh discovery + activation) is still what
+makes extraction succeed. Batch keys are generation-scoped: operational
+retries keep one stable key per selection, while a re-dispatch starts a new
+generation — genuinely new bytes never collide with immutable recorded
+history, and inconsistent reuse fails closed as `batch_key_conflict`.
+
+The console renders eligibility (eligible / stale / blocked), the durable
+request list (pending / working / completed / failed / cancelled /
+dead-lettered with attempts and stage), planned extraction limits when the API
+advertises them, truthful cancel actions for pending requests only, and states
+plainly that the shipped default performs validation only.
+
+### Operations overview and attempt timeline (read-only)
+
+Daily operators should not need to know request IDs to see connector health:
+
+```text
+GET /operations/connectors/external-db/source-ingestion/overview?limit=1..100&cursor=…
+```
+
+One read returns cross-request aggregates over the connector's OWN requests —
+status counts, the dead-lettered subset of `failed`, extraction-stage count,
+total count and last activity time — plus a newest-first page of requests.
+Pagination is keyset (`created_at DESC, request_id ASC`) behind an opaque
+canonical-base64 cursor; garbage cursors answer `422 invalid_cursor`. Reads
+require `connectors:source:ingest:read` and the tenant binding; another
+tenant's activity is invisible, never a soft-deleted row.
+
+Every request view also carries a durable per-attempt timeline. The dispatcher
+appends one metadata-only record per FINALIZED dispatch attempt — attempt
+number, outcome (`completed` / `retried` / `dead_lettered`), the public-safe
+error code for failures, finish time, and each selection's verdict with reason.
+History is append-only: re-dispatch after remediation never truncates prior
+attempts, and a fenced loser (lost claim token) writes neither state nor
+timeline entry. Row values, fingerprints beyond the pinned pair, and watermark
+values never appear in the timeline.
+
+### Governed batch-envelope exports
+
+Auditors and stewards can take home WHAT an ingestion request extracted — as
+metadata only — through the same approval-gated pattern as evidence snapshot
+exports:
+
+```text
+POST /operations/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests
+POST /operations/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests/{export_request_id}/decision
+POST /operations/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests/{export_request_id}/materializations
+GET  /operations/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests/{export_request_id}/artifact
+```
+
+| Stage | Scope | Behaviour |
+| --- | --- | --- |
+| Request | `connectors:source:batch_export:request` | Required governance reason + explicit idempotency key; Axis snapshots the request's batch envelopes (counts, digests, presence-only watermarks, storage references), records a deterministic checksum, auto-creates the pending approval record. Identical replays return canonical truth; different asks under the same idempotency key conflict. |
+| Decision | `approvals:connectors:source:batch_export:decide` | Body-bound tenant and actor; persists the approval decision through the canonical approval boundary; exactly one final decision per export request. Decision identity is the FULL ask — actor, decision AND note: exact retries replay canonical truth, while a different actor, decision or note conflicts instead of silently replaying. |
+| Materialize | `connectors:source:batch_export:materialize` | Approval-gated and single-shot; recomputes the envelope checksum first (TOCTOU) and conflicts on drift (`envelope_checksum_changed`). The database fence is taken BEFORE any byte is written, so a concurrent loser creates neither a second audit event nor an orphan local object; only the winner's bytes land. Concurrent identical asks yield exactly one transition plus one canonical 200 replay. |
+| Retrieve | `connectors:source:ingest:read` | LOCAL filesystem adapter ONLY: any other configured adapter answers `409 store_adapter_unsupported` before any reader or client is constructed. Serves the exact stored bytes after SHA-256 verification against the recorded digest; every read appends audit evidence. |
+
+Hard guarantees: the bundle contains NO row payloads and NO cursor-watermark
+values (watermarks are disclosed as presence only); envelope exports cap at
+1000 batches per request (`batch_envelope_too_large` rather than silent
+truncation); all four surfaces are tenant-scoped with no existence leakage
+across tenants; audit events are appended only on real transitions.
+
 ## Governance Boundary
 
 Connectors are designed as extractable from day one. The current manifest
@@ -1190,6 +1476,10 @@ contract keeps these boundaries visible:
   no partial silent success;
 - live-sync row payload confinement to review-only ontology proposals, keeping
   graph mutation behind the approval-gated promotion path;
+- governed source ingestion requests over activated bindings: server-pinned
+  fingerprints, idempotent replay/conflict semantics, outbox dispatch with
+  lease fencing and dead-lettering, and validation-stage-only execution whose
+  evidence truthfully records that no source dial and no row read occurred;
 - connector API checkpoint queries with dedicated read scope for
   worker/operator observability;
 - checkpoint API pagination through `created_before` for stable operator and

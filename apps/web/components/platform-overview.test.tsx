@@ -19,6 +19,11 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+vi.mock("@/lib/use-identity-session", () => ({
+  IDENTITY_SESSION_ENDPOINT: "/identity/session",
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 vi.mock("@/lib/use-oidc-session", () => ({
   useOidcConsoleSession: () => ({ session: null }),
 }));
@@ -75,7 +80,17 @@ function queryResult(data: unknown, source: Source, errorStatus: number | null =
 function onboardingRegistryFixtures(count: number): [string, unknown][] {
   const items = (key: string) => Array.from({ length: count }, (_, i) => ({ [key]: `${key}${i}` }));
   return [
-    [`${OPERATIONS_API_PREFIX}/connectors`, { connectors: items("connector_id") }],
+    // Connector fixtures are activated manifests so the connectors step reads
+    // as done; the checklist only counts activated manifests.
+    [
+      `${OPERATIONS_API_PREFIX}/connectors`,
+      {
+        connectors: Array.from({ length: count }, (_, i) => ({
+          connector_id: `connector_id${i}`,
+          persisted_manifest: { status: "active_preview" },
+        })),
+      },
+    ],
     [`${OPERATIONS_API_PREFIX}/ontology`, { nodes: items("node_id") }],
     [`${OPERATIONS_API_PREFIX}/agents`, { agents: items("agent_id") }],
     [`${OPERATIONS_API_PREFIX}/workflows`, { workflow_runs: items("workflow_id") }],

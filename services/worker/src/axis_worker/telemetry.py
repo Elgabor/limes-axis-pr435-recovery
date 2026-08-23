@@ -46,6 +46,7 @@ class WorkerTelemetryRuntime:
     tracer_provider: TracerProvider | None
     meter_provider: MeterProvider | None
     scheduled_job_counter: Counter
+    source_ingestion_stage_counter: Counter
 
     @contextmanager
     def activity_span(
@@ -90,6 +91,14 @@ def _build_runtime(
             "axis.scheduled_job_runs",
             unit="1",
             description="Scheduled maintenance job runs by job and status.",
+        ),
+        source_ingestion_stage_counter=meter.create_counter(
+            "axis.source_ingestion_dispatch_outcomes",
+            unit="1",
+            description=(
+                "Governed source ingestion dispatch outcomes per pass, "
+                "labelled by outcome only — never request payloads."
+            ),
         ),
     )
 

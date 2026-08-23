@@ -125,3 +125,16 @@ export function formatElapsedDuration(seconds: number | null | undefined): strin
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${formatNumber(count)} ${count === 1 ? singular : plural}`;
 }
+
+/**
+ * Fill a `{placeholder}` template with values. Unknown placeholders are left
+ * intact so copy mistakes stay visible instead of silently rendering empty.
+ */
+export function fillTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
+    key in values ? String(values[key]) : match,
+  );
+}

@@ -9,6 +9,7 @@ import { InlineOperatorError } from "@/components/ui/inline-operator-error";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { toAxisOperatorError, type AxisOperatorError } from "@/lib/axis-api";
+import { deriveGovernedActor } from "@/lib/governed-action";
 import {
   buildPolicyRevisePayload,
   draftFromPolicyRecord,
@@ -25,8 +26,10 @@ import {
   type PolicyDraftFormState,
 } from "@/lib/platform-policies";
 import { safeRandomUuid } from "@/lib/ids";
+import { opaqueStringUrlField, useConsoleUrlState } from "@/lib/console-url-state";
 import { strings } from "@/lib/strings";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
+import { useIdentitySession } from "@/lib/use-identity-session";
 import { useConsole } from "@/providers/console-provider";
 
 type SubmissionState =
@@ -45,11 +48,23 @@ export function PolicyReviseForm({
   current: PlatformPolicyRecord;
 }) {
   const { session } = useOidcConsoleSession();
+  const identity = useIdentitySession();
+  // The API rebinds updated_by to the verified OIDC principal and rejects
+  // impersonation, so submissions carry the session-derived actor id.
+  const { actorId, ssoBlocked } = deriveGovernedActor(
+    identity.data ?? null,
+    "platform-policy-author",
+  );
   const { triggerRefresh } = useConsole();
   const [draft, setDraft] = useState<PolicyDraftFormState>(() =>
     draftFromPolicyRecord(current),
   );
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => safeRandomUuid());
+  // Durable revision confirmation marker (?revised=) read by the revisions
+  // tab banner; local state alone cannot survive the refresh this triggers.
+  const [, setRevisedMarker] = useConsoleUrlState({
+    revised: opaqueStringUrlField("revised"),
+  });
   const [fieldErrors, setFieldErrors] = useState<PolicyDraftFieldErrors>({});
   const [submission, setSubmission] = useState<SubmissionState>({ phase: "idle" });
 
@@ -63,6 +78,10 @@ export function PolicyReviseForm({
 
   async function submitRevision(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (ssoBlocked) {
+      return;
+    }
 
     const validationErrors = validatePolicyDraft(draft, { requirePolicyId: false });
     setFieldErrors(validationErrors);
@@ -83,13 +102,14 @@ export function PolicyReviseForm({
     try {
       const result = await revisePlatformPolicy(
         current.policy_id,
-        buildPolicyRevisePayload(tenantId, current.policy_id, draft, idempotencyKey),
+        buildPolicyRevisePayload(tenantId, current.policy_id, draft, idempotencyKey, actorId),
         { session },
       );
 
       if (result.kind === "created") {
         setFieldErrors({});
         setSubmission({ phase: "created", record: result.record });
+        setRevisedMarker({ revised: String(result.record.revision_number) });
         // A fresh key for the next revision; the applied one is spent.
         setIdempotencyKey(safeRandomUuid());
         triggerRefresh();
@@ -98,6 +118,7 @@ export function PolicyReviseForm({
 
       if (result.kind === "replayed") {
         setSubmission({ phase: "replayed", record: result.record });
+        setRevisedMarker({ revised: String(result.record.revision_number) });
         return;
       }
 
@@ -240,14 +261,21 @@ export function PolicyReviseForm({
             value={draft.notesText}
           />
         </Field>
-        <button
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-navy px-4 py-2 text-sm font-medium text-white transition-all duration-300 select-none hover:bg-signal hover:shadow-[0_8px_24px_rgb(47_100_255/0.35)] disabled:cursor-not-allowed disabled:opacity-55 dark:bg-signal dark:hover:bg-white dark:hover:text-navy dark:hover:shadow-none"
-          disabled={submission.phase === "saving"}
-          type="submit"
-        >
-          <GitBranchPlus size={15} />
-          {submission.phase === "saving" ? "Appending" : "Append revision"}
-        </button>
+        {ssoBlocked ? (
+          <p className="m-0 flex items-center gap-2 text-sm text-muted" role="status">
+            <GitBranchPlus aria-hidden="true" className="shrink-0 text-signal" size={15} />
+            {strings.policyDetail.reviseAccess.ssoGate}
+          </p>
+        ) : (
+          <button
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-navy px-4 py-2 text-sm font-medium text-white transition-all duration-300 select-none hover:bg-signal hover:shadow-[0_8px_24px_rgb(47_100_255/0.35)] disabled:cursor-not-allowed disabled:opacity-55 dark:bg-signal dark:hover:bg-white dark:hover:text-navy dark:hover:shadow-none"
+            disabled={submission.phase === "saving"}
+            type="submit"
+          >
+            <GitBranchPlus size={15} />
+            {submission.phase === "saving" ? "Appending" : "Append revision"}
+          </button>
+        )}
       </form>
 
       {submission.phase === "created" ? (

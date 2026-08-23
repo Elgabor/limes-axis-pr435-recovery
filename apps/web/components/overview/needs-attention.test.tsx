@@ -74,6 +74,7 @@ function renderStrip(overview: {
     <ToastProvider>
       <NeedsAttention
         actor={{ actorId: "acme-operator", scopes: ["approvals:supply:decide"] }}
+        identitySession={null}
         overview={overview}
         tenantId={tenantId}
       />
@@ -112,6 +113,23 @@ describe("NeedsAttention items", () => {
       "href",
       "/audit",
     );
+  });
+
+  it("does not present reconciled decided approvals as attention items", () => {
+    const decidedFirst = approvalInboxFixture.approvals.map((approval, index) => ({
+      ...approval,
+      status: index === 0 ? "decided" : approval.status,
+    }));
+    mockApprovalsQuery({
+      data: { ...approvalInboxFixture, approvals: decidedFirst },
+      source: "api",
+    });
+    renderStrip({ data: overviewFixture, source: "api" });
+
+    // The decided item leaves the attention strip entirely; a pending item
+    // takes its slot so the limit still surfaces actionable work first.
+    expect(screen.queryByText("Expedite supplier batch")).not.toBeInTheDocument();
+    expect(screen.getByText("Place quality hold")).toBeInTheDocument();
   });
 
   it("renders a positive all-clear line when nothing needs attention", () => {

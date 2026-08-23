@@ -587,6 +587,7 @@ export function tenantWriteOperatorError(
 ): AxisOperatorError {
   return {
     code: null,
+    reason: failure.kind === "conflict" ? failure.reason : null,
     message,
     requestId: failure.requestId,
     status: failure.kind === "failed" ? failure.status : tenantWriteStatusByKind[failure.kind],

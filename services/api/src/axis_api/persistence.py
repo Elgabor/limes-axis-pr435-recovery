@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -25,6 +26,7 @@ from axis_api.models import (
     ConnectorCredentialRotation,
     ConnectorEgressPolicy,
     ConnectorEvidenceSnapshotExportRequest,
+    ConnectorLifecycleEventRecord,
     ConnectorManifestRecord,
     ConnectorManualImportRequest,
     ConnectorOntologyPromotion,
@@ -32,6 +34,10 @@ from axis_api.models import (
     ConnectorPromotionPolicy,
     ConnectorPromotionPolicySet,
     ConnectorRun,
+    ConnectorSourceBatchExportRequest,
+    ConnectorSourceBinding,
+    ConnectorSourceExtractionBatch,
+    ConnectorSourceIngestionRequest,
     ConnectorSyncCheckpoint,
     ConnectorSyncCheckpointClaim,
     DataAssetContractRecord,
@@ -290,6 +296,140 @@ class ConnectorManifestLifecycleUpdate(BaseModel):
     note: str = Field(min_length=1)
 
 
+class ConnectorLifecycleEventCreate(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    connector_id: str = Field(min_length=1)
+    from_status: str = Field(min_length=1)
+    target_status: str = Field(min_length=1)
+    transitioned_by: str = Field(min_length=1)
+    transition_reason: str = Field(min_length=1)
+    evidence_refs: list[str] = Field(default_factory=list)
+    audit_event_id: UUID
+    audit_event_type: str = Field(min_length=1)
+
+
+class ConnectorSourceBindingCreate(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    connector_id: str = Field(min_length=1)
+    asset_id: str = Field(min_length=1)
+    binding_id: str = Field(min_length=1, max_length=180)
+    connection_profile_id: str = Field(min_length=1, max_length=180)
+    resource_name: str = Field(min_length=1, max_length=240)
+    schema_fingerprint: str = Field(min_length=64, max_length=64)
+    credential_lease_id: str = Field(min_length=1, max_length=180)
+    egress_policy_id: str = Field(min_length=1, max_length=180)
+    ingestion_status: str = Field(min_length=1, max_length=60)
+    activated_by: str = Field(min_length=1, max_length=160)
+    activation_reason: str = Field(min_length=1, max_length=600)
+    audit_event_id: UUID
+    audit_event_type: str = Field(min_length=1)
+
+
+class ConnectorSourceIngestionRequestCreate(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    connector_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1, max_length=180)
+    requested_by: str = Field(min_length=1, max_length=160)
+    reason: str = Field(min_length=1, max_length=600)
+    stage: str = Field(default="validate", pattern="^(validate|extract)$")
+    # ID/fingerprint pairs pinned by the domain layer from the active bindings;
+    # never credential material.
+    selections: list[dict]
+    audit_event_id: UUID
+    audit_event_type: str = Field(min_length=1)
+
+
+class ConnectorSourceExtractionBatchCreate(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    connector_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1, max_length=180)
+    batch_key: str = Field(min_length=1, max_length=240)
+    binding_id: str = Field(min_length=1, max_length=180)
+    resource_name: str = Field(min_length=1, max_length=240)
+    pinned_schema_fingerprint: str = Field(min_length=64, max_length=64)
+    observed_schema_fingerprint: str = Field(min_length=64, max_length=64)
+    ordering_mode: str = Field(pattern="^(primary_key|none)$")
+    cursor_watermark: dict | None = None
+    row_count: int = Field(ge=0)
+    byte_size: int = Field(ge=0)
+    truncated: bool
+    limit_reason: str | None = None
+    duration_ms: int = Field(ge=0)
+    limits_applied: dict
+    provenance: dict
+    digest_sha256: str = Field(min_length=64, max_length=64)
+    storage_adapter: str = Field(min_length=1)
+    storage_key: str = Field(min_length=1)
+    storage_uri: str = Field(min_length=1)
+    content_type: str = Field(min_length=1)
+    stored_size_bytes: int = Field(ge=0)
+    classification: str = Field(min_length=1, max_length=40)
+    executed_by: str = Field(min_length=1, max_length=160)
+    audit_event_id: UUID
+    audit_event_type: str = Field(min_length=1)
+
+
+class ConnectorSourceBatchExportRequestCreate(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    connector_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1, max_length=180)
+    export_request_id: str = Field(min_length=1, max_length=180)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    requested_by: str = Field(min_length=1, max_length=160)
+    owner_role: str = Field(min_length=1, max_length=160)
+    risk_level: str = Field(min_length=1, max_length=40)
+    approval_id: str = Field(min_length=1, max_length=160)
+    workflow_id: str = Field(min_length=1, max_length=160)
+    export_reason: str = Field(min_length=1, max_length=240)
+    status: str = Field(default="approval_required", min_length=1)
+    export_status: str = Field(default="not_exported", min_length=1)
+    storage_status: str = Field(default="not_written", min_length=1)
+    batch_count: int = Field(ge=0)
+    total_row_count: int = Field(ge=0)
+    envelope_checksum_sha256: str = Field(min_length=64, max_length=64)
+    redaction_policy: str = Field(default="source-batch-envelope-public-safe", min_length=1)
+    controls: list[str] = Field(default_factory=list)
+    permission_decision: dict = Field(default_factory=dict)
+    audit_event_id: UUID | None = None
+    audit_event_type: str = Field(
+        default="connector.source.batch_export.requested",
+        min_length=1,
+    )
+    notes: list[str] = Field(default_factory=list)
+
+
+class ConnectorSourceBatchExportDecisionRecord(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    export_request_id: str = Field(min_length=1)
+    status: str = Field(min_length=1)
+    export_status: str = Field(min_length=1)
+    decision: str = Field(min_length=1)
+    decision_actor_id: str = Field(min_length=1)
+    decision_note: str | None = None
+    audit_event_id: UUID | None = None
+    audit_event_type: str | None = None
+
+
+class ConnectorSourceBatchExportMaterializationRecord(BaseModel):
+    tenant_id: str = Field(min_length=1)
+    export_request_id: str = Field(min_length=1)
+    status: str = Field(min_length=1)
+    export_status: str = Field(min_length=1)
+    storage_status: str = Field(min_length=1)
+    materialization_id: str = Field(min_length=1)
+    materialization_idempotency_key: str = Field(min_length=1)
+    materialized_by: str = Field(min_length=1)
+    materialization_reason: str = Field(min_length=1)
+    storage_adapter: str = Field(min_length=1)
+    storage_key: str = Field(min_length=1)
+    storage_uri: str = Field(min_length=1)
+    artifact_checksum_sha256: str = Field(min_length=64, max_length=64)
+    artifact_size_bytes: int = Field(ge=0)
+    artifact_content_type: str = Field(min_length=1)
+    audit_event_id: UUID | None = None
+    audit_event_type: str | None = None
+
+
 class DataAssetStewardshipCreate(BaseModel):
     tenant_id: str = Field(min_length=1)
     asset_id: str = Field(min_length=1)
@@ -307,6 +447,14 @@ class DataAssetStewardshipCreate(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+ObservationSourceKind = Literal["csv_preview", "postgres_discovery"]
+"""The governed boundary an observation was actually seen through.
+
+Extending this set is deliberate: each new kind is a distinct evidence
+provenance the catalog and audit consumers must understand.
+"""
+
+
 class DataResourceObservationCreate(BaseModel):
     tenant_id: str = Field(min_length=1)
     connector_id: str = Field(min_length=1)
@@ -315,6 +463,7 @@ class DataResourceObservationCreate(BaseModel):
     schema_fingerprint: str | None = Field(default=None, min_length=64, max_length=64)
     drift_state: str = Field(min_length=1, max_length=20)
     observed_by: str = Field(min_length=1)
+    source_kind: ObservationSourceKind = Field(default="csv_preview", max_length=40)
     audit_event_type: str = Field(default="data.resource.observed", min_length=1)
 
 
@@ -323,9 +472,7 @@ class DataAssetContractCreate(BaseModel):
     asset_id: str = Field(min_length=1)
     revision_number: int = Field(ge=1)
     expected_resource_name: str = Field(min_length=1, max_length=240)
-    expected_schema_fingerprint: str | None = Field(
-        default=None, min_length=64, max_length=64
-    )
+    expected_schema_fingerprint: str | None = Field(default=None, min_length=64, max_length=64)
     freshness_warn_hours: int | None = Field(default=None, ge=1)
     freshness_fail_hours: int | None = Field(default=None, ge=1)
     notes: list[str] = Field(default_factory=list)
@@ -363,6 +510,20 @@ class ConnectorCredentialRotationCreate(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class ConnectorCredentialLeasePermissionDecision(BaseModel):
+    """The persisted shape of one credential-broker authorization decision.
+
+    Mirrors ``PermissionDecision`` so every reader (API registry, console
+    contracts) can rely on ``allowed`` being a boolean and ``reason`` always
+    naming why. Enforced at the write boundary: a lease row that could not
+    satisfy this must never be persisted, because the read model rejects it
+    and any registry query would fail as a whole.
+    """
+
+    allowed: bool
+    reason: str = Field(min_length=1)
+
+
 class ConnectorCredentialLeaseCreate(BaseModel):
     tenant_id: str = Field(min_length=1)
     connector_id: str = Field(min_length=1)
@@ -375,9 +536,12 @@ class ConnectorCredentialLeaseCreate(BaseModel):
     lease_purpose: str = Field(min_length=1)
     secret_provider: str = Field(min_length=1)
     secret_ref: str = Field(min_length=1)
-    vault_kms_policy: dict = Field(default_factory=dict)
-    permission_decision: dict = Field(default_factory=dict)
-    lease_result: dict = Field(default_factory=dict)
+    vault_kms_policy: dict[str, str] = Field(default_factory=dict)
+    permission_decision: ConnectorCredentialLeasePermissionDecision
+    # String-valued by contract: the runtime result is public-safe evidence
+    # rendered verbatim by API and console readers; booleans here broke the
+    # read model before this was enforced at the write boundary.
+    lease_result: dict[str, str] = Field(default_factory=dict)
     granted_at: datetime
     expires_at: datetime
     renewal_due_at: datetime
@@ -1142,20 +1306,12 @@ class AxisPersistenceRepository:
             return
         if dialect_name != "postgresql":
             raise NotImplementedError(
-                "OIDC session admission locking is not supported for "
-                f"dialect {dialect_name!r}."
+                f"OIDC session admission locking is not supported for dialect {dialect_name!r}."
             )
         lock_key = (
-            "axis:oidc-session-admission:"
-            f"{len(tenant_id)}:{tenant_id}{len(actor_id)}:{actor_id}"
+            f"axis:oidc-session-admission:{len(tenant_id)}:{tenant_id}{len(actor_id)}:{actor_id}"
         )
-        self.session.execute(
-            select(
-                func.pg_advisory_xact_lock(
-                    func.hashtextextended(lock_key, 0)
-                )
-            )
-        )
+        self.session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(lock_key, 0))))
 
     def get_audit_event(self, tenant_id: str, audit_event_id: UUID) -> AuditEvent | None:
         statement: Select[tuple[AuditEvent]] = select(AuditEvent).where(
@@ -1726,12 +1882,9 @@ class AxisPersistenceRepository:
                 f"Approval decision locking is not supported for dialect {dialect_name!r}."
             )
         lock_key = (
-            "axis:approval-decision:"
-            f"{len(tenant_id)}:{tenant_id}{len(approval_id)}:{approval_id}"
+            f"axis:approval-decision:{len(tenant_id)}:{tenant_id}{len(approval_id)}:{approval_id}"
         )
-        self.session.execute(
-            select(func.pg_advisory_xact_lock(func.hashtextextended(lock_key, 0)))
-        )
+        self.session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(lock_key, 0))))
 
     def create_approval_decision_outbox(
         self, record: ApprovalDecisionOutboxCreate
@@ -2413,9 +2566,9 @@ class AxisPersistenceRepository:
         workflow_id: str | None = None,
         limit: int = 100,
     ) -> list[ReplaySimulationOutput]:
-        statement: Select[tuple[ReplaySimulationOutput]] = select(
-            ReplaySimulationOutput
-        ).where(ReplaySimulationOutput.tenant_id == tenant_id)
+        statement: Select[tuple[ReplaySimulationOutput]] = select(ReplaySimulationOutput).where(
+            ReplaySimulationOutput.tenant_id == tenant_id
+        )
         if workflow_id is not None:
             statement = statement.where(ReplaySimulationOutput.workflow_id == workflow_id)
 
@@ -2618,20 +2771,10 @@ class AxisPersistenceRepository:
             return
         if dialect_name != "postgresql":
             raise NotImplementedError(
-                "Data asset stewardship locking is not supported for "
-                f"dialect {dialect_name!r}."
+                f"Data asset stewardship locking is not supported for dialect {dialect_name!r}."
             )
-        lock_key = (
-            "axis:data-stewardship:"
-            f"{len(tenant_id)}:{tenant_id}{len(asset_id)}:{asset_id}"
-        )
-        self.session.execute(
-            select(
-                func.pg_advisory_xact_lock(
-                    func.hashtextextended(lock_key, 0)
-                )
-            )
-        )
+        lock_key = f"axis:data-stewardship:{len(tenant_id)}:{tenant_id}{len(asset_id)}:{asset_id}"
+        self.session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(lock_key, 0))))
 
     def create_data_resource_observation(
         self,
@@ -2647,7 +2790,7 @@ class AxisPersistenceRepository:
             drift_state=record.drift_state,
             first_seen_at=utc_now(),
             last_seen_at=utc_now(),
-            last_source_kind="csv_preview",
+            last_source_kind=record.source_kind,
             observation_count=1,
             observed_by=record.observed_by,
             audit_event_type=record.audit_event_type,
@@ -2713,10 +2856,7 @@ class AxisPersistenceRepository:
             .where(DataAssetResourceObservation.tenant_id == tenant_id)
             .group_by(DataAssetResourceObservation.asset_id)
         )
-        return {
-            asset_id: count
-            for asset_id, count in self.session.execute(statement).all()
-        }
+        return {asset_id: count for asset_id, count in self.session.execute(statement).all()}
 
     def record_repeat_data_resource_observation(
         self,
@@ -2755,21 +2895,14 @@ class AxisPersistenceRepository:
             return
         if dialect_name != "postgresql":
             raise NotImplementedError(
-                "Data resource observation locking is not supported for "
-                f"dialect {dialect_name!r}."
+                f"Data resource observation locking is not supported for dialect {dialect_name!r}."
             )
         lock_key = (
             "axis:data-resource-observation:"
             f"{len(tenant_id)}:{tenant_id}{len(connector_id)}:{connector_id}"
             f"{len(resource_name)}:{resource_name}"
         )
-        self.session.execute(
-            select(
-                func.pg_advisory_xact_lock(
-                    func.hashtextextended(lock_key, 0)
-                )
-            )
-        )
+        self.session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(lock_key, 0))))
 
     def create_data_asset_contract_record(
         self,
@@ -2849,20 +2982,10 @@ class AxisPersistenceRepository:
             return
         if dialect_name != "postgresql":
             raise NotImplementedError(
-                "Data asset contract locking is not supported for "
-                f"dialect {dialect_name!r}."
+                f"Data asset contract locking is not supported for dialect {dialect_name!r}."
             )
-        lock_key = (
-            "axis:data-contract:"
-            f"{len(tenant_id)}:{tenant_id}{len(asset_id)}:{asset_id}"
-        )
-        self.session.execute(
-            select(
-                func.pg_advisory_xact_lock(
-                    func.hashtextextended(lock_key, 0)
-                )
-            )
-        )
+        lock_key = f"axis:data-contract:{len(tenant_id)}:{tenant_id}{len(asset_id)}:{asset_id}"
+        self.session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(lock_key, 0))))
 
     def append_connector_manifest_revision(
         self,
@@ -2910,9 +3033,7 @@ class AxisPersistenceRepository:
         connector_id: str | None = None,
         status: str | None = None,
     ) -> Select[tuple[ConnectorManifestRecord]]:
-        statement: Select[tuple[ConnectorManifestRecord]] = select(
-            ConnectorManifestRecord
-        ).where(
+        statement: Select[tuple[ConnectorManifestRecord]] = select(ConnectorManifestRecord).where(
             ConnectorManifestRecord.tenant_id == tenant_id,
             ConnectorManifestRecord.replaced_by_revision_number.is_(None),
         )
@@ -2957,6 +3078,841 @@ class AxisPersistenceRepository:
         manifest.updated_at = now
         self.session.flush()
         return manifest
+
+    def append_connector_lifecycle_event(
+        self,
+        record: ConnectorLifecycleEventCreate,
+    ) -> ConnectorLifecycleEventRecord:
+        event = ConnectorLifecycleEventRecord(
+            tenant_id=record.tenant_id,
+            connector_id=record.connector_id,
+            from_status=record.from_status,
+            target_status=record.target_status,
+            transitioned_by=record.transitioned_by,
+            transition_reason=record.transition_reason,
+            evidence_refs=record.evidence_refs,
+            audit_event_id=record.audit_event_id,
+            audit_event_type=record.audit_event_type,
+        )
+        self.session.add(event)
+        self.session.flush()
+        return event
+
+    def list_connector_lifecycle_events(
+        self,
+        tenant_id: str,
+        connector_id: str,
+        limit: int = 20,
+    ) -> list[ConnectorLifecycleEventRecord]:
+        statement = (
+            select(ConnectorLifecycleEventRecord)
+            .where(
+                ConnectorLifecycleEventRecord.tenant_id == tenant_id,
+                ConnectorLifecycleEventRecord.connector_id == connector_id,
+            )
+            .order_by(
+                ConnectorLifecycleEventRecord.created_at.desc(),
+                ConnectorLifecycleEventRecord.id.desc(),
+            )
+            .limit(limit)
+        )
+        return list(self.session.scalars(statement))
+
+    def acquire_connector_source_activation_lock(
+        self,
+        *,
+        tenant_id: str,
+        connector_id: str,
+    ) -> None:
+        """Serialize source-binding activations for one tenant connector.
+
+        Activation validates every selection against current observations
+        before writing, so concurrent batches must not interleave their read
+        and write phases. PostgreSQL coordinates across API processes via an
+        advisory transaction lock; SQLite serializes writes at the database
+        level and is used only by local/test profiles.
+        """
+        dialect_name = self.session.get_bind().dialect.name
+        if dialect_name == "sqlite":
+            return
+        if dialect_name != "postgresql":
+            raise NotImplementedError(
+                "Connector source activation locking is not supported for "
+                f"dialect {dialect_name!r}."
+            )
+        lock_key = (
+            f"axis:connector-source-activation:{len(tenant_id)}:{tenant_id}"
+            f"{len(connector_id)}:{connector_id}"
+        )
+        self.session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(lock_key, 0))))
+
+    def create_connector_source_binding(
+        self,
+        record: ConnectorSourceBindingCreate,
+    ) -> ConnectorSourceBinding:
+        binding = ConnectorSourceBinding(
+            tenant_id=record.tenant_id,
+            connector_id=record.connector_id,
+            asset_id=record.asset_id,
+            binding_id=record.binding_id,
+            connection_profile_id=record.connection_profile_id,
+            resource_name=record.resource_name,
+            schema_fingerprint=record.schema_fingerprint,
+            credential_lease_id=record.credential_lease_id,
+            egress_policy_id=record.egress_policy_id,
+            status="active",
+            ingestion_status=record.ingestion_status,
+            activated_by=record.activated_by,
+            activation_reason=record.activation_reason,
+            audit_event_id=record.audit_event_id,
+            audit_event_type=record.audit_event_type,
+        )
+        self.session.add(binding)
+        self.session.flush()
+        return binding
+
+    def get_connector_source_binding(
+        self,
+        tenant_id: str,
+        binding_id: str,
+    ) -> ConnectorSourceBinding | None:
+        statement = select(ConnectorSourceBinding).where(
+            ConnectorSourceBinding.tenant_id == tenant_id,
+            ConnectorSourceBinding.binding_id == binding_id,
+        )
+        return self.session.scalars(statement).first()
+
+    def get_active_connector_source_binding_for_resource(
+        self,
+        tenant_id: str,
+        connector_id: str,
+        resource_name: str,
+    ) -> ConnectorSourceBinding | None:
+        statement = (
+            select(ConnectorSourceBinding)
+            .where(
+                ConnectorSourceBinding.tenant_id == tenant_id,
+                ConnectorSourceBinding.connector_id == connector_id,
+                ConnectorSourceBinding.resource_name == resource_name,
+                ConnectorSourceBinding.status == "active",
+            )
+            .order_by(ConnectorSourceBinding.activated_at.asc(), ConnectorSourceBinding.id.asc())
+        )
+        return self.session.scalars(statement).first()
+
+    def list_active_connector_source_bindings(
+        self,
+        tenant_id: str,
+        connector_id: str,
+        limit: int = 200,
+    ) -> list[ConnectorSourceBinding]:
+        statement = (
+            select(ConnectorSourceBinding)
+            .where(
+                ConnectorSourceBinding.tenant_id == tenant_id,
+                ConnectorSourceBinding.connector_id == connector_id,
+                ConnectorSourceBinding.status == "active",
+            )
+            .order_by(
+                ConnectorSourceBinding.activated_at.asc(),
+                ConnectorSourceBinding.binding_id.asc(),
+            )
+            .limit(limit)
+        )
+        return list(self.session.scalars(statement))
+
+    # ------------------------------------------------------------------
+    # Governed source ingestion requests (validation-stage outbox)
+
+    def create_connector_source_ingestion_request(
+        self,
+        record: ConnectorSourceIngestionRequestCreate,
+        *,
+        available_at: datetime,
+    ) -> ConnectorSourceIngestionRequest:
+        request_row = ConnectorSourceIngestionRequest(
+            tenant_id=record.tenant_id,
+            connector_id=record.connector_id,
+            request_id=record.request_id,
+            requested_by=record.requested_by,
+            reason=record.reason,
+            stage=record.stage,
+            selections=record.selections,
+            status="pending",
+            attempt_count=0,
+            available_at=available_at,
+            audit_event_id=record.audit_event_id,
+            audit_event_type=record.audit_event_type,
+        )
+        self.session.add(request_row)
+        self.session.flush()
+        return request_row
+
+    def get_connector_source_ingestion_request(
+        self,
+        tenant_id: str,
+        request_id: str,
+    ) -> ConnectorSourceIngestionRequest | None:
+        statement = select(ConnectorSourceIngestionRequest).where(
+            ConnectorSourceIngestionRequest.tenant_id == tenant_id,
+            ConnectorSourceIngestionRequest.request_id == request_id,
+        )
+        return self.session.scalars(statement).first()
+
+    def list_connector_source_ingestion_requests(
+        self,
+        tenant_id: str,
+        connector_id: str,
+        limit: int = 50,
+    ) -> list[ConnectorSourceIngestionRequest]:
+        statement = (
+            select(ConnectorSourceIngestionRequest)
+            .where(
+                ConnectorSourceIngestionRequest.tenant_id == tenant_id,
+                ConnectorSourceIngestionRequest.connector_id == connector_id,
+            )
+            .order_by(
+                ConnectorSourceIngestionRequest.created_at.desc(),
+                ConnectorSourceIngestionRequest.request_id.asc(),
+            )
+            .limit(limit)
+        )
+        return list(self.session.scalars(statement))
+
+    def summarize_connector_source_ingestion_requests(
+        self,
+        tenant_id: str,
+        connector_id: str,
+    ) -> dict:
+        """Aggregate counts over the connector's own ingestion requests.
+
+        One grouped read over the existing table — no parallel store. The
+        dead-lettered count is the subset of ``failed`` rows whose
+        ``dead_lettered_at`` is set, so a request that failed and was requeued
+        never double-counts as attention-worthy.
+        """
+        status_counts = {
+            status: count
+            for status, count in self.session.execute(
+                select(
+                    ConnectorSourceIngestionRequest.status,
+                    func.count(),
+                )
+                .where(
+                    ConnectorSourceIngestionRequest.tenant_id == tenant_id,
+                    ConnectorSourceIngestionRequest.connector_id == connector_id,
+                )
+                .group_by(ConnectorSourceIngestionRequest.status)
+            ).all()
+        }
+        total_count = sum(status_counts.values())
+        dead_lettered_count = int(
+            self.session.scalar(
+                select(func.count())
+                .select_from(ConnectorSourceIngestionRequest)
+                .where(
+                    ConnectorSourceIngestionRequest.tenant_id == tenant_id,
+                    ConnectorSourceIngestionRequest.connector_id == connector_id,
+                    ConnectorSourceIngestionRequest.status == "failed",
+                    ConnectorSourceIngestionRequest.dead_lettered_at.is_not(None),
+                )
+            )
+        )
+        extract_stage_count = int(
+            self.session.scalar(
+                select(func.count())
+                .select_from(ConnectorSourceIngestionRequest)
+                .where(
+                    ConnectorSourceIngestionRequest.tenant_id == tenant_id,
+                    ConnectorSourceIngestionRequest.connector_id == connector_id,
+                    ConnectorSourceIngestionRequest.stage == "extract",
+                )
+            )
+        )
+        last_activity_at = self.session.scalar(
+            select(func.max(ConnectorSourceIngestionRequest.updated_at)).where(
+                ConnectorSourceIngestionRequest.tenant_id == tenant_id,
+                ConnectorSourceIngestionRequest.connector_id == connector_id,
+            )
+        )
+        return {
+            "status_counts": status_counts,
+            "total_count": total_count,
+            "dead_lettered_count": dead_lettered_count,
+            "extract_stage_count": extract_stage_count,
+            "last_activity_at": last_activity_at,
+        }
+
+    def list_connector_source_ingestion_requests_page(
+        self,
+        tenant_id: str,
+        connector_id: str,
+        *,
+        limit: int,
+        cursor_created_at: datetime | None = None,
+        cursor_request_id: str | None = None,
+    ) -> list[ConnectorSourceIngestionRequest]:
+        """Keyset-paged recent requests (newest first), stable across inserts.
+
+        The cursor is the ``(created_at, request_id)`` pair of the last row of
+        the previous page; callers pass ``limit + 1`` to detect a following
+        page. Ordering matches :meth:`list_connector_source_ingestion_requests`
+        so both surfaces interleave identically.
+        """
+        statement = (
+            select(ConnectorSourceIngestionRequest)
+            .where(
+                ConnectorSourceIngestionRequest.tenant_id == tenant_id,
+                ConnectorSourceIngestionRequest.connector_id == connector_id,
+            )
+            .order_by(
+                ConnectorSourceIngestionRequest.created_at.desc(),
+                ConnectorSourceIngestionRequest.request_id.asc(),
+            )
+        )
+        if cursor_created_at is not None and cursor_request_id is not None:
+            statement = statement.where(
+                or_(
+                    ConnectorSourceIngestionRequest.created_at < cursor_created_at,
+                    and_(
+                        ConnectorSourceIngestionRequest.created_at == cursor_created_at,
+                        ConnectorSourceIngestionRequest.request_id > cursor_request_id,
+                    ),
+                )
+            )
+        return list(self.session.scalars(statement.limit(limit)))
+
+    def claim_connector_source_ingestion_requests(
+        self,
+        *,
+        now: datetime,
+        lease_expires_at: datetime,
+        limit: int,
+    ) -> list[ConnectorSourceIngestionRequest]:
+        statement = (
+            select(ConnectorSourceIngestionRequest)
+            .where(
+                or_(
+                    and_(
+                        ConnectorSourceIngestionRequest.status == "pending",
+                        ConnectorSourceIngestionRequest.available_at <= now,
+                    ),
+                    and_(
+                        ConnectorSourceIngestionRequest.status == "dispatching",
+                        ConnectorSourceIngestionRequest.lease_expires_at <= now,
+                    ),
+                )
+            )
+            .order_by(
+                ConnectorSourceIngestionRequest.available_at.asc(),
+                ConnectorSourceIngestionRequest.created_at.asc(),
+                ConnectorSourceIngestionRequest.id.asc(),
+            )
+            .limit(limit)
+        )
+        if self.session.get_bind().dialect.name == "postgresql":
+            statement = statement.with_for_update(skip_locked=True)
+        rows = list(self.session.scalars(statement))
+        for row in rows:
+            row.status = "dispatching"
+            row.attempt_count += 1
+            row.claim_token = uuid4()
+            row.claimed_at = now
+            row.lease_expires_at = lease_expires_at
+            row.last_attempt_at = now
+            row.updated_at = now
+        self.session.flush()
+        return rows
+
+    def complete_connector_source_ingestion_request(
+        self,
+        ingestion_request_id: UUID,
+        claim_token: UUID,
+        *,
+        completed_at: datetime,
+        evidence: dict,
+    ) -> bool:
+        result = self.session.execute(
+            update(ConnectorSourceIngestionRequest)
+            .where(
+                ConnectorSourceIngestionRequest.id == ingestion_request_id,
+                ConnectorSourceIngestionRequest.claim_token == claim_token,
+                ConnectorSourceIngestionRequest.status == "dispatching",
+            )
+            .values(
+                status="completed",
+                completed_at=completed_at,
+                dead_lettered_at=None,
+                claim_token=None,
+                claimed_at=None,
+                lease_expires_at=None,
+                last_error=None,
+                evidence=evidence,
+                updated_at=completed_at,
+            )
+        )
+        return result.rowcount == 1
+
+    def retry_connector_source_ingestion_request(
+        self,
+        ingestion_request_id: UUID,
+        claim_token: UUID,
+        *,
+        available_at: datetime,
+        updated_at: datetime,
+        error: str,
+        dead_letter: bool,
+        evidence: dict | None = None,
+    ) -> bool:
+        result = self.session.execute(
+            update(ConnectorSourceIngestionRequest)
+            .where(
+                ConnectorSourceIngestionRequest.id == ingestion_request_id,
+                ConnectorSourceIngestionRequest.claim_token == claim_token,
+                ConnectorSourceIngestionRequest.status == "dispatching",
+            )
+            .values(
+                status="failed" if dead_letter else "pending",
+                dead_lettered_at=updated_at if dead_letter else None,
+                available_at=available_at,
+                claim_token=None,
+                claimed_at=None,
+                lease_expires_at=None,
+                last_error=error[:200],
+                evidence=evidence,
+                updated_at=updated_at,
+            )
+        )
+        return result.rowcount == 1
+
+    def cancel_connector_source_ingestion_request(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        cancelled_by: str,
+        cancel_reason: str | None,
+        now: datetime,
+    ) -> Literal["cancelled", "replayed", "conflict", "not_found"]:
+        """Fenced cancel of a still-pending governed ingestion request.
+
+        Only ``pending`` rows transition to ``cancelled``. An identical replay
+        returns ``replayed`` without new writes; dispatched or terminal states
+        conflict instead of being overwritten. Audit linkage is written by the
+        caller afterwards via :meth:`mark_connector_source_ingestion_request_audit`
+        so a conflicted or not-found call never leaves an orphan event.
+        """
+        row = self.get_connector_source_ingestion_request(tenant_id, request_id)
+        if row is None:
+            return "not_found"
+        normalized_reason = cancel_reason[:200] if cancel_reason else None
+        if row.status == "cancelled":
+            same_ask = (
+                row.cancelled_by == cancelled_by
+                and (row.cancel_reason or None) == normalized_reason
+            )
+            return "replayed" if same_ask else "conflict"
+        if row.status != "pending":
+            return "conflict"
+        result = self.session.execute(
+            update(ConnectorSourceIngestionRequest)
+            .where(
+                ConnectorSourceIngestionRequest.id == row.id,
+                ConnectorSourceIngestionRequest.status == "pending",
+            )
+            .values(
+                status="cancelled",
+                cancelled_at=now,
+                cancelled_by=cancelled_by,
+                cancel_reason=normalized_reason,
+                updated_at=now,
+            )
+        )
+        return "cancelled" if result.rowcount == 1 else "conflict"
+
+    def requeue_connector_source_ingestion_request(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        requeued_by: str,
+        requeue_reason: str,
+        idempotency_key: str,
+        now: datetime,
+    ) -> Literal["requeued", "replayed", "conflict", "not_found"]:
+        """Fenced re-dispatch of a dead-lettered governed ingestion request.
+
+        Only terminally dead-lettered requests transition. Identity for replay
+        is the full ask — actor, reason, and explicit idempotency key — stored
+        on the row at the moment of mutation, so an identical repeat replays
+        without a second audit event and any different ask conflicts. Pinned
+        selections and stage remain untouched; execution revalidates current
+        fingerprints. Audit linkage is written by the caller via
+        :meth:`mark_connector_source_ingestion_request_audit` inside the same
+        transaction.
+        """
+        row = self.get_connector_source_ingestion_request(tenant_id, request_id)
+        if row is None:
+            return "not_found"
+        same_ask = (
+            row.requeued_by == requeued_by
+            and row.requeue_reason == requeue_reason
+            and row.requeue_idempotency_key == idempotency_key
+        )
+        if row.status == "pending" and row.dead_lettered_at is None:
+            # Already requeued by this exact ask (or by someone else).
+            return "replayed" if same_ask else "conflict"
+        if row.status != "failed" or row.dead_lettered_at is None:
+            return "conflict"
+        result = self.session.execute(
+            update(ConnectorSourceIngestionRequest)
+            .where(
+                ConnectorSourceIngestionRequest.id == row.id,
+                ConnectorSourceIngestionRequest.status == "failed",
+                ConnectorSourceIngestionRequest.dead_lettered_at.is_not(None),
+            )
+            .values(
+                status="pending",
+                attempt_count=0,
+                available_at=now,
+                claim_token=None,
+                claimed_at=None,
+                lease_expires_at=None,
+                last_attempt_at=None,
+                completed_at=None,
+                dead_lettered_at=None,
+                last_error=None,
+                requeued_at=now,
+                requeued_by=requeued_by,
+                requeue_reason=requeue_reason[:600],
+                requeue_idempotency_key=idempotency_key[:180],
+                updated_at=now,
+            )
+        )
+        return "requeued" if result.rowcount == 1 else "conflict"
+
+    def mark_connector_source_ingestion_request_audit(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        audit_event_id: UUID,
+        audit_event_type: str,
+    ) -> None:
+        """Bind the latest lifecycle audit event onto the request row."""
+        self.session.execute(
+            update(ConnectorSourceIngestionRequest)
+            .where(
+                ConnectorSourceIngestionRequest.tenant_id == tenant_id,
+                ConnectorSourceIngestionRequest.request_id == request_id,
+            )
+            .values(audit_event_id=audit_event_id, audit_event_type=audit_event_type)
+        )
+
+    def get_connector_source_ingestion_request_attempts(
+        self,
+        ingestion_request_id: UUID,
+    ) -> list[dict]:
+        """Prior finalized dispatch-attempt records from the row's evidence.
+
+        The evidence JSON is the durable history: each finalized attempt
+        appends one metadata-only entry. Only well-formed dict entries are
+        returned; anything else is ignored so historical rows keep reading.
+        """
+        row = self.session.get(ConnectorSourceIngestionRequest, ingestion_request_id)
+        if row is None or not isinstance(row.evidence, dict):
+            return []
+        attempts = row.evidence.get("attempts")
+        if not isinstance(attempts, list):
+            return []
+        return [entry for entry in attempts if isinstance(entry, dict)]
+
+    # ------------------------------------------------------------------
+    # Governed batch-envelope export requests
+
+    def create_connector_source_batch_export_request(
+        self,
+        record: ConnectorSourceBatchExportRequestCreate,
+    ) -> ConnectorSourceBatchExportRequest:
+        export_request = ConnectorSourceBatchExportRequest(
+            tenant_id=record.tenant_id,
+            connector_id=record.connector_id,
+            request_id=record.request_id,
+            export_request_id=record.export_request_id,
+            idempotency_key=record.idempotency_key,
+            requested_by=record.requested_by,
+            owner_role=record.owner_role,
+            risk_level=record.risk_level,
+            approval_id=record.approval_id,
+            workflow_id=record.workflow_id,
+            export_reason=record.export_reason,
+            status=record.status,
+            export_status=record.export_status,
+            storage_status=record.storage_status,
+            batch_count=record.batch_count,
+            total_row_count=record.total_row_count,
+            envelope_checksum_sha256=record.envelope_checksum_sha256,
+            redaction_policy=record.redaction_policy,
+            controls=record.controls,
+            permission_decision=record.permission_decision,
+            audit_event_id=record.audit_event_id,
+            audit_event_type=record.audit_event_type,
+            notes=record.notes,
+        )
+        self.session.add(export_request)
+        self.session.flush()
+        return export_request
+
+    def get_connector_source_batch_export_request(
+        self,
+        tenant_id: str,
+        export_request_id: str,
+    ) -> ConnectorSourceBatchExportRequest | None:
+        # populate_existing is load-bearing for canonical re-reads inside one
+        # session: fenced transitions deliberately skip session synchronization
+        # (see above), so callers re-reading after a lost race must observe
+        # committed truth, not a cached pre-fence instance.
+        statement = (
+            select(ConnectorSourceBatchExportRequest)
+            .where(
+                ConnectorSourceBatchExportRequest.tenant_id == tenant_id,
+                ConnectorSourceBatchExportRequest.export_request_id == export_request_id,
+            )
+            .execution_options(populate_existing=True)
+        )
+        return self.session.scalars(statement).first()
+
+    def get_connector_source_batch_export_request_by_idempotency_key(
+        self,
+        tenant_id: str,
+        idempotency_key: str,
+    ) -> ConnectorSourceBatchExportRequest | None:
+        statement = select(ConnectorSourceBatchExportRequest).where(
+            ConnectorSourceBatchExportRequest.tenant_id == tenant_id,
+            ConnectorSourceBatchExportRequest.idempotency_key == idempotency_key,
+        )
+        return self.session.scalars(statement).first()
+
+    def list_connector_source_batch_export_requests(
+        self,
+        tenant_id: str,
+        request_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[ConnectorSourceBatchExportRequest]:
+        statement = (
+            select(ConnectorSourceBatchExportRequest)
+            .where(
+                ConnectorSourceBatchExportRequest.tenant_id == tenant_id,
+                ConnectorSourceBatchExportRequest.request_id == request_id,
+            )
+            .order_by(ConnectorSourceBatchExportRequest.created_at.asc())
+            .limit(limit)
+        )
+        return list(self.session.scalars(statement))
+
+    def record_connector_source_batch_export_decision(
+        self,
+        record: ConnectorSourceBatchExportDecisionRecord,
+    ) -> bool:
+        """Fenced decision transition of a still-undecided export request.
+
+        Only rows whose ``decision`` is still unset transition, so concurrent
+        deciders produce exactly one winner; the caller maps a ``False`` return
+        to an explicit conflict instead of a silent overwrite. Audit linkage is
+        attached by :meth:`link_connector_source_batch_export_audit` AFTER the
+        fence is won, inside the same transaction, so a loser never leaves an
+        orphan event behind.
+        """
+        now = utc_now()
+        result = self.session.execute(
+            update(ConnectorSourceBatchExportRequest)
+            .where(
+                ConnectorSourceBatchExportRequest.tenant_id == record.tenant_id,
+                ConnectorSourceBatchExportRequest.export_request_id
+                == record.export_request_id,
+                ConnectorSourceBatchExportRequest.decision.is_(None),
+            )
+            .values(
+                status=record.status,
+                export_status=record.export_status,
+                decision=record.decision,
+                decision_actor_id=record.decision_actor_id,
+                decision_note=record.decision_note,
+                decided_at=now,
+                updated_at=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount == 1
+
+    def record_connector_source_batch_export_materialization(
+        self,
+        record: ConnectorSourceBatchExportMaterializationRecord,
+    ) -> bool:
+        """Single-shot materialization transition of a not-yet-written request.
+
+        The ``storage_status``/``materialization_id`` guards make the write
+        winnable exactly once under genuine concurrency; losers must surface a
+        conflict or an exact replay instead of overwriting recorded evidence.
+        Audit linkage is attached by :meth:`link_connector_source_batch_export_audit`
+        after the fence is won, inside the same transaction.
+        """
+        now = utc_now()
+        result = self.session.execute(
+            update(ConnectorSourceBatchExportRequest)
+            .where(
+                ConnectorSourceBatchExportRequest.tenant_id == record.tenant_id,
+                ConnectorSourceBatchExportRequest.export_request_id
+                == record.export_request_id,
+                ConnectorSourceBatchExportRequest.storage_status == "not_written",
+                ConnectorSourceBatchExportRequest.materialization_id.is_(None),
+            )
+            .values(
+                status=record.status,
+                export_status=record.export_status,
+                storage_status=record.storage_status,
+                materialization_id=record.materialization_id,
+                materialization_idempotency_key=(
+                    record.materialization_idempotency_key
+                ),
+                materialized_by=record.materialized_by,
+                materialized_at=now,
+                materialization_reason=record.materialization_reason,
+                storage_adapter=record.storage_adapter,
+                storage_key=record.storage_key,
+                storage_uri=record.storage_uri,
+                artifact_checksum_sha256=record.artifact_checksum_sha256,
+                artifact_size_bytes=record.artifact_size_bytes,
+                artifact_content_type=record.artifact_content_type,
+                updated_at=now,
+            )
+            # synchronize_session=False is load-bearing: the default would
+            # apply the UPDATE values to the session's cached instance even
+            # when zero rows matched, poisoning the caller's post-loss
+            # canonical re-read with phantom state.
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount == 1
+
+    def link_connector_source_batch_export_audit(
+        self,
+        *,
+        tenant_id: str,
+        export_request_id: str,
+        audit_event_id: UUID,
+        audit_event_type: str,
+    ) -> None:
+        """Bind the lifecycle audit event onto the export-request row."""
+        self.session.execute(
+            update(ConnectorSourceBatchExportRequest)
+            .where(
+                ConnectorSourceBatchExportRequest.tenant_id == tenant_id,
+                ConnectorSourceBatchExportRequest.export_request_id
+                == export_request_id,
+            )
+            .values(audit_event_id=audit_event_id, audit_event_type=audit_event_type)
+        )
+
+    def create_connector_source_extraction_batch(
+        self,
+        record: ConnectorSourceExtractionBatchCreate,
+    ) -> ConnectorSourceExtractionBatch:
+        batch_row = ConnectorSourceExtractionBatch(**record.model_dump())
+        self.session.add(batch_row)
+        self.session.flush()
+        return batch_row
+
+    def get_connector_source_extraction_batch_by_key(
+        self,
+        tenant_id: str,
+        batch_key: str,
+    ) -> ConnectorSourceExtractionBatch | None:
+        statement = select(ConnectorSourceExtractionBatch).where(
+            ConnectorSourceExtractionBatch.tenant_id == tenant_id,
+            ConnectorSourceExtractionBatch.batch_key == batch_key,
+        )
+        return self.session.scalars(statement).first()
+
+    def count_connector_source_extraction_batches_for_binding(
+        self,
+        tenant_id: str,
+        request_id: str,
+        binding_id: str,
+    ) -> int:
+        """Generation counter for deterministic, collision-free batch keys."""
+        statement = (
+            select(func.count())
+            .select_from(ConnectorSourceExtractionBatch)
+            .where(
+                ConnectorSourceExtractionBatch.tenant_id == tenant_id,
+                ConnectorSourceExtractionBatch.request_id == request_id,
+                ConnectorSourceExtractionBatch.binding_id == binding_id,
+            )
+        )
+        return int(self.session.scalar(statement))
+
+    def get_connector_source_ingestion_request_batches(
+        self,
+        tenant_id: str,
+        request_id: str,
+        *,
+        limit: int,
+        cursor_key: str | None = None,
+        binding_id: str | None = None,
+        truncated: bool | None = None,
+    ) -> list[ConnectorSourceExtractionBatch]:
+        """Keyset-paged batch metadata, deterministically ordered by batch key.
+
+        Callers pass ``limit + 1`` to detect a following page; the extra row
+        never leaves the repository contract as data.
+        """
+        statement = (
+            select(ConnectorSourceExtractionBatch)
+            .where(
+                ConnectorSourceExtractionBatch.tenant_id == tenant_id,
+                ConnectorSourceExtractionBatch.request_id == request_id,
+            )
+            .order_by(ConnectorSourceExtractionBatch.batch_key.asc())
+        )
+        if cursor_key is not None:
+            statement = statement.where(
+                ConnectorSourceExtractionBatch.batch_key > cursor_key
+            )
+        if binding_id is not None:
+            statement = statement.where(
+                ConnectorSourceExtractionBatch.binding_id == binding_id
+            )
+        if truncated is not None:
+            statement = statement.where(
+                ConnectorSourceExtractionBatch.truncated == truncated
+            )
+        return list(self.session.scalars(statement.limit(limit)))
+
+    def count_connector_source_ingestion_request_batches(
+        self,
+        tenant_id: str,
+        request_id: str,
+        *,
+        binding_id: str | None = None,
+        truncated: bool | None = None,
+    ) -> int:
+        conditions = [
+            ConnectorSourceExtractionBatch.tenant_id == tenant_id,
+            ConnectorSourceExtractionBatch.request_id == request_id,
+        ]
+        if binding_id is not None:
+            conditions.append(
+                ConnectorSourceExtractionBatch.binding_id == binding_id
+            )
+        if truncated is not None:
+            conditions.append(ConnectorSourceExtractionBatch.truncated == truncated)
+        statement = (
+            select(func.count())
+            .select_from(ConnectorSourceExtractionBatch)
+            .where(*conditions)
+        )
+        return int(self.session.scalar(statement))
 
     def create_connector_credential_handle(
         self,
@@ -3078,7 +4034,9 @@ class AxisPersistenceRepository:
             secret_provider=record.secret_provider,
             secret_ref=record.secret_ref,
             vault_kms_policy=record.vault_kms_policy,
-            permission_decision=record.permission_decision,
+            # JSON columns persist plain values; the typed decision is the
+            # write-boundary contract, not the storage shape.
+            permission_decision=record.permission_decision.model_dump(mode="json"),
             lease_result=record.lease_result,
             granted_at=record.granted_at,
             expires_at=record.expires_at,
@@ -3116,9 +4074,9 @@ class AxisPersistenceRepository:
         status: str | None = None,
         limit: int = 100,
     ) -> list[ConnectorCredentialLease]:
-        statement: Select[tuple[ConnectorCredentialLease]] = select(
-            ConnectorCredentialLease
-        ).where(ConnectorCredentialLease.tenant_id == tenant_id)
+        statement: Select[tuple[ConnectorCredentialLease]] = select(ConnectorCredentialLease).where(
+            ConnectorCredentialLease.tenant_id == tenant_id
+        )
         if connector_id is not None:
             statement = statement.where(ConnectorCredentialLease.connector_id == connector_id)
         if handle_id is not None:
@@ -3216,9 +4174,9 @@ class AxisPersistenceRepository:
         status: str | None = None,
         limit: int = 100,
     ) -> list[ConnectorEgressPolicy]:
-        statement: Select[tuple[ConnectorEgressPolicy]] = select(
-            ConnectorEgressPolicy
-        ).where(ConnectorEgressPolicy.tenant_id == tenant_id)
+        statement: Select[tuple[ConnectorEgressPolicy]] = select(ConnectorEgressPolicy).where(
+            ConnectorEgressPolicy.tenant_id == tenant_id
+        )
         if connector_id is not None:
             statement = statement.where(ConnectorEgressPolicy.connector_id == connector_id)
         if status is not None:
@@ -3392,9 +4350,7 @@ class AxisPersistenceRepository:
         tenant_id: str,
         checkpoint_id: str,
     ) -> ConnectorSyncCheckpoint | None:
-        statement: Select[tuple[ConnectorSyncCheckpoint]] = select(
-            ConnectorSyncCheckpoint
-        ).where(
+        statement: Select[tuple[ConnectorSyncCheckpoint]] = select(ConnectorSyncCheckpoint).where(
             ConnectorSyncCheckpoint.tenant_id == tenant_id,
             ConnectorSyncCheckpoint.checkpoint_id == checkpoint_id,
         )
@@ -3448,29 +4404,19 @@ class AxisPersistenceRepository:
             ConnectorSyncCheckpointClaim
         ).where(ConnectorSyncCheckpointClaim.tenant_id == tenant_id)
         if checkpoint_id is not None:
-            statement = statement.where(
-                ConnectorSyncCheckpointClaim.checkpoint_id == checkpoint_id
-            )
+            statement = statement.where(ConnectorSyncCheckpointClaim.checkpoint_id == checkpoint_id)
         if connector_id is not None:
-            statement = statement.where(
-                ConnectorSyncCheckpointClaim.connector_id == connector_id
-            )
+            statement = statement.where(ConnectorSyncCheckpointClaim.connector_id == connector_id)
         if run_id is not None:
             statement = statement.where(ConnectorSyncCheckpointClaim.run_id == run_id)
         if status is not None:
             statement = statement.where(ConnectorSyncCheckpointClaim.status == status)
         if claimed_by is not None:
-            statement = statement.where(
-                ConnectorSyncCheckpointClaim.claimed_by == claimed_by
-            )
+            statement = statement.where(ConnectorSyncCheckpointClaim.claimed_by == claimed_by)
         if created_after is not None:
-            statement = statement.where(
-                ConnectorSyncCheckpointClaim.created_at > created_after
-            )
+            statement = statement.where(ConnectorSyncCheckpointClaim.created_at > created_after)
         if created_before is not None:
-            statement = statement.where(
-                ConnectorSyncCheckpointClaim.created_at < created_before
-            )
+            statement = statement.where(ConnectorSyncCheckpointClaim.created_at < created_before)
         if cursor_created_at is not None and cursor_row_id is not None:
             statement = statement.where(
                 or_(
@@ -3589,25 +4535,19 @@ class AxisPersistenceRepository:
         created_before: datetime | None = None,
         limit: int = 100,
     ) -> list[ConnectorSyncCheckpoint]:
-        statement: Select[tuple[ConnectorSyncCheckpoint]] = select(
-            ConnectorSyncCheckpoint
-        ).where(ConnectorSyncCheckpoint.tenant_id == tenant_id)
+        statement: Select[tuple[ConnectorSyncCheckpoint]] = select(ConnectorSyncCheckpoint).where(
+            ConnectorSyncCheckpoint.tenant_id == tenant_id
+        )
         if connector_id is not None:
-            statement = statement.where(
-                ConnectorSyncCheckpoint.connector_id == connector_id
-            )
+            statement = statement.where(ConnectorSyncCheckpoint.connector_id == connector_id)
         if run_id is not None:
             statement = statement.where(ConnectorSyncCheckpoint.run_id == run_id)
         if status is not None:
             statement = statement.where(ConnectorSyncCheckpoint.status == status)
         if created_after is not None:
-            statement = statement.where(
-                ConnectorSyncCheckpoint.created_at > created_after
-            )
+            statement = statement.where(ConnectorSyncCheckpoint.created_at > created_after)
         if created_before is not None:
-            statement = statement.where(
-                ConnectorSyncCheckpoint.created_at < created_before
-            )
+            statement = statement.where(ConnectorSyncCheckpoint.created_at < created_before)
 
         statement = statement.order_by(
             ConnectorSyncCheckpoint.sequence.asc(),
@@ -3621,9 +4561,9 @@ class AxisPersistenceRepository:
         tenant_id: str,
         run_id: str | None = None,
     ) -> int:
-        statement: Select[tuple[int]] = select(
-            func.count(ConnectorSyncCheckpoint.id)
-        ).where(ConnectorSyncCheckpoint.tenant_id == tenant_id)
+        statement: Select[tuple[int]] = select(func.count(ConnectorSyncCheckpoint.id)).where(
+            ConnectorSyncCheckpoint.tenant_id == tenant_id
+        )
         if run_id is not None:
             statement = statement.where(ConnectorSyncCheckpoint.run_id == run_id)
         return int(self.session.scalar(statement) or 0)
@@ -3636,20 +4576,14 @@ class AxisPersistenceRepository:
         checkpoint_type: str | None = None,
         status: str | None = None,
     ) -> ConnectorSyncCheckpoint | None:
-        statement: Select[tuple[ConnectorSyncCheckpoint]] = select(
-            ConnectorSyncCheckpoint
-        ).where(
+        statement: Select[tuple[ConnectorSyncCheckpoint]] = select(ConnectorSyncCheckpoint).where(
             ConnectorSyncCheckpoint.tenant_id == tenant_id,
             ConnectorSyncCheckpoint.run_id == run_id,
         )
         if connector_id is not None:
-            statement = statement.where(
-                ConnectorSyncCheckpoint.connector_id == connector_id
-            )
+            statement = statement.where(ConnectorSyncCheckpoint.connector_id == connector_id)
         if checkpoint_type is not None:
-            statement = statement.where(
-                ConnectorSyncCheckpoint.checkpoint_type == checkpoint_type
-            )
+            statement = statement.where(ConnectorSyncCheckpoint.checkpoint_type == checkpoint_type)
         if status is not None:
             statement = statement.where(ConnectorSyncCheckpoint.status == status)
         statement = statement.order_by(
@@ -3984,9 +4918,9 @@ class AxisPersistenceRepository:
         status: str | None = None,
         limit: int = 100,
     ) -> list[ConnectorPromotionPolicy]:
-        statement: Select[tuple[ConnectorPromotionPolicy]] = select(
-            ConnectorPromotionPolicy
-        ).where(ConnectorPromotionPolicy.tenant_id == tenant_id)
+        statement: Select[tuple[ConnectorPromotionPolicy]] = select(ConnectorPromotionPolicy).where(
+            ConnectorPromotionPolicy.tenant_id == tenant_id
+        )
         if connector_id is not None:
             statement = statement.where(ConnectorPromotionPolicy.connector_id == connector_id)
         if status is not None:
@@ -4146,8 +5080,7 @@ class AxisPersistenceRepository:
             )
             return
         raise NotImplementedError(
-            "First-tenant bootstrap locking is not supported for "
-            f"dialect {dialect_name!r}."
+            f"First-tenant bootstrap locking is not supported for dialect {dialect_name!r}."
         )
 
     def get_tenant(self, tenant_id: str) -> Tenant | None:
@@ -4319,8 +5252,7 @@ class AxisPersistenceRepository:
                 ),
                 "last_recorded_at": case(
                     (
-                        TenantUsageRecord.last_recorded_at
-                        >= insert_stmt.excluded.last_recorded_at,
+                        TenantUsageRecord.last_recorded_at >= insert_stmt.excluded.last_recorded_at,
                         TenantUsageRecord.last_recorded_at,
                     ),
                     else_=insert_stmt.excluded.last_recorded_at,
@@ -4391,11 +5323,9 @@ class AxisPersistenceRepository:
                 raise RuntimeError("Usage event conflict did not resolve to an existing row.")
             if (
                 existing.quantity != event.quantity
-                or _utc_datetime(existing.period_start)
-                != _utc_datetime(event.period_start)
+                or _utc_datetime(existing.period_start) != _utc_datetime(event.period_start)
                 or existing.period_window_seconds != event.period_window_seconds
-                or _utc_datetime(existing.occurred_at)
-                != _utc_datetime(event.occurred_at)
+                or _utc_datetime(existing.occurred_at) != _utc_datetime(event.occurred_at)
                 or existing.dimensions != event.dimensions
             ):
                 raise TenantUsageIdempotencyConflict(
@@ -4533,9 +5463,7 @@ class AxisPersistenceRepository:
                 func.sum(TenantUsageRecord.quantity),
             )
             .where(TenantUsageRecord.tenant_id == tenant_id)
-            .where(
-                TenantUsageRecord.period_window_seconds == period_window_seconds
-            )
+            .where(TenantUsageRecord.period_window_seconds == period_window_seconds)
             .group_by(TenantUsageRecord.metric_key, TenantUsageRecord.period_start)
             .order_by(
                 TenantUsageRecord.metric_key.asc(),
@@ -5142,9 +6070,7 @@ class AxisPersistenceRepository:
             record.export_request_id,
         )
         if export_request is None:
-            raise PersistenceRecordNotFound(
-                "Connector evidence snapshot export request not found"
-            )
+            raise PersistenceRecordNotFound("Connector evidence snapshot export request not found")
 
         export_request.status = record.status
         export_request.export_status = record.export_status
@@ -5171,17 +6097,13 @@ class AxisPersistenceRepository:
             record.export_request_id,
         )
         if export_request is None:
-            raise PersistenceRecordNotFound(
-                "Connector evidence snapshot export request not found"
-            )
+            raise PersistenceRecordNotFound("Connector evidence snapshot export request not found")
 
         export_request.status = record.status
         export_request.export_status = record.export_status
         export_request.storage_status = record.storage_status
         export_request.materialization_id = record.materialization_id
-        export_request.materialization_idempotency_key = (
-            record.materialization_idempotency_key
-        )
+        export_request.materialization_idempotency_key = record.materialization_idempotency_key
         export_request.materialized_by = record.materialized_by
         export_request.materialized_at = utc_now()
         export_request.materialization_reason = record.materialization_reason
@@ -5239,13 +6161,9 @@ class AxisPersistenceRepository:
         if status is not None:
             statement = statement.where(ManufacturingOperationRecord.status == status)
         if record_type is not None:
-            statement = statement.where(
-                ManufacturingOperationRecord.record_type == record_type
-            )
+            statement = statement.where(ManufacturingOperationRecord.record_type == record_type)
         if source_system is not None:
-            statement = statement.where(
-                ManufacturingOperationRecord.source_system == source_system
-            )
+            statement = statement.where(ManufacturingOperationRecord.source_system == source_system)
 
         statement = statement.order_by(
             ManufacturingOperationRecord.occurred_at.desc(),
@@ -5303,9 +6221,9 @@ class AxisPersistenceRepository:
         brief_date: str | None = None,
         limit: int = 100,
     ) -> list[ManufacturingDailyBrief]:
-        statement: Select[tuple[ManufacturingDailyBrief]] = select(
-            ManufacturingDailyBrief
-        ).where(ManufacturingDailyBrief.tenant_id == tenant_id)
+        statement: Select[tuple[ManufacturingDailyBrief]] = select(ManufacturingDailyBrief).where(
+            ManufacturingDailyBrief.tenant_id == tenant_id
+        )
         if brief_date is not None:
             statement = statement.where(ManufacturingDailyBrief.brief_date == brief_date)
 

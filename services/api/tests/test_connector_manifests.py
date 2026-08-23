@@ -14,10 +14,12 @@ from axis_api.connector_manifests import (
     ConnectorManifestLifecycleValidationError,
     ConnectorManifestQuery,
     build_connector_manifest_registry,
+    get_connector_manifest_detail,
     record_demo_connector_manifest,
     transition_demo_connector_manifest_lifecycle,
 )
 from axis_api.db import session_scope
+from axis_api.errors import AxisErrorCode
 from axis_api.main import create_app
 from axis_api.models import AuditEvent, Base, ConnectorManifestRecord
 from axis_api.persistence import AxisPersistenceRepository
@@ -149,10 +151,7 @@ def manifest_validation_request(
     return {
         "tenant_id": "tenant_demo_manufacturing",
         "registered_by": "platform-connector-owner-role",
-        "manifests": [
-            manifest_validation_document(request)
-            for request in requests
-        ],
+        "manifests": [manifest_validation_document(request) for request in requests],
     }
 
 
@@ -408,10 +407,13 @@ def test_replace_connector_manifest_increments_revision_and_retains_ordered_hist
     app.state.session_factory = session_factory
     client = TestClient(app)
     request = external_db_manifest_request()
-    assert client.post(
-        "/operations/connectors/manifests",
-        json=request.model_dump(),
-    ).status_code == 201
+    assert (
+        client.post(
+            "/operations/connectors/manifests",
+            json=request.model_dump(),
+        ).status_code
+        == 201
+    )
 
     second = client.put(
         "/operations/connectors/manifests/external_db_shift_orders",
@@ -476,9 +478,7 @@ def test_replace_connector_manifest_identical_document_is_unchanged(
     assert response.json()["revision_number"] == 1
     assert response.json()["unchanged"] is True
     with session_scope(session_factory) as session:
-        assert session.scalar(
-            select(func.count()).select_from(ConnectorManifestRecord)
-        ) == 1
+        assert session.scalar(select(func.count()).select_from(ConnectorManifestRecord)) == 1
         assert session.scalar(select(func.count()).select_from(AuditEvent)) == 1
 
 
@@ -511,9 +511,7 @@ def test_replace_connector_manifest_idempotent_replay_returns_stored_revision(
     assert replay.json()["revision_number"] == 2
     assert replay.json()["idempotent_replay"] is True
     with session_scope(session_factory) as session:
-        assert session.scalar(
-            select(func.count()).select_from(ConnectorManifestRecord)
-        ) == 2
+        assert session.scalar(select(func.count()).select_from(ConnectorManifestRecord)) == 2
 
 
 def test_replace_connector_manifest_rejects_conflicting_idempotency_replay(
@@ -727,9 +725,7 @@ def test_validate_connector_manifests_has_no_database_side_effects(
     assert response.status_code == 200
     assert response.json()["results"][0]["outcome"] == "would_register"
     with session_scope(session_factory) as session:
-        assert session.scalar(
-            select(func.count()).select_from(ConnectorManifestRecord)
-        ) == 0
+        assert session.scalar(select(func.count()).select_from(ConnectorManifestRecord)) == 0
         assert session.scalar(select(func.count()).select_from(AuditEvent)) == 0
 
 
@@ -761,9 +757,7 @@ def test_validate_connector_manifests_rejects_duplicate_connector_ids(
         assert result["errors"] == [
             {
                 "field_path": "manifest.connector_id",
-                "message": (
-                    "Duplicate connector_id within this manifest validation request."
-                ),
+                "message": ("Duplicate connector_id within this manifest validation request."),
                 "reason": "duplicate_connector_id",
             }
         ]
@@ -825,9 +819,7 @@ def test_manifest_validation_applyability_promise_matches_registration_endpoint(
     new_request_payload["manifest"]["display_name"] = "New orders database mirror"
     new_request = ConnectorManifestCreateRequest.model_validate(new_request_payload)
     sampleless_request = ConnectorManifestCreateRequest.model_validate(
-        sampleless_external_db_manifest_payload(
-            connector_id="external_db_sampleless_applyability"
-        )
+        sampleless_external_db_manifest_payload(connector_id="external_db_sampleless_applyability")
     )
     registration_requests = [new_request, existing_request, sampleless_request]
 
@@ -898,11 +890,10 @@ def test_manifest_validation_failure_matches_real_registration_reason(
     assert validation.status_code == 200
     assert validation.json()["results"][0]["outcome"] == "invalid"
     assert registration.status_code == 422
-    assert validation.json()["results"][0]["errors"] == (
-        registration.json()["detail"]["errors"]
-    )
-    assert validation.json()["results"][0]["errors"][0]["reason"] == (
-        registration.json()["detail"]["reason"]
+    assert validation.json()["results"][0]["errors"] == (registration.json()["detail"]["errors"])
+    assert (
+        validation.json()["results"][0]["errors"][0]["reason"]
+        == (registration.json()["detail"]["reason"])
     )
 
 
@@ -1138,6 +1129,129 @@ def test_transition_connector_manifest_lifecycle_requires_live_runtime_policy(
     assert exc_info.value.reason == "manifest_runtime_policy_blocks_live_query"
 
 
+def _live_capable_app_with_activated_manifest(
+    session_factory: sessionmaker[Session],
+) -> TestClient:
+    """Seed a live-capable manifest already activated for previews."""
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        record_demo_connector_manifest(
+            repository,
+            live_capable_external_db_manifest_request(),
+        )
+        transition_demo_connector_manifest_lifecycle(
+            repository,
+            "external_db_shift_orders",
+            ConnectorManifestLifecycleRequest(
+                tenant_id="tenant_demo_manufacturing",
+                transitioned_by="platform-connector-owner-role",
+                target_status="active_preview",
+                actor_scopes=["connectors:manifest:lifecycle"],
+                transition_reason="Ready for governed preview configuration.",
+                evidence_refs=["approval:connector-manifest-preview-activation"],
+            ),
+        )
+    return TestClient(app)
+
+
+LIVE_ENABLEMENT_EVIDENCE = [
+    "approval:connector-live-enable",
+    "policy:egress-allowlist-reviewed",
+    "credential:external-db-readonly-lease-policy",
+]
+
+
+def _live_enablement_body(actor_scopes: list[str]) -> dict:
+    return {
+        "tenant_id": "tenant_demo_manufacturing",
+        "transitioned_by": "platform-connector-owner-role",
+        "target_status": "active_live",
+        "actor_scopes": actor_scopes,
+        "transition_reason": "Governance approval for live query.",
+        "evidence_refs": LIVE_ENABLEMENT_EVIDENCE,
+    }
+
+
+@pytest.mark.parametrize(
+    ("actor_scopes", "expected_reason"),
+    [
+        (["connectors:manifest:lifecycle"], "missing_manifest_live_scope"),
+        (["connectors:manifest:enable_live"], "missing_manifest_lifecycle_scope"),
+    ],
+    ids=["lifecycle-only", "enable-live-only"],
+)
+def test_transition_connector_manifest_endpoint_denies_live_with_one_scope(
+    session_factory: sessionmaker[Session],
+    actor_scopes: list[str],
+    expected_reason: str,
+) -> None:
+    """Anti-drift at the HTTP boundary: active_live is denied with 403 and a
+    distinct reason unless the request carries BOTH lifecycle grants, even
+    when every live-enablement evidence requirement is satisfied."""
+    client = _live_capable_app_with_activated_manifest(session_factory)
+
+    response = client.post(
+        "/demo/manufacturing/connectors/manifests/external_db_shift_orders/lifecycle",
+        json=_live_enablement_body(actor_scopes),
+        headers={"X-Request-Id": "req-live-scope-denial"},
+    )
+
+    assert response.status_code == 403, response.text
+    detail = response.json()["detail"]
+    assert detail["reason"] == expected_reason
+    # Scope denials use the shared permission-denied contract, not
+    # validation_failed: every governed write denies with the same shape.
+    assert detail["code"] == AxisErrorCode.PERMISSION_DENIED.value
+    assert response.headers["x-request-id"] == "req-live-scope-denial"
+
+    with session_scope(session_factory) as session:
+        manifest = AxisPersistenceRepository(session).get_connector_manifest(
+            "tenant_demo_manufacturing",
+            "external_db_shift_orders",
+        )
+    assert manifest is not None
+    assert manifest.status == "active_preview"
+
+
+def test_transition_connector_manifest_endpoint_enables_live_with_both_scopes(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Anti-drift at the HTTP boundary: the success path records exactly the
+    two required grants as audit evidence for the live enablement."""
+    client = _live_capable_app_with_activated_manifest(session_factory)
+
+    response = client.post(
+        "/demo/manufacturing/connectors/manifests/external_db_shift_orders/lifecycle",
+        json=_live_enablement_body(
+            [
+                "connectors:manifest:lifecycle",
+                "connectors:manifest:enable_live",
+            ]
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "active_live"
+    assert body["audit_event_type"] == "connector.manifest.live_enabled"
+
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        audit_event = repository.get_audit_event(
+            "tenant_demo_manufacturing",
+            UUID(body["audit_event_id"]),
+        )
+    assert audit_event is not None
+    payload = audit_event.payload
+    assert payload["required_scopes"] == [
+        "connectors:manifest:lifecycle",
+        "connectors:manifest:enable_live",
+    ]
+    assert payload["evidence_refs"] == LIVE_ENABLEMENT_EVIDENCE
+
+
 def test_transition_connector_manifest_endpoint_requires_live_evidence(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -1247,13 +1361,8 @@ def test_openapi_exposes_connector_manifest_endpoints() -> None:
     assert "post" in paths["/demo/manufacturing/connectors/manifests"]
     assert "/operations/connectors/manifests/validation" in paths
     assert "post" in paths["/operations/connectors/manifests/validation"]
-    assert (
-        "/demo/manufacturing/connectors/manifests/{connector_id}/lifecycle" in paths
-    )
-    assert (
-        "post"
-        in paths["/demo/manufacturing/connectors/manifests/{connector_id}/lifecycle"]
-    )
+    assert "/demo/manufacturing/connectors/manifests/{connector_id}/lifecycle" in paths
+    assert "post" in paths["/demo/manufacturing/connectors/manifests/{connector_id}/lifecycle"]
     schemas = response.json()["components"]["schemas"]
     for schema_name in (
         "ConnectorManifestCreateRequest",
@@ -1265,3 +1374,264 @@ def test_openapi_exposes_connector_manifest_endpoints() -> None:
             "#/components/schemas/ConnectorPreviewSample",
             None,
         }
+
+
+# ---------------------------------------------------------------------------
+# Per-connector lifecycle transition history
+#
+# Manifest revisions describe how the manifest *content* changed; lifecycle
+# transitions mutate the current revision in place, so the transition trail is
+# its own projection (connector_lifecycle_events) exposed through the detail
+# envelope as typed `transitions` — never raw audit payloads.
+
+
+def _activate_manifest(client: TestClient, connector_id: str) -> dict:
+    response = client.post(
+        f"/demo/manufacturing/connectors/manifests/{connector_id}/lifecycle",
+        json={
+            "tenant_id": "tenant_demo_manufacturing",
+            "transitioned_by": "platform-connector-owner-role",
+            "target_status": "active_preview",
+            "actor_scopes": ["connectors:manifest:lifecycle"],
+            "transition_reason": "Ready for governed preview configuration.",
+            "evidence_refs": ["approval:connector-manifest-preview-activation"],
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_lifecycle_transition_is_recorded_in_per_connector_history(
+    session_factory: sessionmaker[Session],
+) -> None:
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    with session_scope(session_factory) as session:
+        record_demo_connector_manifest(
+            AxisPersistenceRepository(session),
+            external_db_manifest_request(),
+        )
+    client = TestClient(app)
+
+    _activate_manifest(client, "external_db_shift_orders")
+    detail = client.get(
+        "/operations/connectors/manifests/external_db_shift_orders",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
+
+    assert detail.status_code == 200
+    body = detail.json()
+    # Registration creates no transition row; exactly the activation does.
+    assert len(body["transitions"]) == 1
+    transition = body["transitions"][0]
+    assert transition["from_status"] == "registered_preview_only"
+    assert transition["target_status"] == "active_preview"
+    assert transition["transitioned_by"] == "platform-connector-owner-role"
+    assert transition["transition_reason"] == "Ready for governed preview configuration."
+    assert transition["evidence_refs"] == ["approval:connector-manifest-preview-activation"]
+    assert transition["audit_event_type"] == "connector.manifest.lifecycle_transitioned"
+    UUID(transition["audit_event_id"])
+    # Revision history stays a content ledger: one revision, untouched count.
+    assert [revision["revision_number"] for revision in body["revisions"]] == [1]
+
+
+def test_transition_history_chains_statuses_newest_first(
+    session_factory: sessionmaker[Session],
+) -> None:
+    client = _live_capable_app_with_activated_manifest(session_factory)
+
+    live = client.post(
+        "/demo/manufacturing/connectors/manifests/external_db_shift_orders/lifecycle",
+        json=_live_enablement_body(
+            [
+                "connectors:manifest:lifecycle",
+                "connectors:manifest:enable_live",
+            ]
+        ),
+    )
+    assert live.status_code == 200, live.text
+    detail = client.get(
+        "/operations/connectors/manifests/external_db_shift_orders",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
+
+    transitions = detail.json()["transitions"]
+    assert [transition["target_status"] for transition in transitions] == [
+        "active_live",
+        "active_preview",
+    ]
+    # The chain links up: each newest transition starts from the previous target.
+    assert transitions[1]["from_status"] == "registered_preview_only"
+    assert transitions[0]["from_status"] == transitions[1]["target_status"]
+    assert transitions[0]["audit_event_type"] == "connector.manifest.live_enabled"
+
+
+def test_transition_history_is_tenant_and_connector_scoped(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Invariant: one tenant's transition trail never leaks into another
+    tenant's envelope, even when the connector id is identical."""
+    other_tenant_request_payload = external_db_manifest_request().model_dump()
+    other_tenant_request_payload["tenant_id"] = "tenant_other_operations"
+
+    def seeded_app() -> TestClient:
+        app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+        app.state.session_factory = session_factory
+        with session_scope(session_factory) as session:
+            repository = AxisPersistenceRepository(session)
+            record_demo_connector_manifest(
+                repository,
+                external_db_manifest_request(),
+            )
+            record_demo_connector_manifest(
+                repository,
+                ConnectorManifestCreateRequest.model_validate(other_tenant_request_payload),
+            )
+        return TestClient(app)
+
+    client = seeded_app()
+    _activate_manifest(client, "external_db_shift_orders")
+
+    demo_detail = client.get(
+        "/operations/connectors/manifests/external_db_shift_orders",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
+    other_detail = client.get(
+        "/operations/connectors/manifests/external_db_shift_orders",
+        params={"tenant_id": "tenant_other_operations"},
+    )
+
+    assert len(demo_detail.json()["transitions"]) == 1
+    assert other_detail.json()["transitions"] == []
+
+
+def test_denied_transition_leaves_no_history_row(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """A scope-denied submit must not fabricate transition evidence."""
+    client = _live_capable_app_with_activated_manifest(session_factory)
+
+    denied = client.post(
+        "/demo/manufacturing/connectors/manifests/external_db_shift_orders/lifecycle",
+        json=_live_enablement_body(["connectors:manifest:lifecycle"]),
+    )
+    assert denied.status_code == 403
+    detail = client.get(
+        "/operations/connectors/manifests/external_db_shift_orders",
+        params={"tenant_id": "tenant_demo_manufacturing"},
+    )
+
+    assert [transition["target_status"] for transition in detail.json()["transitions"]] == [
+        "active_preview"
+    ]
+
+
+def test_migration_0061_identifier_and_down_revision() -> None:
+    import importlib.util
+    from pathlib import Path
+
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "0061_connector_lifecycle_events.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0061", migration_path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    assert migration.revision == "0061_connector_lifecycle_events"
+    assert migration.down_revision == "0060_data_asset_contracts"
+
+
+def test_migration_0061_upgrade_creates_and_downgrade_drops_projection(tmp_path) -> None:
+    from pathlib import Path
+
+    from alembic.command import downgrade, stamp, upgrade
+    from alembic.config import Config
+    from sqlalchemy import create_engine, inspect, text
+
+    database_path = tmp_path / "lifecycle-projection.sqlite"
+    engine = create_engine(f"sqlite+pysqlite:///{database_path}")
+    # The projection table must come from the migration itself, so the database
+    # starts empty and is stamped at the previous head before upgrading.
+    with engine.begin() as connection:
+        connection.execute(text("SELECT 1"))
+
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", f"sqlite+pysqlite:///{database_path}")
+    stamp(config, "0060_data_asset_contracts")
+    upgrade(config, "0061_connector_lifecycle_events")
+
+    inspector = inspect(engine)
+    columns = {column["name"] for column in inspector.get_columns("connector_lifecycle_events")}
+    assert {
+        "id",
+        "tenant_id",
+        "connector_id",
+        "from_status",
+        "target_status",
+        "transitioned_by",
+        "transition_reason",
+        "evidence_refs",
+        "audit_event_id",
+        "audit_event_type",
+        "created_at",
+    } <= columns
+    index_names = {index["name"] for index in inspector.get_indexes("connector_lifecycle_events")}
+    assert "ix_connector_lifecycle_events_tenant_connector_created" in index_names
+
+    with engine.begin() as connection:
+        connection.execute(text("SELECT 1 FROM connector_lifecycle_events"))
+
+    downgrade(config, "0060_data_asset_contracts")
+    assert not inspector.has_table("connector_lifecycle_events")
+    engine.dispose()
+
+
+def test_manifest_detail_without_lifecycle_rows_reports_empty_history_without_ledger_scan(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """
+    A manifest registered before the 0061 lifecycle projection existed (or one
+    that simply never transitioned) has zero rows in connector_lifecycle_events.
+    Its detail must honestly report an empty transition history, and the read
+    must not reconstruct history by scanning the append-only audit ledger: the
+    per-connector projection is the only transition source.
+    """
+
+    class LedgerScanGuard:
+        """Fail the test if a detail read touches audit-ledger list queries."""
+
+        def __init__(self, repository: AxisPersistenceRepository) -> None:
+            self._repository = repository
+            self.ledger_reads = 0
+
+        def list_audit_events(self, *args, **kwargs):
+            self.ledger_reads += 1
+            return self._repository.list_audit_events(*args, **kwargs)
+
+        def list_audit_events_before(self, *args, **kwargs):
+            self.ledger_reads += 1
+            return self._repository.list_audit_events_before(*args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._repository, name)
+
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        created = record_demo_connector_manifest(
+            repository,
+            external_db_manifest_request(),
+        )
+        guard = LedgerScanGuard(repository)
+        detail = get_connector_manifest_detail(
+            guard,
+            "tenant_demo_manufacturing",
+            created.connector_id,
+        )
+
+    assert detail.current_revision.status == "registered_preview_only"
+    assert detail.transitions == []
+    assert guard.ledger_reads == 0

@@ -4,7 +4,11 @@ import Link from "next/link";
 import { RotateCcw, ScrollText, ShieldCheck } from "lucide-react";
 
 import { PolicyCreateForm } from "@/components/policy-create-form";
-import { enumUrlField, useConsoleUrlState } from "@/lib/console-url-state";
+import {
+  enumUrlField,
+  opaqueStringUrlField,
+  useConsoleUrlState,
+} from "@/lib/console-url-state";
 import {
   allPolicyFilter,
   buildPlatformPoliciesPath,
@@ -32,6 +36,10 @@ import { Select } from "@/components/ui/select";
 import { SourcePill } from "@/components/ui/source-pill";
 import { ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import {
+  missingRequiredScopePermission,
+  ScopeDenialPanel,
+} from "@/components/ui/scope-denial";
+import {
   IDENTITY_SESSION_ENDPOINT,
   useConsoleTenantScope,
 } from "@/lib/use-console-tenant-scope";
@@ -51,6 +59,10 @@ const policyUrlSchema = {
     [allPolicyFilter, ...platformPolicyStatuses],
     allPolicyFilter,
   ),
+  // Authoring confirmation marker. The success feedback is derived from the
+  // refreshed registry (server truth) through this marker, so it survives
+  // the query refresh that authoring itself triggers.
+  authored: opaqueStringUrlField("authored"),
 };
 
 function isPlatformPolicyScope(value: string): value is PlatformPolicyScope {
@@ -59,11 +71,16 @@ function isPlatformPolicyScope(value: string): value is PlatformPolicyScope {
 
 export function PolicyRegistry() {
   const [filters, setFilters] = useConsoleUrlState(policyUrlSchema);
+  const authoredPolicyId = filters.authored;
   const { identity, tenantId, tenantQueriesEnabled } = useConsoleTenantScope();
   const registryPath = buildPlatformPoliciesPath(filters, tenantId ?? undefined);
   const {
     data: registry,
+    errorCode: registryErrorCode,
+    errorReason: registryErrorReason,
+    errorRequiredPermission: registryErrorRequiredPermission,
     errorRequestId: registryErrorRequestId,
+    errorStatus: registryErrorStatus,
     source,
   } = useAxisQuery<PlatformPolicyRegistry>(
     registryPath,
@@ -93,6 +110,10 @@ export function PolicyRegistry() {
     setFilters(defaultFilters);
   }
 
+  function dismissAuthoredBanner() {
+    setFilters({ authored: "" });
+  }
+
   if (identity.source === "loading") {
     return <LoadingPanel layout="detail" />;
   }
@@ -113,6 +134,18 @@ export function PolicyRegistry() {
       return <LoadingPanel layout="detail" />;
     }
 
+    const deniedScope = missingRequiredScopePermission({
+      errorCode: registryErrorCode,
+      errorReason: registryErrorReason,
+      errorRequiredPermission: registryErrorRequiredPermission,
+      errorStatus: registryErrorStatus,
+    });
+    if (deniedScope) {
+      return (
+        <ScopeDenialPanel requiredPermission={deniedScope} subject="policy registry" />
+      );
+    }
+
     return (
       <ErrorPanel
         detail={strings.policyDetail.error.registryDetail}
@@ -129,8 +162,44 @@ export function PolicyRegistry() {
   const requireApprovalCount = countPoliciesByEffect(policies, "require_approval");
   const evidenceCount = countPoliciesByEffect(policies, "allow_with_evidence");
 
+  const authoredRecord = authoredPolicyId
+    ? policies.find((policy) => policy.policy_id === authoredPolicyId)
+    : undefined;
+
   return (
     <div className="grid min-w-0 gap-4">
+      {authoredPolicyId ? (
+        authoredRecord ? (
+          <div
+            aria-label="Policy authoring result"
+            className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-2xl border border-signal/30 bg-tint-50 px-4 py-3 dark:border-signal/40 dark:bg-signal/10"
+            data-policy-authored={authoredRecord.policy_id}
+            role="status"
+          >
+            <p className="m-0 min-w-0 text-sm leading-snug break-words text-ink">
+              Policy authored as r{authoredRecord.revision_number} /{" "}
+              {authoredRecord.policy_version}: {authoredRecord.display_name}
+            </p>
+            <button
+              className="inline-flex min-h-6 cursor-pointer items-center font-mono text-xs text-muted transition-colors hover:text-signal"
+              onClick={dismissAuthoredBanner}
+              type="button"
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : (
+          <div
+            aria-label="Policy authoring result"
+            className="rounded-2xl border border-line bg-surface px-4 py-3 dark:border-white/10"
+            role="status"
+          >
+            <p className="m-0 text-sm text-muted">
+              The authored policy {authoredPolicyId} is not in the current registry view.
+            </p>
+          </div>
+        )
+      ) : null}
       <div
         aria-label="Policy source and registry status"
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2"

@@ -40,6 +40,7 @@ const identitySession: IdentitySessionReadModel = {
   capabilities: [],
   limitations: [],
   notes: [],
+  unauthenticated_reason: null,
 };
 
 function notification(

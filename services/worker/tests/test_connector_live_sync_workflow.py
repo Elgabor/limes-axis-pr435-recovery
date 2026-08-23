@@ -489,8 +489,8 @@ def _seed_scheduled_live_sync_run(
                 secret_ref="vault://axis/demo/cred_file_csv_readonly",
                 vault_kms_policy={"ttl_seconds": "900", "max_ttl_seconds": "1800"},
                 permission_decision={
-                    "allowed": "true",
-                    "scope": "connectors:credential_lease:request",
+                    "allowed": True,
+                    "reason": "all_required_scopes_present",
                 },
                 lease_result={
                     "adapter": "axis-self-hosted-vault-kms-lease-adapter",
@@ -498,7 +498,9 @@ def _seed_scheduled_live_sync_run(
                     "provider_lease_ref": (
                         f"self-hosted-vault-kms://{TENANT_ID}/{FILE_CSV_LEASE_ID}"
                     ),
-                    "secret_material_returned": False,
+                    # Persisted lease records carry the string form, matching
+                    # the API's durable lease contract.
+                    "secret_material_returned": "false",
                 },
                 granted_at=now,
                 expires_at=now.replace(year=now.year + 1),

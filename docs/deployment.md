@@ -288,6 +288,19 @@ Approval-decision dispatch is configured independently through
 worker is deployed and `worker.approvalDecisionOutbox.dispatchEnabled=true` is
 healthy.
 
+Governed source ingestion dispatch follows the same pattern:
+`AXIS_SOURCE_INGESTION_DISPATCH_ENABLED` (default `false`) gates the worker's
+ingestion outbox loop; creation endpoints stay governed by the
+`connectors:source:ingest` scope and remain callable while dispatch is off —
+requests simply queue as `pending`. The shipped runtime performs schema
+validation against Axis' own observations only: it never dials a source and
+never reads rows, and its evidence records that truthfully. Enable dispatch in
+production with a bounded batch (`AXIS_SOURCE_INGESTION_BATCH_SIZE`, default 10)
+and lease window (`AXIS_SOURCE_INGESTION_CLAIM_TIMEOUT_SECONDS`, default 120);
+expired leases are reclaimed automatically, validation failures dead-letter
+permanently after `AXIS_SOURCE_INGESTION_MAX_ATTEMPTS` (default 3), and no
+secret material ever enters request payloads, evidence, or audit events.
+
 ## Ingress And TLS
 
 The chart can render a Kubernetes `networking.k8s.io/v1` `Ingress` when
@@ -1019,7 +1032,61 @@ Non-sensitive live-read profile controls belong in the runtime ConfigMap:
 `AXIS_EXTERNAL_DB_LIVE_QUERY_SCHEMA`, `AXIS_EXTERNAL_DB_LIVE_QUERY_TABLE`,
 `AXIS_EXTERNAL_DB_LIVE_QUERY_COLUMNS` and
 `AXIS_EXTERNAL_DB_LIVE_QUERY_ROW_LIMIT`,
-`AXIS_EXTERNAL_DB_LIVE_QUERY_PRIVATE_ENDPOINT_REF`. The tenant-scoped egress
+`AXIS_EXTERNAL_DB_LIVE_QUERY_PRIVATE_ENDPOINT_REF`.
+Bounded source discovery shares the same profile and adds non-secret
+controls: `AXIS_EXTERNAL_DB_DISCOVERY_ENABLED`,
+`AXIS_EXTERNAL_DB_DISCOVERY_SCHEMAS` (allowlist),
+`AXIS_EXTERNAL_DB_DISCOVERY_MAX_TABLES` and
+`AXIS_EXTERNAL_DB_DISCOVERY_MAX_COLUMNS_PER_TABLE`; discovery requires the
+`connectors:source:discover` realm role and executed lease posture, reads
+metadata only (never row data) and records catalog observations with audit
+evidence (see `docs/platform-connectors.md`, "Bounded Source Discovery").
+Governed source extraction is default-off at two independent gates:
+`AXIS_SOURCE_INGESTION_DISPATCH_ENABLED` (worker outbox loop) and
+`AXIS_SOURCE_INGESTION_EXTRACTION_ENABLED` (real bounded reads). Both must be
+`true` before an operator's `stage=extract` request executes anything; with
+either gate off, requests run validation only and `stage=extract` creation is
+rejected with `extraction_disabled`. When enabled, the worker dials the source
+read-only (session + transaction READ ONLY, statement timeout from the shared
+discovery profile), revalidates the pinned schema fingerprint immediately
+before reading, enforces row/byte/page/time caps
+(`AXIS_SOURCE_INGESTION_EXTRACTION_MAX_ROWS`, `_MAX_BYTES`, `_PAGE_SIZE`,
+`_TIME_BUDGET_SECONDS`) and writes payloads only to the configured object
+store (`connectorExportObjectStore.*`); Postgres keeps metadata, digests,
+watermarks and provenance — never row values. Object writes and DB metadata
+are not atomic: batch keys are deterministic
+(`request_id:binding_id:index`), retries overwrite the same object, and a
+dead-lettered request may leave a store object without a DB row — operators
+reconcile with the read-only endpoint
+`GET …/source-ingestion-requests/{request_id}/batches/reconciliation?dry_run=true`
+(dry-run is the only mode; repair actions are out of scope). It classifies
+`clean_match`, `digest_mismatch`, `missing_object`, and `orphaned_object`
+using only the request's own tenant-scoped key prefixes, and currently
+supports the local filesystem object-store adapter.
+
+Daily operator landing and governed evidence hand-off:
+
+- `GET …/source-ingestion/overview` aggregates per-connector status (including
+  the dead-lettered subset of failed), extraction-stage count, total count and
+  last activity, plus a cursor-paginated newest-first request page. The console
+  ingestion panel renders it as the at-a-glance strip; dead-lettered counts are
+  the "needs a decision" signal.
+- Each request view carries an append-only attempt timeline (attempt number,
+  outcome, public-safe error code, per-selection verdicts). Re-dispatch never
+  truncates history — use it to explain WHY a request died without reading
+  worker logs. No row values or watermark values appear in any timeline entry.
+- Batch-envelope exports hand auditors a checksummed, metadata-only package of
+  one request's batch evidence: create the export request (scope
+  `connectors:source:batch_export:request`, governance reason required), decide
+  it (`approvals:connectors:source:batch_export:decide`), materialize once
+  (`connectors:source:batch_export:materialize`; conflicts on checksum drift),
+  then download via the artifact route with the ingestion read scope. Artifact
+  retrieval is LOCAL-filesystem-adapter only; S3-compatible deployments receive
+  `409 store_adapter_unsupported` and must retrieve materialized artifacts
+  through their own governed object-store access. The bundle never contains
+  source rows or watermark values.
+
+The tenant-scoped egress
 policy for that profile must include an
 `approved_endpoint_target_sha256` policy-document field. It is the SHA-256
 digest of the approved Postgres network target (`host:port`) and lets the
@@ -1139,6 +1206,28 @@ local Keycloak walkthrough. That realm, its `axis-operator` user, the
 local-only demo credentials. They must not be reused as production IdP
 configuration, Helm values, customer credentials or enterprise SSO evidence.
 
+The console's live SSO lane (`apps/web/e2e/connectors-sso-denial.spec.ts`,
+gated behind `AXIS_E2E_SSO=1` plus the usual `AXIS_E2E_LIVE_API=1`) drives this
+walkthrough end to end: it mints a throwaway least-privilege operator persona
+through the local admin API (realm role `connectors:manifest:lifecycle`, no
+enable-live grant), performs the real authorization-code + PKCE browser login
+against the API callback, and proves that activating previews succeeds while
+live enablement is denied with the exact `missing_manifest_live_scope` reason,
+its actionable console copy and request reference. The same lane covers
+cross-tenant isolation under a verified session: a second principal bound to a
+bootstrapped throwaway tenant cannot see demo-tenant connectors.
+
+A fresh realm import is self-sufficient for the seeded walkthrough: the realm
+JSON declares the connector scope roles (`connectors:manifest:lifecycle`,
+`connectors:manifest:enable_live`) alongside the demo-operator roles, and
+import-created users keep their `axis_tenant` attribute. One Keycloak 26
+limitation remains and is handled in-lane: attributes that are not declared in
+the declarative user profile are dropped from users created through the Admin
+API, and the user profile itself cannot be imported from the realm JSON. The
+SSO lane therefore declares `axis_tenant` in the user profile idempotently
+(`ensureTenantAttributeInUserProfile`) before minting personas; deployments
+that mint operators through the Admin API must do the same.
+
 Keep `AXIS_OIDC_CLIENT_SECRET` and
 `AXIS_OIDC_SESSION_COOKIE_SIGNING_SECRET` in `secrets.existingSecret` or an
 external secret manager. The callback does not return token material to the web
@@ -1235,6 +1324,40 @@ The gate checks `AXIS_API_BASE_URL`, `AXIS_PUBLIC_BASE_URL`,
 `AXIS_OIDC_SESSION_COOKIE_SIGNING_SECRET`. The readiness response exposes only
 booleans and bounded TTL metadata; it does not print cookie-signing material or
 client secrets.
+
+## Enterprise Keycloak Realm Bootstrap
+
+An Axis-ready Keycloak realm must declare the `axis_tenant` user-profile
+attribute, the canonical Axis realm roles, and a confidential PKCE console
+client with tenant/audience protocol mappers. Rather than hand-editing realms,
+use the idempotent bootstrap boundary:
+
+```bash
+cd services/api
+export AXIS_IDP_ADMIN_USERNAME='axis-bootstrap'
+export AXIS_IDP_ADMIN_PASSWORD='...'  # secret store, never argv
+
+uv run python scripts/bootstrap_keycloak_realm.py \
+  --base-url https://keycloak.internal.example \
+  --realm axis \
+  --client-id limes-axis-web \
+  --redirect-uri https://axis.example.com/identity/oidc/callback \
+  --web-origin https://axis.example.com \
+  --post-logout-uri https://axis.example.com/ \
+  --mode check   # dry-run plan; use --mode apply to converge
+```
+
+Check mode is read-only. Apply mode converges realm, client, roles, and the
+user profile in one idempotent pass and fails closed — with no writes — on
+incompatible state (public clients, extra redirect URIs, unmanaged mappers,
+duplicate client ids). Diagnostics are structured JSON without tokens or
+secrets. The full operator sequence, including fresh-realm provisioning,
+verification, rollback boundary, proxy caveats, and least-privilege role
+assignment, lives in
+[`docs/runbooks/keycloak-realm-bootstrap.md`](runbooks/keycloak-realm-bootstrap.md).
+
+The Docker Compose demo realm (`infra/docker/keycloak/axis-realm.json`) is the
+labeled local demo artifact; production logic does not import it.
 
 ## API Rate Limiting
 

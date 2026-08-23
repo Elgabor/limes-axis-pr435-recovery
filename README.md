@@ -125,8 +125,11 @@ make demo-web
 ```
 
 Open [http://127.0.0.1:3000](http://127.0.0.1:3000). The local stack also
-includes Postgres, TypeDB, Temporal, MinIO and Keycloak. Use
-`make dev-stack-down` when finished.
+includes Postgres, TypeDB, Temporal, MinIO and Keycloak; the Keycloak realm is
+a local demo artifact (`infra/docker/keycloak/axis-realm.json`), while
+enterprise realms are provisioned with the idempotent
+[Keycloak realm bootstrap runbook](./docs/runbooks/keycloak-realm-bootstrap.md).
+Use `make dev-stack-down` when finished.
 
 For a repeatable evaluation flow, follow
 [Demo readiness](./docs/demo-readiness.md). It includes bootstrap, live route,

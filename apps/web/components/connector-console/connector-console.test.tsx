@@ -227,7 +227,11 @@ describe("ConnectorConsole metrics", () => {
     mockQueries();
     renderConsole();
 
-    const metrics = screen.getAllByRole("listitem");
+    // Scope to the named metric strip so page-body lists (revision history,
+    // live-enablement requirements) cannot distort the count.
+    const metrics = within(
+      screen.getByRole("list", { name: "Connector metrics" }),
+    ).getAllByRole("listitem");
     expect(metrics).toHaveLength(5);
 
     const labels = metrics.map(
@@ -735,7 +739,7 @@ describe("ConnectorConsole persisted registry entries", () => {
     expect(screen.getByRole("button", { name: "Validate" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Run sync (preview)" })).toBeDisabled();
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Preview sync needs a registered manifest in the active preview state before it can run.",
+      "This connector is registered but not activated yet. Activate it from the Overview tab, then governed syncs become available.",
     );
     expect(screen.queryByText("Sync activation pending")).not.toBeInTheDocument();
 

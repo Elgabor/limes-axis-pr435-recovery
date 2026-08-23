@@ -27,15 +27,15 @@ import {
   type ManufacturingActionRegistry,
 } from "@/lib/action-demo";
 import { formatContextPath, formatNumber, formatTimestamp } from "@/lib/format";
+import { deriveGovernedActor } from "@/lib/governed-action";
 import {
-  type IdentitySessionReadModel,
   platformStatusClass,
   platformStatusLabel,
 } from "@/lib/platform-overview";
 import { deriveSourceState } from "@/lib/source-state";
 import { useAxisQuery } from "@/lib/use-axis-query";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
-import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
+import { useIdentitySession } from "@/lib/use-identity-session";
 import {
   buildTenantScopedPath,
   DEMO_TENANT_ID,
@@ -93,9 +93,7 @@ function PayloadRows({ payload }: { payload: Record<string, string> }) {
 }
 
 export function ActionRegistry() {
-  const identity = useAxisQuery<IdentitySessionReadModel>("/identity/session", {
-    parse: parseIdentitySessionReadModel,
-  });
+  const identity = useIdentitySession();
   const tenantScope = resolveConsoleTenantScope(identity.data);
   const tenantId = tenantScope.tenantId;
   const {
@@ -121,6 +119,7 @@ export function ActionRegistry() {
   const [actionRunErrors, setActionRunErrors] = useState<Record<string, AxisOperatorError>>({});
   const [submittingActionId, setSubmittingActionId] = useState<string | null>(null);
   const { session } = useOidcConsoleSession();
+  const { ssoBlocked } = deriveGovernedActor(identity.data ?? null, "action-registry-operator");
 
   const filteredActions = useMemo(
     () => (registry ? filterActions(registry, filters) : []),
@@ -159,7 +158,7 @@ export function ActionRegistry() {
   }
 
   async function requestActionRun(action: ActionRegistryEntry) {
-    if (!registry) {
+    if (!registry || ssoBlocked) {
       return;
     }
 
@@ -592,18 +591,25 @@ export function ActionRegistry() {
                 <h3 className="font-display mx-0 mt-1 mb-0 text-lg text-ink">API dry-run payload</h3>
               </div>
               <div className="inline-flex flex-wrap items-center justify-end gap-2.5">
-                <button
-                  className="inline-flex items-center justify-center gap-2 rounded-full border border-mist bg-surface px-4 py-2 text-sm font-medium text-ink transition-all duration-300 select-none hover:border-signal/50 hover:text-signal disabled:cursor-not-allowed disabled:opacity-55 dark:border-white/20 dark:hover:border-signal/60"
-                  disabled={submittingActionId === selectedAction.definition.action_id}
-                  onClick={() => void requestActionRun(selectedAction)}
-                  type="button"
-                >
-                  <Send size={16} />
-                  {submittingActionId === selectedAction.definition.action_id
-                    ? "Requesting"
-                    : "Request dry-run"}
-                </button>
-                <ShieldCheck size={18} />
+                {ssoBlocked ? (
+                  <p className="m-0 flex items-center gap-2 text-sm text-muted" role="status">
+                    <ShieldCheck aria-hidden="true" className="shrink-0 text-signal" size={15} />
+                    Sign in with SSO to request governed action runs.
+                  </p>
+                ) : (
+                  <button
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-mist bg-surface px-4 py-2 text-sm font-medium text-ink transition-all duration-300 select-none hover:border-signal/50 hover:text-signal disabled:cursor-not-allowed disabled:opacity-55 dark:border-white/20 dark:hover:border-signal/60"
+                    disabled={submittingActionId === selectedAction.definition.action_id}
+                    onClick={() => void requestActionRun(selectedAction)}
+                    type="button"
+                  >
+                    <Send size={16} />
+                    {submittingActionId === selectedAction.definition.action_id
+                      ? "Requesting"
+                      : "Request dry-run"}
+                  </button>
+                )}
+                {!ssoBlocked ? <ShieldCheck size={18} /> : null}
               </div>
             </div>
             <div className="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">

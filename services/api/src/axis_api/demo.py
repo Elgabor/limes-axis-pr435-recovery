@@ -105,9 +105,7 @@ class ManufacturingWorkflowConsole(BaseModel):
     tenant_id: str = Field(min_length=1)
     plant_name: str | None = Field(default=None, min_length=1)
     scenario: str | None = Field(default=None, min_length=1)
-    provenance: ManufacturingResponseProvenance = (
-        ManufacturingResponseProvenance.REFERENCE_SCENARIO
-    )
+    provenance: ManufacturingResponseProvenance = ManufacturingResponseProvenance.REFERENCE_SCENARIO
     as_of: str = Field(min_length=1)
     runtime_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
@@ -165,6 +163,27 @@ class ApprovalInboxItem(BaseModel):
     decision_options: list[ApprovalDecisionOption] = Field(min_length=1)
 
 
+class ApprovalDecisionHistoryEntry(BaseModel):
+    """Terminal decision record for one approval, from persisted server truth.
+
+    Fields the decision record does not carry stay ``None``; history entries
+    never invent operator facts.
+    """
+
+    approval_id: str = Field(min_length=1)
+    action: str = Field(min_length=1)
+    risk_level: str = Field(min_length=1)
+    decision: str = Field(min_length=1)
+    status: str = Field(min_length=1)
+    domain: str | None = None
+    workflow_id: str | None = None
+    decided_by: str | None = None
+    decided_at: str | None = None
+    rationale: str | None = None
+    audit_event_id: str | None = None
+    follow_through_status: str | None = None
+
+
 class ActionRegistryPolicy(BaseModel):
     approval_role: str = Field(min_length=1)
     autonomy_ceiling: str = Field(pattern=r"^L[0-4]$")
@@ -204,9 +223,7 @@ class ManufacturingActionRegistry(BaseModel):
     tenant_id: str = Field(min_length=1)
     plant_name: str | None = Field(default=None, min_length=1)
     scenario: str | None = Field(default=None, min_length=1)
-    provenance: ManufacturingResponseProvenance = (
-        ManufacturingResponseProvenance.REFERENCE_SCENARIO
-    )
+    provenance: ManufacturingResponseProvenance = ManufacturingResponseProvenance.REFERENCE_SCENARIO
     as_of: str = Field(min_length=1)
     registry_status: OverviewStatus
     schema_version: str = Field(min_length=1)
@@ -220,13 +237,12 @@ class ManufacturingApprovalInbox(BaseModel):
     tenant_id: str = Field(min_length=1)
     plant_name: str | None = Field(default=None, min_length=1)
     scenario: str | None = Field(default=None, min_length=1)
-    provenance: ManufacturingResponseProvenance = (
-        ManufacturingResponseProvenance.REFERENCE_SCENARIO
-    )
+    provenance: ManufacturingResponseProvenance = ManufacturingResponseProvenance.REFERENCE_SCENARIO
     as_of: str = Field(min_length=1)
     queue_status: OverviewStatus
     policy_notes: list[str] = Field(default_factory=list)
     approvals: list[ApprovalInboxItem] = Field(default_factory=list)
+    decision_history: list[ApprovalDecisionHistoryEntry] = Field(default_factory=list)
 
 
 class AgentSummary(BaseModel):
@@ -287,9 +303,7 @@ class ManufacturingAgentRegistry(BaseModel):
     tenant_id: str = Field(min_length=1)
     plant_name: str | None = Field(default=None, min_length=1)
     scenario: str | None = Field(default=None, min_length=1)
-    provenance: ManufacturingResponseProvenance = (
-        ManufacturingResponseProvenance.REFERENCE_SCENARIO
-    )
+    provenance: ManufacturingResponseProvenance = ManufacturingResponseProvenance.REFERENCE_SCENARIO
     as_of: str = Field(min_length=1)
     registry_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
@@ -340,9 +354,7 @@ class ManufacturingAuditExplorer(BaseModel):
     tenant_id: str = Field(min_length=1)
     plant_name: str | None = Field(default=None, min_length=1)
     scenario: str | None = Field(default=None, min_length=1)
-    provenance: ManufacturingResponseProvenance = (
-        ManufacturingResponseProvenance.REFERENCE_SCENARIO
-    )
+    provenance: ManufacturingResponseProvenance = ManufacturingResponseProvenance.REFERENCE_SCENARIO
     as_of: str = Field(min_length=1)
     ledger_status: OverviewStatus
     metrics: list[OverviewMetric] = Field(default_factory=list)
@@ -355,9 +367,7 @@ class ManufacturingOverview(BaseModel):
     tenant_id: str = Field(min_length=1)
     plant_name: str | None = Field(default=None, min_length=1)
     scenario: str | None = Field(default=None, min_length=1)
-    provenance: ManufacturingResponseProvenance = (
-        ManufacturingResponseProvenance.REFERENCE_SCENARIO
-    )
+    provenance: ManufacturingResponseProvenance = ManufacturingResponseProvenance.REFERENCE_SCENARIO
     as_of: str = Field(min_length=1)
     metrics: list[OverviewMetric] = Field(default_factory=list)
     risk_signals: list[RiskSignal] = Field(default_factory=list)
@@ -481,9 +491,7 @@ class ManufacturingOntology(BaseModel):
     tenant_id: str = Field(min_length=1)
     plant_name: str | None = Field(default=None, min_length=1)
     scenario: str | None = Field(default=None, min_length=1)
-    provenance: ManufacturingResponseProvenance = (
-        ManufacturingResponseProvenance.REFERENCE_SCENARIO
-    )
+    provenance: ManufacturingResponseProvenance = ManufacturingResponseProvenance.REFERENCE_SCENARIO
     as_of: str = Field(min_length=1)
     nodes: list[OntologyNode] = Field(default_factory=list)
     relationships: list[OntologyRelationship] = Field(default_factory=list)
@@ -492,7 +500,6 @@ class ManufacturingOntology(BaseModel):
     graph_query: OntologyGraphQueryMetadata = Field(
         default_factory=_default_ontology_graph_query_metadata
     )
-
 
 
 class OntologyEntityRelationship(BaseModel):
@@ -505,9 +512,7 @@ class ManufacturingOntologyEntityDetail(BaseModel):
     tenant_id: str = Field(min_length=1)
     plant_name: str | None = Field(default=None, min_length=1)
     scenario: str | None = Field(default=None, min_length=1)
-    provenance: ManufacturingResponseProvenance = (
-        ManufacturingResponseProvenance.REFERENCE_SCENARIO
-    )
+    provenance: ManufacturingResponseProvenance = ManufacturingResponseProvenance.REFERENCE_SCENARIO
     as_of: str = Field(min_length=1)
     node: OntologyNode
     connected_relationships: list[OntologyEntityRelationship] = Field(default_factory=list)
@@ -574,9 +579,7 @@ class ManufacturingModelRouting(BaseModel):
     tenant_id: str = Field(min_length=1)
     plant_name: str | None = Field(default=None, min_length=1)
     scenario: str | None = Field(default=None, min_length=1)
-    provenance: ManufacturingResponseProvenance = (
-        ManufacturingResponseProvenance.REFERENCE_SCENARIO
-    )
+    provenance: ManufacturingResponseProvenance = ManufacturingResponseProvenance.REFERENCE_SCENARIO
     as_of: str = Field(min_length=1)
     routing_status: OverviewStatus
     # No min_length: a tenant that has not routed a model yet has empty lists,
@@ -587,7 +590,6 @@ class ManufacturingModelRouting(BaseModel):
     routes: list[ModelRouteTelemetry] = Field(default_factory=list)
     budget_notes: list[str] = Field(default_factory=list)
     observability_notes: list[str] = Field(default_factory=list)
-
 
 
 def _ontology_detail_overrides() -> dict[str, dict[str, list[str]]]:

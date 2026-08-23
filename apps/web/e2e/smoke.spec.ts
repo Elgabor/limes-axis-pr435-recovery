@@ -158,7 +158,7 @@ async function routeVerifiedIdentity(page: Page, tenantId: string | null = null)
         tenant_id: tenantId,
         scopes: authenticated ? ["tenant:read"] : [],
         expires_at: authenticated ? 4102444800 : null,
-        api_auth_required: true,
+        api_auth_required: authenticated,
         enterprise_sso_ready: true,
         readiness_status: "watch",
         issuer: "https://idp.example/realms/axis",
@@ -168,6 +168,7 @@ async function routeVerifiedIdentity(page: Page, tenantId: string | null = null)
         capabilities: [],
         limitations: [],
         notes: [],
+        unauthenticated_reason: null,
       },
       status: 200,
     });
@@ -189,7 +190,7 @@ test.describe("Axis console smoke", () => {
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
-    // Explicitly model an unauthenticated browser session. The overview may
+    // Explicitly model an auth-optional public-demo session. The overview may
     // use the demo tenant only after the identity API confirms this state;
     // transport failures must remain fail-closed instead.
     await page.route("http://127.0.0.1:65534/identity/session", async (route) => {
@@ -202,7 +203,7 @@ test.describe("Axis console smoke", () => {
           tenant_id: null,
           scopes: [],
           expires_at: null,
-          api_auth_required: true,
+          api_auth_required: false,
           enterprise_sso_ready: true,
           readiness_status: "watch",
           issuer: "https://idp.example/realms/axis",
@@ -212,6 +213,7 @@ test.describe("Axis console smoke", () => {
           capabilities: [],
           limitations: [],
           notes: [],
+          unauthenticated_reason: null,
         },
         status: 200,
       });
@@ -394,6 +396,7 @@ test.describe("Axis console smoke", () => {
           capabilities: ["Browser session verified by the Axis API."],
           limitations: [],
           notes: [],
+          unauthenticated_reason: null,
         },
         status: 200,
       });
@@ -1030,22 +1033,25 @@ test.describe("Axis console smoke", () => {
     };
 
     const policyPosts: string[] = [];
+    let registryPolicies = [policyRecord];
     await page.route(
       (url) => url.href.startsWith("http://127.0.0.1:65534/platform/policies"),
       async (route) => {
         if (route.request().method() === "POST") {
           policyPosts.push(route.request().postData() ?? "");
+          const createdPolicy = {
+            ...policyRecord,
+            policy_id: "gate_high_spend",
+            display_name: "Gate high spend",
+            description: "Requires approval above the spend threshold.",
+            effect: "require_approval",
+            scope: "approval_requirement",
+            conditions: { risk_levels: ["high"], requested_amount_at_least: 10000 },
+          };
+          registryPolicies = [...registryPolicies, createdPolicy];
           await route.fulfill({
             contentType: "application/json",
-            json: {
-              ...policyRecord,
-              policy_id: "gate_high_spend",
-              display_name: "Gate high spend",
-              description: "Requires approval above the spend threshold.",
-              effect: "require_approval",
-              scope: "approval_requirement",
-              conditions: { risk_levels: ["high"], requested_amount_at_least: 10000 },
-            },
+            json: createdPolicy,
             status: 201,
           });
           return;
@@ -1055,9 +1061,9 @@ test.describe("Axis console smoke", () => {
           contentType: "application/json",
           json: {
             tenant_id: "tenant_demo_manufacturing",
-            policy_count: 1,
-            active_policy_count: 1,
-            policies: [policyRecord],
+            policy_count: registryPolicies.length,
+            active_policy_count: registryPolicies.length,
+            policies: registryPolicies,
             policy_notes: [],
           },
           status: 200,
@@ -1118,8 +1124,8 @@ test.describe("Axis console smoke", () => {
       notes: [],
     });
 
-    await expect(page.getByText("Policy created as r1 / 1.0.0.")).toBeVisible();
-    await expect(page.getByRole("link", { name: "Open gate_high_spend" })).toHaveAttribute(
+    await expect(page.getByText("Policy authored as r1 / 1.0.0: Gate high spend")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Gate high spend" })).toHaveAttribute(
       "href",
       "/policies/gate_high_spend",
     );
@@ -1334,6 +1340,7 @@ test.describe("Axis console smoke", () => {
           capabilities: ["Browser session verified by the Axis API."],
           limitations: [],
           notes: [],
+          unauthenticated_reason: null,
         },
         status: 200,
       });

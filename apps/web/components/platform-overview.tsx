@@ -20,7 +20,6 @@ import {
   NO_VALUE,
 } from "@/lib/format";
 import {
-  type IdentitySessionReadModel,
   type ManufacturingOperationsSnapshot,
   type ManufacturingOverview,
 } from "@/lib/platform-overview";
@@ -30,8 +29,11 @@ import { parseManufacturingModelRouting } from "@/lib/runtime-contracts/model-ro
 import {
   parseManufacturingOperationsSnapshot,
   parseManufacturingOverview,
-  parseIdentitySessionReadModel,
 } from "@/lib/runtime-contracts/overview";
+import {
+  IDENTITY_SESSION_ENDPOINT,
+  useIdentitySession,
+} from "@/lib/use-identity-session";
 import { deriveSourceState } from "@/lib/source-state";
 import {
   buildTenantScopedPath,
@@ -50,7 +52,6 @@ import { useConsole } from "@/providers/console-provider";
  * failing endpoint degrades only the sections that read from it.
  */
 
-const IDENTITY_SESSION_ENDPOINT = "/identity/session";
 const OVERVIEW_ENDPOINT = `${OPERATIONS_API_PREFIX}/overview`;
 const SNAPSHOT_ENDPOINT = `${OPERATIONS_API_PREFIX}/operations/snapshot`;
 const MODEL_ROUTING_ENDPOINT = `${OPERATIONS_API_PREFIX}/model-routing`;
@@ -187,9 +188,7 @@ function OverviewHero({
 export function PlatformOverview() {
   const { apiStatus, triggerRefresh } = useConsole();
   const demoBootstrap = useDemoBootstrap();
-  const identityQuery = useAxisQuery<IdentitySessionReadModel>(IDENTITY_SESSION_ENDPOINT, {
-    parse: parseIdentitySessionReadModel,
-  });
+  const identityQuery = useIdentitySession();
   const tenantScope = resolveConsoleTenantScope(identityQuery.data);
   const tenantId = tenantScope.tenantId;
   const tenantQueriesEnabled = identityQuery.source === "api" && tenantId !== null;
@@ -298,6 +297,7 @@ export function PlatformOverview() {
             ? { actorId: identityQuery.data.actor_id, scopes: identityQuery.data.scopes }
             : undefined
         }
+        identitySession={identityQuery.data ?? null}
         overview={overviewQuery}
         tenantId={tenantId}
       />

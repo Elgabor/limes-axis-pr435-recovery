@@ -27,7 +27,10 @@ import {
   parseOidcReadinessReport,
   parseSupportDiagnosticsReport,
 } from "@/lib/runtime-contracts/identity";
-import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
+import {
+  IDENTITY_SESSION_ENDPOINT,
+  useIdentitySession,
+} from "@/lib/use-identity-session";
 import { useAxisQuery, type AxisQuerySource } from "@/lib/use-axis-query";
 
 /*
@@ -41,7 +44,6 @@ import { useAxisQuery, type AxisQuerySource } from "@/lib/use-axis-query";
 
 const READY_ENDPOINT = "/ready";
 const OIDC_READINESS_ENDPOINT = "/identity/oidc/readiness";
-const IDENTITY_SESSION_ENDPOINT = "/identity/session";
 const DEPLOYMENT_READINESS_ENDPOINT = "/deployment/readiness";
 const SUPPORT_DIAGNOSTICS_ENDPOINT = "/support/diagnostics";
 
@@ -409,9 +411,7 @@ export function PlatformSettingsConsole() {
   const oidc = useAxisQuery<OidcReadinessReport>(OIDC_READINESS_ENDPOINT, {
     parse: parseOidcReadinessReport,
   });
-  const identity = useAxisQuery<IdentitySessionReadModel>(IDENTITY_SESSION_ENDPOINT, {
-    parse: parseIdentitySessionReadModel,
-  });
+  const identity = useIdentitySession();
   const deployment = useAxisQuery<DeploymentReadinessReport>(DEPLOYMENT_READINESS_ENDPOINT, {
     parse: parseDeploymentReadinessReport,
   });

@@ -27,6 +27,7 @@ function identity(
     capabilities: [],
     limitations: [],
     notes: [],
+    unauthenticated_reason: null,
     ...overrides,
   };
 }

@@ -79,6 +79,38 @@ const nav = {
   noTenant: "No tenant selected",
 } as const;
 
+/**
+ * The enforced-SSO entry gate. Shown instead of console surfaces when the API
+ * requires sign-in and no verified session exists. Reason copy is keyed by the
+ * API's public unauthenticated_reason classes; anything unknown falls back to
+ * the generic verification message rather than leaking internals.
+ */
+const scopeDenial = {
+  title: "Your roles do not include this permission",
+  bodyPrefix: "Axis verified your session, but the",
+  bodySuffix:
+    "surface requires a permission your assigned roles do not grant. Ask an identity administrator to grant it, then reload.",
+  permissionLabel: "Required permission",
+} as const;
+
+const identityGate = {
+  eyebrow: "Enterprise access",
+  title: "Sign in to Limes Axis",
+  description:
+    "This deployment requires an authenticated operator session through your organization's identity provider.",
+  signIn: "Sign in with SSO",
+  returnHint: "You will return to the page you opened.",
+  reasons: {
+    missing_authorization: "No active session was found for this browser.",
+    invalid_session_cookie: "Your session is no longer valid. Sign in again to continue.",
+    revoked_session_cookie: "Your session was revoked. Sign in again to continue.",
+    expired_session_cookie: "Your session expired. Sign in again to continue.",
+    idle_session_timeout:
+      "You were signed out after a period of inactivity. Sign in again to continue.",
+    fallback: "Your credentials could not be verified. Sign in again to continue.",
+  },
+} as const;
+
 /** Per-route header copy, keyed by route segment (`overview` for `/`). */
 const pages = {
   overview: {
@@ -216,6 +248,15 @@ const approvals = {
     eyebrow: "Queue",
     title: "Approval inbox",
   },
+  history: {
+    eyebrow: "History",
+    title: "Decision history",
+    description:
+      "Terminal decisions recorded with the audit ledger. Decided approvals no longer appear in the queue above.",
+    empty: "No terminal decisions recorded yet.",
+    followThrough: "Follow-through:",
+    actorUnknown: "unknown actor",
+  },
   decision: {
     eyebrow: "Decision",
     pending: "Pending review",
@@ -228,6 +269,8 @@ const approvals = {
     persisted: "Recorded as evidence",
     auditLink: "View audit event",
     toastTitle: "Decision recorded",
+    ssoGate: "Sign in with SSO to record approval decisions.",
+    alreadyRecorded: "A terminal decision was already recorded for this approval.",
   },
   sections: {
     evidence: "Evidence",
@@ -241,7 +284,7 @@ const approvals = {
     highRisk: "High risk",
     highRiskDetail: "Cannot execute without owner approval",
     decided: "Decided",
-    decidedDetail: "Recorded as audit evidence this session",
+    decidedDetail: "Recorded as audit evidence",
   },
   error: {
     title: "Approval API unavailable",
@@ -558,6 +601,396 @@ const connectors = {
     download: "Download JSON",
     close: "Close export",
   },
+  lifecycle: {
+    eyebrow: "Lifecycle",
+    title: "Activation state",
+    ssoGate: "Sign in with SSO to change connector activation.",
+    /* Each state line says what the connector can do right now, in operator
+       terms, so the next safe action is obvious without reading the API. */
+    stateDetail: {
+      registered_preview_only:
+        "Registered for previews only. Validate mappings and inspect schema; governed syncs and ontology proposals stay blocked until this connector is activated.",
+      active_preview:
+        "Activated for preview operations. Governed runs, credential leases and ontology proposals are available; external systems are still not touched.",
+      active_live:
+        "Live operation enabled under the reviewed egress boundary. Scheduled and live syncs may reach the connected system within policy.",
+      deprecated:
+        "Deprecated. The connector keeps its history and evidence, but no further transitions or runs are possible.",
+    },
+    unknownState:
+      "The activation state of this connector could not be determined from the registry record.",
+    activateAction: "Activate for previews",
+    activating: "Activating…",
+    activateReason: "Activated from the connector console.",
+    enableLiveAction: "Enable live sync…",
+    enablingLive: "Enabling live sync…",
+    enableLiveReason: "Live operation enabled from the connector console.",
+    deprecateAction: "Deprecate connector",
+    confirmDeprecate: "Confirm deprecation",
+    deprecating: "Deprecating…",
+    deprecateReason: "Deprecated from the connector console.",
+    deprecatedHint: "Deprecated connectors cannot be reactivated.",
+    enableLiveTitle: "Enable live operation",
+    enableLiveDetail:
+      "Live operation lets governed syncs reach the connected system inside the approved boundary. Every requirement below is enforced again by the API when you submit.",
+    requirements: {
+      title: "Live-enablement requirements",
+      liveSyncMode: "Manifest declares a live sync mode",
+      liveOperationsAllowed: "Runtime policy allows live query and external egress",
+      egressBoundaryNamed: "A reviewed egress boundary is named",
+    },
+    requirementMet: "Met",
+    requirementUnmet: "Missing",
+    /* Two distinct trails, two distinct questions:
+       - Revision history answers "how did the manifest content change?"
+         (registration, replacement) — one row per persisted revision.
+       - Transition history answers "which governed activation changes were
+         recorded?" — one row per lifecycle transition, from its own
+         server-side per-connector projection. */
+    history: {
+      title: "Revision history",
+      events: {
+        registered: "Registration recorded",
+        replaced: "Manifest updated",
+      },
+      unknownEvent: "Revision recorded",
+    },
+    transitions: {
+      title: "Transition history",
+      events: {
+        active_preview: "Activated for previews",
+        active_live: "Live operation enabled",
+        deprecated: "Connector deprecated",
+      },
+      unknownEvent: "Transition recorded",
+    },
+    evidenceLabel: "Evidence references",
+    evidencePlaceholder: "approval: …, policy: …, credential: … (one per line)",
+    evidenceDetail:
+      "Live enablement requires one approval reference, one policy reference and one credential or secret reference.",
+    evidenceMissing: (categories: string[]) =>
+      `Still missing ${categories.join(", ")} evidence for live enablement.`,
+    conflict: "The connector changed while you were working. Review its current state and retry.",
+    /* Scope denials name exactly which grant is absent and who can fix it, so
+       an operator never has to guess which of the two lifecycle scopes failed. */
+    deniedLifecycleScope:
+      "Your session is missing the connector lifecycle scope (connectors:manifest:lifecycle) for this tenant. A tenant admin can grant it.",
+    deniedLiveScope:
+      "Enabling live operation additionally requires the enable-live scope (connectors:manifest:enable_live), which your session does not have for this tenant. A tenant admin can grant it.",
+    forbidden: "Your session does not carry the connector lifecycle scope for this tenant.",
+    validationFailed: "The API rejected this transition. Complete the missing requirements first.",
+    genericError: "The lifecycle transition could not be recorded.",
+    successToast: { title: "Lifecycle updated", detail: "The transition was recorded with audit evidence." },
+  },
+  sourceDiscovery: {
+    eyebrow: "Source",
+    title: "Verify & discover",
+    /* What this panel is for, in one sentence an operator can act on. */
+    detail:
+      "Check connectivity to the external Postgres source, then list its base tables as catalog evidence. Discovery reads table and column names only — never row data.",
+    ssoGate: "Sign in with SSO to verify or discover the source.",
+    prerequisites: {
+      title: "What you need before starting",
+      lease: "An active credential lease for this connector",
+      policy: "An active egress policy approving the source endpoint",
+      scope: "The source discovery scope (connectors:source:discover) for this tenant",
+    },
+    prerequisiteMet: "Ready",
+    prerequisiteMissing: "Missing",
+    tableColumn: "Table",
+    columnsColumn: "Columns",
+    driftColumn: "Catalog drift",
+    profileLabel: "Connection profile ID",
+    schemaLabel: "Schema to discover",
+    leaseLabel: "Credential lease ID",
+    policyLabel: "Egress policy ID",
+    verifyAction: "Verify connection",
+    verifying: "Verifying…",
+    discoverAction: "Discover tables",
+    discovering: "Discovering…",
+    verifiedTitle: "Connection verified",
+    verifiedDetail: (database: string) =>
+      `Connected read-only to database “${database}”. The pinned endpoint hash matched the egress policy.`,
+    discoveredTitle: (count: number) => `Discovered ${count} ${count === 1 ? "table" : "tables"}`,
+    truncatedDetail:
+      "Discovery stopped at its bounded limit; more tables or columns exist than were listed here.",
+    columnsTruncated: "column list truncated",
+    drift: {
+      added: "New",
+      changed: "Changed",
+      unchanged: "Unchanged",
+    },
+    emptySource: {
+      title: "No base tables found",
+      detail:
+        "The schema exists but holds no base tables. Views are not discovered yet.",
+    },
+    blocked: {
+      title: "Verification blocked",
+      /* Keys mirror the API's block_reason values one-for-one so a new
+         runtime reason fails safe onto `generic` instead of inventing copy. */
+      source_unreachable:
+        "The source did not answer within its timeout. Check that the host and port are reachable from Axis.",
+      auth_denied:
+        "The source rejected the credentials behind your credential lease. Rotate the secret and request a new lease.",
+      permission_denied:
+        "The connected role lacks permission to inspect this schema. Grant read access on the schema, then retry.",
+      source_database_missing:
+        "The database named by the connection profile does not exist on the source.",
+      schema_not_allowlisted:
+        "That schema is not on the discovery allowlist for this deployment. An administrator must add it.",
+      profile_not_configured:
+        "No source profile is configured on this deployment yet. Set the discovery DSN or endpoint pin first.",
+      runtime_egress_target_mismatch:
+        "The resolved connection target does not match the approved egress boundary. Nothing was sent to the wrong host.",
+      generic:
+        "Axis blocked this operation at the runtime boundary. Review the evidence in the audit ledger.",
+    },
+    deniedScope:
+      "Your session is missing the source discovery scope (connectors:source:discover) for this tenant. A tenant admin can grant it.",
+    forbidden: "Your session cannot operate this connector's source for this tenant.",
+    validationFailed: "One of the referenced records does not match this connector. Check the IDs above.",
+    notFound: "A referenced lease or egress policy does not exist for this tenant.",
+    genericError: "The source operation could not be recorded.",
+    observationNote:
+      "Every completed discovery records catalog observations with audit evidence; repeat runs track added, changed and unchanged tables automatically.",
+  },
+  sourceActivation: {
+    eyebrow: "Activate",
+    title: "Activate selected tables",
+    /* One sentence an operator can act on: what activation is and is not. */
+    detail:
+      "Bind the selected discovered tables as durable governed sources for ingestion. Activation records evidence only — no data has been read from the source yet.",
+    selectColumn: "Activate",
+    selectHint: "Select discovered tables to bind them for ingestion.",
+    selectedCount: (count: number) =>
+      `${count} ${count === 1 ? "table" : "tables"} selected`,
+    reasonLabel: "Activation reason",
+    reasonPlaceholder: "Why are these tables being activated?",
+    action: (count: number) => `Activate ${count} ${count === 1 ? "table" : "tables"}`,
+    activating: "Activating…",
+    successTitle: (count: number) =>
+      `Activated ${count} ${count === 1 ? "binding" : "bindings"}`,
+    pendingIngestionPill: "Pending ingestion",
+    activePill: "Active",
+    replayedNote:
+      "An identical earlier activation already covered these tables; nothing was duplicated.",
+    honestNote:
+      "These bindings are ready for ingestion. Axis has not read any row data yet — ingestion runs through a governed boundary once enabled.",
+    blocked: {
+      schema_fingerprint_stale:
+        "A selected table's schema changed since it was discovered. Run discovery again, review the new schema, then activate.",
+      binding_already_active:
+        "One of the selected tables already has an active binding. Reload the bindings list to see it.",
+      binding_id_in_use:
+        "A binding ID in this submission already names a different table. Retry to generate fresh IDs.",
+      resource_not_observed:
+        "One of the selected tables was never observed by discovery. Discover the schema first.",
+      selection_too_large: "Too many tables selected. Activate fewer at once.",
+      duplicate_resource_name: "Each table may be selected only once.",
+      unsafe_resource_name: "A selected name is not a safe qualified table name.",
+      credential_lease_not_found: "The referenced credential lease does not exist for this tenant.",
+      egress_policy_not_found: "The referenced egress policy does not exist for this tenant.",
+      credential_lease_not_executed:
+        "The referenced lease was never executed by a credential broker. Request and execute a new lease.",
+      generic:
+        "Axis could not record the activation. Review the audit ledger and retry.",
+    },
+    reasonRequired: "An activation reason is required for the audit trail.",
+    deniedScope:
+      "Your session is missing the source activation scope (connectors:source:activate) for this tenant. A tenant admin can grant it.",
+    forbidden: "Your session cannot activate sources for this tenant.",
+    notFound: "A referenced lease or egress policy does not exist for this tenant.",
+    genericError: "The activation could not be recorded.",
+  },
+  sourceJourney: {
+    title: "From connection to validated data",
+    detail:
+      "Four steps take one table from a verified source to governed ingestion. Axis records durable evidence at every step; this guide only reports what the API confirms.",
+    steps: {
+      verifyDiscover: {
+        label: "Verify & discover",
+        done: "Source verified and schema observed.",
+        todo: "Verify the connection and discover the schema in Verify & discover below. Discovery is read-only: Axis records what it sees without touching your data.",
+        consequence:
+          "Without discovery there is no fingerprint, so nothing can be activated or ingested.",
+      },
+      activate: {
+        label: "Activate tables",
+        done: "{count} bound table(s) ready for ingestion.",
+        todo: "Activate the discovered tables you want governed. Activation pins the observed schema fingerprint as the baseline for validation.",
+        consequence:
+          "Only activated tables can enter a governed ingestion request.",
+      },
+      requestIngestion: {
+        label: "Request ingestion",
+        done: "{count} governed request(s) raised.",
+        todo: "Raise a governed ingestion request for pending bindings. A required governance reason is recorded with every ask.",
+        consequence:
+          "Requests are dispatched by the worker; nothing runs while ingestion stays default-off on this deployment.",
+      },
+      validate: {
+        label: "Validate & review evidence",
+        done: "{completed} completed · {failed} need attention.",
+        doneClean: "{completed} completed — fingerprints re-checked against fresh observations.",
+        todo: "Wait for dispatch to validate pinned fingerprints, then open a request to review its batch evidence and storage state.",
+        remediation:
+          "Dead-lettered requests stay failed until you remediate: re-discover, re-activate, then use Re-dispatch after remediation inside the request.",
+        consequence:
+          "Validation never reads rows; extraction only runs when explicitly enabled and bounded.",
+      },
+    } as Record<string, Record<string, string>>,
+    unavailable:
+      "The journey needs API-backed bindings and request data. Nothing here is invented; retry after checking the API status.",
+    nextActionLabel: "Next",
+    nextActions: {
+      verifyDiscover: "Use Verify & discover below.",
+      activate: "Select tables to activate below.",
+      requestIngestion: "Raise a governed ingestion request below.",
+      validate: "Open a request to review evidence.",
+    } as Record<string, string>,
+  },
+  sourceBindings: {
+    eyebrow: "Bindings",
+    title: "Active source bindings",
+    emptyDetail:
+      "No discovered table is bound for ingestion yet. Verify the source, discover its tables, then activate the ones you need.",
+    tableColumn: "Table",
+    fingerprintColumn: "Schema fingerprint",
+    stateColumn: "State",
+    ingestionPendingPill: "Pending ingestion",
+    activePill: "Active",
+    activatedByLabel: "Activated by",
+    unavailableTitle: "Bindings unavailable",
+    unavailableDetail:
+      "Axis could not load the active bindings. Nothing shown here is invented; retry after checking the API status.",
+  },
+  sourceIngestion: {
+    eyebrow: "Ingestion requests",
+    title: "Governed ingestion requests",
+    validationOnlyNote:
+      "Validation stage only. Axis re-checks each bound table's schema fingerprint against its own observations. No source is dialed and no rows are read or stored.",
+    overviewTitle: "Operations at a glance",
+    overviewUnavailable: "Overview unavailable — retry after checking the API status.",
+    overviewNeedsAttention: "{count} dead-lettered request(s) need a decision",
+    overviewWorking: "{count} working right now",
+    overviewPending: "{count} waiting for dispatch",
+    overviewQuiet: "All clear — no ingestion activity needs attention.",
+    overviewTotals: "{total} request(s) overall · {extract} extraction · last activity {activity}",
+    overviewNever: "No activity recorded yet.",
+    attemptsLabel: "Dispatch attempt timeline (metadata only)",
+    attemptsTruncatedNotice:
+      "Showing the latest 50 recorded dispatch attempts. Older attempts remain in durable evidence but are not listed here.",
+    attemptOutcome: {
+      completed: "Completed",
+      retried: "Retried after an operational failure",
+      dead_lettered: "Dead-lettered",
+    } as Record<string, string>,
+    attemptSelectionValidated: "validated",
+    attemptSelectionFailed: "failed",
+    emptyDetail:
+      "No governed ingestion request exists yet. Request ingestion for pending bindings to run schema validation against Axis' own observations.",
+    eligibilityTitle: "Ingestion eligibility",
+    selectColumn: "Select",
+    tableColumn: "Table",
+    fingerprintColumn: "Fingerprint",
+    stateColumn: "State",
+    requestColumn: "Request",
+    attemptsColumn: "Attempts",
+    stageHeader: "Stage",
+    reasonHeader: "Reason",
+    lastErrorLabel: "Last error code",
+    selectionsLabel: "Bound tables in this request",
+    eligiblePill: "Eligible",
+    blockedPill: "Blocked",
+    blockedReasons: {
+      stale_fingerprint: "Stale fingerprint",
+      binding_not_pending_ingestion: "Not awaiting ingestion",
+    } as Record<string, string>,
+    requestIdLabel: "Request ID",
+    reasonLabel: "Governance reason",
+    reasonPlaceholder:
+      "Why this ingestion request is being raised (stored as evidence).",
+    formHint:
+      "Schema fingerprints are pinned by Axis from the active bindings; you never supply one. Re-submitting the same request ID replays the existing request.",
+    createAction: "Request ingestion",
+    creatingAction: "Requesting ingestion…",
+    createdStatus: {
+      created: "Ingestion request accepted and queued for validation.",
+      replayed: "That request ID already exists; the existing request was returned unchanged.",
+    },
+    ssoGate:
+      "Sign in to raise governed ingestion requests. Eligibility stays visible either way.",
+    statusPills: {
+      pending: "Pending dispatch",
+      dispatching: "Working",
+      completed: "Completed",
+      failed: "Failed",
+      cancelled: "Cancelled",
+    } as Record<string, string>,
+    stageLabels: {
+      validate: "Validate only",
+      extract: "Validate + extract",
+    } as Record<string, string>,
+    extractionAvailableNote:
+      "Extraction is enabled here: requests may run one bounded, read-only read per bound table. Rows go to the governed object store; Axis stores counts, digests and watermarks only.",
+    plannedLimitsLabel: "Planned limits",
+    cancelAction: "Cancel request",
+    redispatchAction: "Re-dispatch after remediation",
+    redispatchingAction: "Re-dispatching…",
+    redispatchReasonLabel: "Remediation reason",
+    requeuedStatus: "Request requeued for dispatch.",
+    redispatchHint:
+      "Only dead-lettered requests can be re-dispatched. Remediate first (fresh discovery + activation); execution still revalidates fingerprints.",
+    cancellingAction: "Cancelling…",
+    cancelledStatus: "Request cancelled before dispatch.",
+    conflictMessage:
+      "Axis refused this change because the request already moved past pending.",
+    batchesLabel: "Extraction batches (metadata only — no row payloads here)",
+    batchRowsLabel: "Rows",
+    batchDigestLabel: "Digest",
+    batchTruncatedLabel: "Truncated",
+    yesPill: "Yes",
+    noPill: "No",
+    batchesTitle: "Extraction batch evidence",
+    batchColumn: "Batch",
+    rowsLabel: "Rows",
+    truncatedLabel: "Truncated",
+    orderingLabel: "Ordering",
+    watermarkPresent: "Watermark present",
+    noWatermark: "No watermark (single pass)",
+    digestLabel: "Digest",
+    classificationLabel: "Classification",
+    provenanceLabel: "Executed by",
+    checkStorageAction: "Check storage",
+    checkingStorageAction: "Checking…",
+    reconciliationTitle: "Storage vs metadata (dry-run)",
+    reconLabels: {
+      clean_match: "Clean matches",
+      digest_mismatch: "Digest mismatches",
+      missing_object: "Missing objects",
+      orphaned_object: "Orphaned objects",
+    } as Record<string, string>,
+    reconUnsupported:
+      "Reconciliation currently supports the local filesystem object-store adapter only.",
+    preflightTitle: "Extraction readiness",
+    preflightExtractOn: "Bounded extraction available for new requests",
+    preflightExtractOff: "Validation only — extraction is default-off here",
+    preflightReasonReady: "A governance reason is required for every request",
+    deadLetteredPill: "Dead-lettered",
+    deniedScope:
+      "Your actor lacks the connectors:source:ingest scope required to raise governed ingestion requests.",
+    forbidden: "Axis refused this action for your actor.",
+    conflict:
+      "That request ID already names a different ingestion request. Pick a new ID instead of overriding durable evidence.",
+    validationFailed:
+      "Axis rejected the request: a selected binding must exist, be active, await ingestion, and carry a still-current schema fingerprint.",
+    notFound: "That ingestion request does not exist.",
+    genericError: "Axis could not record this ingestion request. Nothing was invented; try again after checking the API status.",
+    unavailableTitle: "Ingestion requests unavailable",
+    unavailableDetail:
+      "Axis could not load ingestion requests. Nothing shown here is invented; retry after checking the API status.",
+  },
   requestedMissing: {
     title: "Requested connector is not in this registry",
     detail:
@@ -580,6 +1013,7 @@ const connectors = {
       "Axis could not verify the evidence snapshot named in the URL, so the console will not show a different record.",
   },
   metrics: {
+    stripLabel: "Connector metrics",
     connectors: { label: "Connectors", detail: "Registered data sources" },
     runs: { label: "Runs", detail: "Governed sync runs recorded" },
     pendingProposals: {
@@ -707,6 +1141,8 @@ const connectors = {
         "Preview sync needs an active credential lease for this connector before it can run.",
       manifestMissing:
         "Preview sync needs a registered manifest in the active preview state before it can run.",
+      activateFirst:
+        "This connector is registered but not activated yet. Activate it from the Overview tab, then governed syncs become available.",
       stages: {
         create: {
           title: "Create run record",
@@ -993,11 +1429,13 @@ const policyDetail = {
   authorAccess: {
     summary: "You need policy author access to create policies.",
     detail: "Authoring creates revision 1 and records audit evidence.",
+    ssoGate: "Sign in with SSO to author platform policies.",
   },
   reviseAccess: {
     summary: "You need policy author access to append revisions.",
     detail:
       "Revisions are append-only and safe to retry; the policy scope is fixed at authoring time.",
+    ssoGate: "Sign in with SSO to append policy revisions.",
   },
   error: {
     title: "Policy API unavailable",
@@ -1084,7 +1522,7 @@ const onboarding = {
   steps: {
     connectors: {
       title: "Connect a system",
-      why: "Bring governed data in from a file or an external system.",
+      why: "Register a file or external source, then activate it so governed syncs can run.",
       cta: "Open connectors",
     },
     ontology: {
@@ -1382,7 +1820,9 @@ const tenantVocabulary = {
 } as const;
 
 export const strings = {
+  scopeDenial,
   nav,
+  identityGate,
   commandMenu,
   routeError,
   notFound,

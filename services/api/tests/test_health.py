@@ -1,10 +1,14 @@
 from fastapi.testclient import TestClient
 from jose import jwt
 from jose.utils import base64url_encode
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from axis_api.config import Settings
 from axis_api.identity import StaticJwksOidcVerifier
 from axis_api.main import create_app
+from axis_api.models import AuditEvent, Base
 from axis_api.platform_tenants import TenantStateSnapshot
 from axis_api.rate_limit import InMemoryRateLimiter
 from axis_api.runtime_readiness import static_runtime_readiness_service
@@ -29,6 +33,11 @@ def _token(secret: str, claims: dict) -> str:
 class _ActiveTenantStateCache:
     def snapshot(self, _session_factory, _tenant_id: str) -> TenantStateSnapshot:
         return TenantStateSnapshot(status="active", quotas={})
+
+
+class _SuspendedTenantStateCache:
+    def snapshot(self, _session_factory, _tenant_id: str) -> TenantStateSnapshot:
+        return TenantStateSnapshot(status="suspended", quotas={})
 
 
 def test_health_returns_ok() -> None:
@@ -590,6 +599,79 @@ def test_identity_session_returns_validated_oidc_context_without_token_material(
     assert "password" not in str(body).lower()
 
 
+def test_tenant_admission_gates_the_session_report_for_verified_principals() -> None:
+    """Admission enforcement must cover every authenticated path.
+
+    The session report is readable without credentials, but a principal that
+    DOES verify — bearer or cookie, freshly resolved or cached — is still
+    subject to tenant admission. A suspended tenant gets the same 403 on
+    ``/identity/session`` as on protected routes, and no actor data leaks.
+    """
+    secret = "axis-test-secret"
+    settings = Settings(
+        postgres_dsn="sqlite+pysqlite://",
+        oidc_auth_required=True,
+        oidc_issuer="https://issuer.example/realms/axis",
+        oidc_audience="limes-axis-api",
+        oidc_jwks_url="https://issuer.example/realms/axis/protocol/openid-connect/certs",
+        oidc_algorithms=["HS256"],
+    )
+    app = create_app(settings)
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    app.state.session_factory = sessionmaker(
+        bind=engine, autoflush=False, expire_on_commit=False
+    )
+    app.state.tenant_state_cache = _SuspendedTenantStateCache()
+    app.state.identity_verifier = StaticJwksOidcVerifier(
+        issuer=settings.oidc_issuer,
+        audience=settings.oidc_audience,
+        algorithms=settings.oidc_algorithms,
+        jwks=_oct_jwks(secret),
+        tenant_claim=settings.oidc_tenant_claim,
+    )
+    token = _token(
+        secret,
+        {
+            "iss": settings.oidc_issuer,
+            "aud": settings.oidc_audience,
+            "sub": "plant-operations-owner-role",
+            "axis_tenant": "tenant_demo_manufacturing",
+            "scope": "audit:read",
+            "exp": 4102444800,
+        },
+    )
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    session_response = client.get("/identity/session", headers=headers)
+    assert session_response.status_code == 403
+    detail = session_response.json()["detail"]
+    assert detail["code"] == "PERMISSION_DENIED"
+    assert detail["tenant_status"] == "suspended"
+    assert "plant-operations-owner-role" not in str(session_response.json())
+
+    protected_response = client.get(
+        "/operations/approvals?tenant_id=tenant_demo_manufacturing",
+        headers=headers,
+    )
+    assert protected_response.status_code == 403
+
+    with sessionmaker(bind=engine)() as session:
+        denial_events = list(
+            session.scalars(
+                select(AuditEvent).where(
+                    AuditEvent.event_type == "platform.tenant.suspended_request.denied"
+                )
+            )
+        )
+        assert len(denial_events) >= 1
+
+
 def test_identity_session_requires_token_when_oidc_auth_is_required() -> None:
     client = TestClient(
         create_app(
@@ -602,8 +684,13 @@ def test_identity_session_requires_token_when_oidc_auth_is_required() -> None:
 
     response = client.get("/identity/session")
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["reason"] == "missing_authorization"
+    # The session report stays readable without credentials so the console can
+    # render its sign-in gate; the anonymous state is classified, not a 401.
+    assert response.status_code == 200
+    body = response.json()
+    assert body["authenticated"] is False
+    assert body["api_auth_required"] is True
+    assert body["unauthenticated_reason"] == "missing_authorization"
 
 
 def test_ready_includes_oidc_readiness_summary() -> None:

@@ -18,6 +18,10 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+vi.mock("@/lib/use-identity-session", () => ({
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 vi.mock("@/lib/axis-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/axis-api")>();
   return {
@@ -77,6 +81,7 @@ const publicIdentity: IdentitySessionReadModel = {
   capabilities: [],
   limitations: [],
   notes: [],
+  unauthenticated_reason: null,
 };
 
 function mockExplorerScope() {

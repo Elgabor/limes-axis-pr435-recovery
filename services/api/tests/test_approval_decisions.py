@@ -14,9 +14,14 @@ from axis_api.approval_decisions import (
     ApprovalDecisionRequest,
     record_demo_approval_decision,
 )
+from axis_api.approval_reference import (
+    derived_queue_status,
+    get_persisted_manufacturing_approval_inbox,
+    reconcile_inbox_with_decision_records,
+)
 from axis_api.config import Settings
 from axis_api.db import session_scope
-from axis_api.demo import ApprovalDecision
+from axis_api.demo import ApprovalDecision, ApprovalInboxItem, OverviewStatus
 from axis_api.identity import OidcPrincipal
 from axis_api.main import create_app
 from axis_api.models import ActionRun, ApprovalRecord, AuditEvent, Base, WorkflowRunRecord
@@ -371,9 +376,7 @@ async def test_record_demo_approval_decision_updates_persisted_workflow_state(
         }
     ]
     assert console.workflow_runs[0].state == "approval_approved"
-    assert console.workflow_runs[0].timeline[-1].event == (
-        "workflow.approval_decision.recorded"
-    )
+    assert console.workflow_runs[0].timeline[-1].event == ("workflow.approval_decision.recorded")
     assert console.workflow_runs[0].timeline[-1].result == "approved"
     assert audit_event.payload["workflow_state_updated"] is True
     assert audit_event.payload["workflow_state"] == "approval_approved"
@@ -781,9 +784,7 @@ def test_approval_decision_action_run_appears_in_action_run_list(
             "workflow_id": "wf_quality_hold_review",
             "created_at": listed.json()["runs"][0]["created_at"],
             "updated_at": listed.json()["runs"][0]["updated_at"],
-            "waiting_duration_seconds": listed.json()["runs"][0][
-                "waiting_duration_seconds"
-            ],
+            "waiting_duration_seconds": listed.json()["runs"][0]["waiting_duration_seconds"],
             "outcome": None,
         }
     ]
@@ -986,3 +987,199 @@ def test_openapi_exposes_approval_decision_endpoint() -> None:
 
     assert response.status_code == 200
     assert "/demo/manufacturing/approvals/{approval_id}/decision" in response.json()["paths"]
+
+
+async def test_inbox_reconciliation_marks_recorded_decisions_as_decided(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """The queue must tell the truth about what is still actionable.
+
+    The inbox reference payload is static; once a terminal decision is
+    persisted for an approval, the inbox may no longer present it as pending,
+    or operators are invited to submit a decision that can only fail with a
+    409 conflict.
+    """
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        await record_demo_approval_decision(
+            repository,
+            "appr_expedite_supplier_batch",
+            ApprovalDecisionRequest(
+                decision=ApprovalDecision.APPROVE,
+                actor_id="plant-operations-owner-role",
+                actor_scopes=["approvals:supply:decide"],
+                note="Approved through the governed flow.",
+            ),
+        )
+
+    with session_scope(session_factory) as session:
+        inbox = get_persisted_manufacturing_approval_inbox(
+            AxisPersistenceRepository(session),
+            "tenant_demo_manufacturing",
+        )
+
+    statuses = {item.approval_id: item.status for item in inbox.approvals}
+    assert statuses["appr_expedite_supplier_batch"] == "decided"
+    assert statuses["appr_quality_hold_batch"] == "pending"
+    assert statuses["appr_shift_maintenance_window"] == "pending"
+
+
+async def test_inbox_reconciliation_builds_decision_history_from_persisted_records(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """Decided work leaves the actionable queue but stays visible as history.
+
+    History entries are derived from the persisted approval records and their
+    stored result snapshots; fields those records do not carry stay ``None``
+    instead of being invented.
+    """
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        await record_demo_approval_decision(
+            repository,
+            "appr_expedite_supplier_batch",
+            ApprovalDecisionRequest(
+                decision=ApprovalDecision.APPROVE,
+                actor_id="plant-operations-owner-role",
+                actor_scopes=["approvals:supply:decide"],
+                note="Approved through the governed flow.",
+            ),
+        )
+
+    with session_scope(session_factory) as session:
+        inbox = get_persisted_manufacturing_approval_inbox(
+            AxisPersistenceRepository(session),
+            "tenant_demo_manufacturing",
+        )
+
+    history = {
+        entry.approval_id: entry for entry in inbox.decision_history
+    }
+    entry = history["appr_expedite_supplier_batch"]
+    assert entry.decision == "approve"
+    assert entry.decided_by == "plant-operations-owner-role"
+    assert entry.decided_at is not None
+    assert entry.rationale == "Approved through the governed flow."
+    assert entry.audit_event_id is not None
+    assert entry.action == "Expedite supplier batch"
+    # Only the decided approval appears in history.
+    assert set(history) == {"appr_expedite_supplier_batch"}
+    # Pending items are untouched by the history projection.
+    assert all(
+        item.status != "decided" or item.approval_id in history
+        for item in inbox.approvals
+    )
+
+
+async def test_inbox_reconciliation_derives_queue_status_from_reconciled_items(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """``queue_status`` is a projection of the item list, never stored state.
+
+    A static status next to reconciled items would let the console show
+    "action required" over a fully decided queue, or "ready" over pending
+    high-risk work. The derivation must also be idempotent: replaying it over
+    an already-reconciled inbox changes nothing.
+    """
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        for approval_id, scope in [
+            ("appr_expedite_supplier_batch", "approvals:supply:decide"),
+            ("appr_quality_hold_batch", "approvals:quality:decide"),
+            ("appr_shift_maintenance_window", "approvals:maintenance:decide"),
+        ]:
+            await record_demo_approval_decision(
+                repository,
+                approval_id,
+                ApprovalDecisionRequest(
+                    decision=ApprovalDecision.APPROVE,
+                    actor_id="plant-operations-owner-role",
+                    actor_scopes=[scope],
+                    note="Approved through the governed flow.",
+                ),
+            )
+
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        first = get_persisted_manufacturing_approval_inbox(repository, "tenant_demo_manufacturing")
+        replayed = reconcile_inbox_with_decision_records(
+            repository,
+            "tenant_demo_manufacturing",
+            first,
+        )
+
+    assert first.queue_status == OverviewStatus.READY
+    assert replayed.queue_status == OverviewStatus.READY
+    assert all(item.status == "decided" for item in replayed.approvals)
+
+
+def test_derived_queue_status_covers_pending_high_risk_watch_and_ready() -> None:
+    def item(approval_id: str, risk_level: str, status: str) -> ApprovalInboxItem:
+        return ApprovalInboxItem(
+            approval_id=approval_id,
+            action="Review proposal",
+            risk_level=risk_level,
+            status=status,
+            requested_by="supply-risk-agent",
+            owner_role="plant-operations-owner",
+            due="Today 17:30",
+            workflow_id="wf_supplier_delay_review",
+            domain="Supply",
+            summary="Reference summary.",
+            evidence=["Evidence"],
+            data_accessed=["MES: schedule"],
+            risks=["Budget overrun."],
+            alternatives=["Hold the order."],
+            estimated_cost="No direct spend",
+            model_policy="local-only",
+            required_permission="approvals:supply:decide",
+            audit_event_preview={
+                "event": "approval.decision.recorded",
+                "actor_role": "plant-operations-owner",
+                "scope": "wf_supplier_delay_review",
+                "result": "workflow_signal_ready",
+            },
+            decision_options=[
+                {
+                    "decision": "approve",
+                    "label": "Approve",
+                    "consequence": "Signal workflow approval.",
+                },
+            ],
+        )
+
+    assert (
+        derived_queue_status([item("a", "high", "pending"), item("b", "low", "decided")])
+        == OverviewStatus.ACTION_REQUIRED
+    )
+    assert (
+        derived_queue_status([item("a", "medium", "pending"), item("b", "high", "decided")])
+        == OverviewStatus.WATCH
+    )
+    assert derived_queue_status([item("a", "high", "decided")]) == OverviewStatus.READY
+    assert derived_queue_status([]) == OverviewStatus.READY
+
+
+async def test_inbox_queue_status_survives_a_stale_stored_projection(
+    session_factory: sessionmaker[Session],
+) -> None:
+    """A stored ``queue_status`` that contradicts its items cannot surface.
+
+    If a payload was persisted while decisions existed (or with a hand-edited
+    projection), reading the inbox must still report what the items say.
+    """
+    payload = approval_inbox_bootstrap_payload()
+    payload["queue_status"] = "ready"  # Stale: the seeded items are pending/high risk.
+    seed_approval_inbox_reference(session_factory, payload)
+
+    with session_scope(session_factory) as session:
+        inbox = get_persisted_manufacturing_approval_inbox(
+            AxisPersistenceRepository(session),
+            "tenant_demo_manufacturing",
+        )
+
+    assert inbox.queue_status == OverviewStatus.ACTION_REQUIRED
+    assert any(
+        item.risk_level == "high" and item.status == "pending"
+        for item in inbox.approvals
+    )

@@ -21,9 +21,15 @@ import { buildTenantScopedPath } from "@/lib/tenant-scope";
 import { useAxisQuery, type AxisQuerySource } from "@/lib/use-axis-query";
 import type { ConnectorRegistries } from "@/lib/use-connector-registries";
 import { CONNECTOR_ENDPOINTS } from "@/lib/use-connector-registries";
+import { useConsole } from "@/providers/console-provider";
 
 import { ConnectorGovernance } from "./governance";
+import { ConnectorLifecyclePanel } from "./lifecycle-panel";
 import { ConnectorRuns } from "./runs";
+import { ConnectorSourceBindingsSection } from "./source-bindings-panel";
+import { ConnectorSourceIngestionSection } from "./source-ingestion-panel";
+import { ConnectorSourceDiscoveryPanel } from "./source-discovery-panel";
+import { SourceJourneySpine } from "./source-journey";
 import { ManifestExportPanel } from "./manifest-export-panel";
 
 /*
@@ -53,16 +59,24 @@ function ChipList({ items, emptyLabel }: { items: string[]; emptyLabel?: string 
 
 function OverviewTab({
   connector,
+  identitySession,
   manifestDetail,
   manifestDetailErrorRequestId,
   manifestDetailPath,
   manifestDetailSource,
+  onTransitioned,
+  registries,
+  tenantId,
 }: {
   connector: ConnectorRegistryItem;
+  identitySession: IdentitySessionReadModel | null;
   manifestDetail: ConnectorManifestDetail | null;
   manifestDetailErrorRequestId: string | null;
   manifestDetailPath: string;
   manifestDetailSource: AxisQuerySource;
+  onTransitioned: () => void;
+  registries: ConnectorRegistries;
+  tenantId: string;
 }) {
   const copy = strings.connectors.overview;
   const { manifest, runtime_policy: runtimePolicy } = connector;
@@ -95,6 +109,43 @@ function OverviewTab({
           {runtimePolicy.egress_policy}
         </KeyValueRow>
       </DetailGrid>
+
+      {persistedManifest ? (
+        <ConnectorLifecyclePanel
+          connector={connector}
+          identitySession={identitySession}
+          onTransitioned={onTransitioned}
+          revisions={manifestDetail?.revisions}
+          transitions={manifestDetail?.transitions}
+          tenantId={tenantId}
+        />
+      ) : null}
+
+      {/* Real source operations exist only for the external database connector;
+          other connectors have no source boundary to verify or discover. */}
+      {connector.manifest.connector_type === "external_db" ? (
+        <>
+          <SourceJourneySpine
+            connectorId={connector.manifest.connector_id}
+            tenantId={tenantId}
+          />
+          <ConnectorSourceDiscoveryPanel
+            connector={connector}
+            identitySession={identitySession}
+            registries={registries}
+            tenantId={tenantId}
+          />
+          <ConnectorSourceBindingsSection
+            connectorId={connector.manifest.connector_id}
+            tenantId={tenantId}
+          />
+          <ConnectorSourceIngestionSection
+            connectorId={connector.manifest.connector_id}
+            identitySession={identitySession}
+            tenantId={tenantId}
+          />
+        </>
+      ) : null}
 
       <div className="grid gap-3">
         <div className="grid gap-2">
@@ -268,6 +319,7 @@ export function ConnectorDetail({
 }) {
   const tabs = strings.connectors.tabs;
   const { manifest } = connector;
+  const { triggerRefresh } = useConsole();
   const manifestDetailPath = buildTenantScopedPath(
     `${CONNECTOR_ENDPOINTS.manifests}/${encodeURIComponent(manifest.connector_id)}`,
     tenantId,
@@ -319,10 +371,14 @@ export function ConnectorDetail({
         <TabsContent value="overview">
           <OverviewTab
             connector={effectiveConnector}
+            identitySession={identitySession}
             manifestDetail={manifestDetail.data}
             manifestDetailErrorRequestId={manifestDetail.errorRequestId}
             manifestDetailPath={manifestDetailPath}
             manifestDetailSource={manifestDetail.source}
+            onTransitioned={triggerRefresh}
+            registries={registries}
+            tenantId={tenantId}
           />
         </TabsContent>
         <TabsContent value="schema">

@@ -308,8 +308,11 @@ def test_session_refresh_rotates_session_and_refresh_token() -> None:
 
     client.cookies.set("axis_session", old_session_cookie)
     replayed = client.get("/identity/session")
-    assert replayed.status_code == 401
-    assert replayed.json()["detail"]["reason"] == "revoked_session_cookie"
+    # The session report stays readable without credentials: a revoked cookie
+    # is reported, never honored.
+    assert replayed.status_code == 200
+    assert replayed.json()["authenticated"] is False
+    assert replayed.json()["unauthenticated_reason"] == "revoked_session_cookie"
 
 
 def test_session_refresh_cannot_resurrect_session_revoked_during_exchange() -> None:
@@ -407,8 +410,12 @@ def test_session_refresh_failure_revokes_session_and_deletes_cookies() -> None:
             "identity.oidc_session.revoked",
         ]
 
-    replay = client.get("/identity/session")
-    assert replay.status_code == 401
+        replay = client.get("/identity/session")
+        # The failed refresh already cleared the cookie, so no credential at
+        # all remains for the report to classify.
+        assert replay.status_code == 200
+        assert replay.json()["authenticated"] is False
+        assert replay.json()["unauthenticated_reason"] == "missing_authorization"
 
 
 def test_session_refresh_conflicts_when_no_refresh_token_is_stored() -> None:
@@ -438,8 +445,9 @@ def test_idle_timeout_revokes_session() -> None:
 
     response = client.get("/identity/session")
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["reason"] == "idle_session_timeout"
+    assert response.status_code == 200
+    assert response.json()["authenticated"] is False
+    assert response.json()["unauthenticated_reason"] == "idle_session_timeout"
     with factory() as session:
         stored = _sessions(session)[0]
         assert stored.status == "revoked"
@@ -462,8 +470,9 @@ def test_absolute_timeout_rejects_and_revokes_session() -> None:
 
     response = client.get("/identity/session")
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["reason"] == "expired_session_cookie"
+    assert response.status_code == 200
+    assert response.json()["authenticated"] is False
+    assert response.json()["unauthenticated_reason"] == "expired_session_cookie"
     with factory() as session:
         stored = _sessions(session)[0]
         assert stored.status == "revoked"
@@ -730,7 +739,10 @@ def test_revoke_own_session_by_reference() -> None:
             "identity.oidc_session.revoked",
         ]
 
-    assert client.get("/identity/session").status_code == 401
+    revoked = client.get("/identity/session")
+    assert revoked.status_code == 200
+    assert revoked.json()["authenticated"] is False
+    assert revoked.json()["unauthenticated_reason"] == "revoked_session_cookie"
 
 
 def test_revoke_own_refreshing_session_by_reference() -> None:
@@ -760,7 +772,10 @@ def test_revoke_own_refreshing_session_by_reference() -> None:
             "identity.oidc_session.revoked",
         ]
 
-    assert client.get("/identity/session").status_code == 401
+    revoked = client.get("/identity/session")
+    assert revoked.status_code == 200
+    assert revoked.json()["authenticated"] is False
+    assert revoked.json()["unauthenticated_reason"] == "revoked_session_cookie"
 
 
 def test_revoking_other_actor_session_requires_admin_scope() -> None:
@@ -1079,8 +1094,9 @@ def test_non_ascii_session_cookie_is_rejected_as_invalid_not_500() -> None:
         headers={"Cookie": b"axis_session=\xffgarbage.\xffsig"},
     )
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["reason"] == "invalid_session_cookie"
+    assert response.status_code == 200
+    assert response.json()["authenticated"] is False
+    assert response.json()["unauthenticated_reason"] == "invalid_session_cookie"
 
 
 def test_non_ascii_csrf_header_is_rejected_as_mismatch_not_500() -> None:
@@ -1117,8 +1133,9 @@ def test_stale_refreshing_session_is_revoked_as_orphaned_on_presentation() -> No
 
     response = client.get("/identity/session")
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["reason"] == "revoked_session_cookie"
+    assert response.status_code == 200
+    assert response.json()["authenticated"] is False
+    assert response.json()["unauthenticated_reason"] == "revoked_session_cookie"
     with factory() as session:
         stored = _sessions(session)[0]
         assert stored.status == "revoked"
@@ -1162,8 +1179,9 @@ def test_fresh_refreshing_session_is_rejected_but_left_for_the_active_claim() ->
 
     response = client.get("/identity/session")
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["reason"] == "revoked_session_cookie"
+    assert response.status_code == 200
+    assert response.json()["authenticated"] is False
+    assert response.json()["unauthenticated_reason"] == "revoked_session_cookie"
     with factory() as session:
         stored = _sessions(session)[0]
         assert stored.status == "refreshing"

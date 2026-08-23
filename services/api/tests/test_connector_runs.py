@@ -374,9 +374,7 @@ def test_record_demo_connector_run_uses_persisted_connector_manifest(
     session_factory: sessionmaker[Session],
 ) -> None:
     payload = connector_registry_payload()
-    payload["connectors"][0]["manifest"]["runtime_boundary"] = (
-        "persisted-run-runtime-boundary"
-    )
+    payload["connectors"][0]["manifest"]["runtime_boundary"] = "persisted-run-runtime-boundary"
     seed_connector_registry_reference(session_factory, payload)
 
     with session_scope(session_factory) as session:
@@ -444,7 +442,7 @@ def seed_connector_credential_lease(repository: AxisPersistenceRepository) -> No
             secret_provider="vault-dev",
             secret_ref="vault://axis/demo/file-csv-readonly",
             vault_kms_policy={"ttl_seconds": "900", "max_ttl_seconds": "1800"},
-            permission_decision={"allowed": "true", "scope": "connectors:credential_lease:request"},
+            permission_decision={"allowed": True, "reason": "all_required_scopes_present"},
             lease_result={
                 "adapter": "axis-self-hosted-vault-kms-lease-adapter",
                 "status": "lease_executed",
@@ -452,7 +450,7 @@ def seed_connector_credential_lease(repository: AxisPersistenceRepository) -> No
                     "self-hosted-vault-kms://tenant_demo_manufacturing/"
                     "lease_file_csv_readonly_20260622"
                 ),
-                "secret_material_returned": False,
+                "secret_material_returned": "false",
             },
             granted_at=now,
             expires_at=now.replace(year=now.year + 1),
@@ -490,8 +488,7 @@ def seed_external_db_credential_lease(
     *,
     secret_material_returned: bool = False,
     provider_lease_ref: str | None = (
-        "self-hosted-vault-kms://tenant_demo_manufacturing/"
-        "lease_external_db_readonly_20260622"
+        "self-hosted-vault-kms://tenant_demo_manufacturing/lease_external_db_readonly_20260622"
     ),
 ) -> None:
     now = utc_now()
@@ -509,12 +506,14 @@ def seed_external_db_credential_lease(
             secret_provider="vault-dev",
             secret_ref="vault://axis/demo/external-db-readonly",
             vault_kms_policy={"ttl_seconds": "900", "max_ttl_seconds": "1800"},
-            permission_decision={"allowed": "true", "scope": "connectors:credential_lease:request"},
+            permission_decision={"allowed": True, "reason": "all_required_scopes_present"},
             lease_result={
                 "adapter": "axis-self-hosted-vault-kms-lease-adapter",
                 "status": "lease_executed",
                 "provider_lease_ref": provider_lease_ref or "",
-                "secret_material_returned": secret_material_returned,
+                # The persisted runtime-result contract is string-valued;
+                # callers still express the leaky-lease case as a bool.
+                "secret_material_returned": ("true" if secret_material_returned else "false"),
             },
             granted_at=now,
             expires_at=now.replace(year=now.year + 1),
@@ -530,8 +529,7 @@ def seed_external_db_egress_policy(
     policy_id: str = "egress_policy_private_endpoint_ops",
     status: str = "active",
     private_endpoint_ref: str = (
-        "private-endpoint://tenant_demo_manufacturing/"
-        "persisted-operations-postgres-readonly"
+        "private-endpoint://tenant_demo_manufacturing/persisted-operations-postgres-readonly"
     ),
     endpoint_target_sha256: str | None = None,
 ) -> None:
@@ -978,8 +976,7 @@ def test_create_connector_run_schedules_sync_without_starting_external_sync(
         "adapter": "axis-deferred-connector-sync-scheduler",
         "status": "sync_schedule_deferred",
         "schedule_ref": (
-            "deferred-sync://tenant_demo_manufacturing/"
-            "schedule_file_csv_assets_hourly"
+            "deferred-sync://tenant_demo_manufacturing/schedule_file_csv_assets_hourly"
         ),
         "external_sync_started": False,
         "idempotency_key": (
@@ -1915,13 +1912,10 @@ def test_execute_external_db_live_query_preflight_passes_when_policy_enabled(
             "self-hosted-egress-policy://tenant_demo_manufacturing/"
             "egress_policy_private_endpoint_ops"
         ),
-        "egress_policy_scope": (
-            "external_db_operational_mirror:profile_postgres_ops_readonly"
-        ),
+        "egress_policy_scope": ("external_db_operational_mirror:profile_postgres_ops_readonly"),
         "egress_policy_mode": "approved_private_endpoint",
         "egress_policy_private_endpoint_ref": (
-            "private-endpoint://tenant_demo_manufacturing/"
-            "persisted-operations-postgres-readonly"
+            "private-endpoint://tenant_demo_manufacturing/persisted-operations-postgres-readonly"
         ),
         "egress_policy_endpoint_target_sha256": postgres_endpoint_target_sha256(
             DEFAULT_EXTERNAL_DB_LIVE_QUERY_DSN
@@ -1932,20 +1926,16 @@ def test_execute_external_db_live_query_preflight_passes_when_policy_enabled(
         "credential_lease_runtime_boundary": "axis-credential-lease-broker",
         "credential_lease_result_status": "lease_executed",
         "credential_lease_ref": (
-            "self-hosted-vault-kms://tenant_demo_manufacturing/"
-            "lease_external_db_readonly_20260622"
+            "self-hosted-vault-kms://tenant_demo_manufacturing/lease_external_db_readonly_20260622"
         ),
         "credential_lease_secret_material_returned": "false",
         "secret_reference_evidence_status": "validated",
         "secret_reference_runtime_boundary": "axis-secret-reference-resolver",
         "secret_reference_result_status": "secret_reference_validated",
-        "secret_reference_scope": (
-            "external_db_operational_mirror:profile_postgres_ops_readonly"
-        ),
+        "secret_reference_scope": ("external_db_operational_mirror:profile_postgres_ops_readonly"),
         "secret_reference_access_mode": "lease_scoped_secret_ref",
         "secret_reference_lease_ref": (
-            "self-hosted-vault-kms://tenant_demo_manufacturing/"
-            "lease_external_db_readonly_20260622"
+            "self-hosted-vault-kms://tenant_demo_manufacturing/lease_external_db_readonly_20260622"
         ),
         "secret_reference_material_returned": "false",
         "records_read": "0",
@@ -1988,9 +1978,10 @@ def test_execute_external_db_live_query_preflight_passes_when_policy_enabled(
     ]
     assert len(execution_events) == 1
     execution_event = execution_events[0]
-    assert execution_event.payload["sync_execution_result"]["result_summary"][
-        "egress_policy_decision"
-    ] == "approved_private_endpoint"
+    assert (
+        execution_event.payload["sync_execution_result"]["result_summary"]["egress_policy_decision"]
+        == "approved_private_endpoint"
+    )
     assert "vault://" not in str(execution_event.payload).lower()
     assert "credential_value" not in str(execution_event.payload).lower()
     assert "dsn" not in str(execution_event.payload).lower()
@@ -2169,9 +2160,7 @@ def test_execute_external_db_live_query_preflight_uses_requested_checkpoint_clai
     assert result_summary["checkpoint_claim_checkpoint_id"] == (
         "chk_live_preflight_claim_target_requested_20260626"
     )
-    assert "claim_live_preflight_claim_target_first_20260626" not in str(
-        result_summary
-    )
+    assert "claim_live_preflight_claim_target_first_20260626" not in str(result_summary)
 
 
 def test_execute_external_db_live_query_preflight_requires_checkpoint_claim_id(
@@ -2241,9 +2230,7 @@ def test_execute_external_db_live_query_preflight_requires_checkpoint_claim_id(
     )
 
     assert response.status_code == 422
-    assert response.json()["detail"]["reason"] == (
-        "checkpoint_claim_id_required_for_live_query"
-    )
+    assert response.json()["detail"]["reason"] == ("checkpoint_claim_id_required_for_live_query")
 
     with session_scope(session_factory) as session:
         repository = AxisPersistenceRepository(session)
@@ -3387,9 +3374,7 @@ def test_execute_external_db_live_query_preflight_rejects_checkpoint_audit_check
     run_id = "run_external_db_orders_live_preflight_checkpoint_audit_id_20260626"
     checkpoint_id = "chk_live_preflight_checkpoint_audit_id_20260626"
     claim_id = "claim_live_preflight_checkpoint_audit_id_20260626"
-    execution_id = (
-        "sync_exec_external_db_orders_live_preflight_checkpoint_audit_id_20260626"
-    )
+    execution_id = "sync_exec_external_db_orders_live_preflight_checkpoint_audit_id_20260626"
     with session_scope(session_factory) as session:
         repository = AxisPersistenceRepository(session)
         seed_external_db_credential_handle(repository)
@@ -4072,9 +4057,7 @@ def test_execute_external_db_live_query_preflight_rejects_unsafe_checkpoint_clai
     )
 
     assert response.status_code == 422
-    assert response.json()["detail"]["reason"] == (
-        "target_sync_checkpoint_claim_result_unsafe"
-    )
+    assert response.json()["detail"]["reason"] == ("target_sync_checkpoint_claim_result_unsafe")
 
     with session_scope(session_factory) as session:
         repository = AxisPersistenceRepository(session)
@@ -4118,9 +4101,7 @@ def test_execute_external_db_live_query_preflight_rejects_claim_with_invalid_aud
     run_id = "run_external_db_orders_live_preflight_bad_claim_audit_type_20260626"
     checkpoint_id = "chk_live_preflight_bad_claim_audit_type_20260626"
     claim_id = "claim_live_preflight_bad_claim_audit_type_20260626"
-    execution_id = (
-        "sync_exec_external_db_orders_live_preflight_bad_claim_audit_type_20260626"
-    )
+    execution_id = "sync_exec_external_db_orders_live_preflight_bad_claim_audit_type_20260626"
     with session_scope(session_factory) as session:
         repository = AxisPersistenceRepository(session)
         seed_external_db_credential_handle(repository)
@@ -4130,9 +4111,7 @@ def test_execute_external_db_live_query_preflight_rejects_claim_with_invalid_aud
     create_dispatched_scheduled_sync(
         client,
         run_id=run_id,
-        dispatch_id=(
-            "dispatch_external_db_orders_live_preflight_bad_claim_audit_type_20260626"
-        ),
+        dispatch_id=("dispatch_external_db_orders_live_preflight_bad_claim_audit_type_20260626"),
         dispatch_idempotency_key=(
             "idem_dispatch_external_db_orders_live_preflight_bad_claim_audit_type_20260626"
         ),
@@ -4243,9 +4222,7 @@ def test_execute_external_db_live_query_preflight_rejects_claim_with_invalid_aud
     )
 
     assert response.status_code == 422
-    assert response.json()["detail"]["reason"] == (
-        "target_sync_checkpoint_claim_audit_invalid"
-    )
+    assert response.json()["detail"]["reason"] == ("target_sync_checkpoint_claim_audit_invalid")
 
     with session_scope(session_factory) as session:
         repository = AxisPersistenceRepository(session)
@@ -4289,9 +4266,7 @@ def test_execute_external_db_live_query_preflight_rejects_claim_with_missing_aud
     run_id = "run_external_db_orders_live_preflight_missing_claim_audit_20260626"
     checkpoint_id = "chk_live_preflight_missing_claim_audit_20260626"
     claim_id = "claim_live_preflight_missing_claim_audit_20260626"
-    execution_id = (
-        "sync_exec_external_db_orders_live_preflight_missing_claim_audit_20260626"
-    )
+    execution_id = "sync_exec_external_db_orders_live_preflight_missing_claim_audit_20260626"
     with session_scope(session_factory) as session:
         repository = AxisPersistenceRepository(session)
         seed_external_db_credential_handle(repository)
@@ -4301,9 +4276,7 @@ def test_execute_external_db_live_query_preflight_rejects_claim_with_missing_aud
     create_dispatched_scheduled_sync(
         client,
         run_id=run_id,
-        dispatch_id=(
-            "dispatch_external_db_orders_live_preflight_missing_claim_audit_20260626"
-        ),
+        dispatch_id=("dispatch_external_db_orders_live_preflight_missing_claim_audit_20260626"),
         dispatch_idempotency_key=(
             "idem_dispatch_external_db_orders_live_preflight_missing_claim_audit_20260626"
         ),
@@ -4446,9 +4419,7 @@ def test_execute_external_db_live_query_preflight_rejects_mismatched_claim_audit
     run_id = "run_external_db_orders_live_preflight_mismatch_claim_audit_20260626"
     checkpoint_id = "chk_live_preflight_mismatch_claim_audit_20260626"
     claim_id = "claim_live_preflight_mismatch_claim_audit_20260626"
-    execution_id = (
-        "sync_exec_external_db_orders_live_preflight_mismatch_claim_audit_20260626"
-    )
+    execution_id = "sync_exec_external_db_orders_live_preflight_mismatch_claim_audit_20260626"
     with session_scope(session_factory) as session:
         repository = AxisPersistenceRepository(session)
         seed_external_db_credential_handle(repository)
@@ -4458,9 +4429,7 @@ def test_execute_external_db_live_query_preflight_rejects_mismatched_claim_audit
     create_dispatched_scheduled_sync(
         client,
         run_id=run_id,
-        dispatch_id=(
-            "dispatch_external_db_orders_live_preflight_mismatch_claim_audit_20260626"
-        ),
+        dispatch_id=("dispatch_external_db_orders_live_preflight_mismatch_claim_audit_20260626"),
         dispatch_idempotency_key=(
             "idem_dispatch_external_db_orders_live_preflight_mismatch_claim_audit_20260626"
         ),
@@ -4958,8 +4927,7 @@ def test_connector_sync_checkpoints_endpoint_returns_public_safe_records(
     checkpoint = next(
         item
         for item in body["checkpoints"]
-        if item["checkpoint_id"]
-        == "chk_sync_exec_external_db_orders_checkpoint_api_20260625_1400"
+        if item["checkpoint_id"] == "chk_sync_exec_external_db_orders_checkpoint_api_20260625_1400"
     )
     assert checkpoint["connector_id"] == "external_db_operational_mirror"
     assert checkpoint["run_id"] == "run_external_db_orders_checkpoint_api_20260625"
@@ -5100,8 +5068,7 @@ def test_connector_sync_checkpoint_registry_reports_audit_payload_invariants(
             "audit_event_id": str(checkpoint_event.id),
             "reason": "checkpoint_audit_event_payload_mismatch",
             "detail": (
-                "Checkpoint audit event payload must match connector_id, "
-                "run_id and checkpoint_id."
+                "Checkpoint audit event payload must match connector_id, run_id and checkpoint_id."
             ),
         }
     ]
@@ -5127,8 +5094,7 @@ def test_connector_sync_checkpoint_claim_records_worker_lease_without_live_sync(
     client = TestClient(app)
 
     response = client.post(
-        "/demo/manufacturing/connectors/runs/checkpoints/"
-        "chk_checkpoint_worker_claim/claims",
+        "/demo/manufacturing/connectors/runs/checkpoints/chk_checkpoint_worker_claim/claims",
         json={
             "tenant_id": "tenant_demo_manufacturing",
             "claim_id": "claim_checkpoint_worker_20260625_1000",
@@ -5493,9 +5459,7 @@ def test_connector_sync_checkpoint_claims_endpoint_filters_by_connector_and_run(
 
     assert response.status_code == 200
     body = response.json()
-    assert [claim["claim_id"] for claim in body["claims"]] == [
-        "claim_external_db_filter_a"
-    ]
+    assert [claim["claim_id"] for claim in body["claims"]] == ["claim_external_db_filter_a"]
     assert body["metrics"][0]["value"] == "1"
     assert "credential_value" not in str(body).lower()
     assert "dsn" not in str(body).lower()
@@ -5575,9 +5539,7 @@ def test_connector_sync_checkpoint_claims_endpoint_filters_by_claimed_by(
 
     assert response.status_code == 200
     body = response.json()
-    assert [claim["claim_id"] for claim in body["claims"]] == [
-        "claim_worker_filter_1"
-    ]
+    assert [claim["claim_id"] for claim in body["claims"]] == ["claim_worker_filter_1"]
     assert body["metrics"][0]["value"] == "1"
     assert body["claims"][0]["claimed_by"] == "axis-sync-worker-role-a"
     assert "credential_value" not in str(body).lower()
@@ -5734,10 +5696,7 @@ def test_connector_sync_checkpoint_claims_endpoint_handles_mixed_naive_aware_win
 
     assert valid_window.status_code == 200
     assert inverted_window.status_code == 422
-    assert (
-        inverted_window.json()["detail"]["reason"]
-        == "invalid_checkpoint_claim_time_window"
-    )
+    assert inverted_window.json()["detail"]["reason"] == "invalid_checkpoint_claim_time_window"
 
 
 def test_connector_sync_checkpoints_endpoint_handles_mixed_naive_aware_window(
@@ -5847,9 +5806,7 @@ def test_connector_sync_checkpoint_claims_endpoint_paginates_with_cursor(
 
     assert second_response.status_code == 200
     second_body = second_response.json()
-    assert [claim["claim_id"] for claim in second_body["claims"]] == [
-        "claim_cursor_c"
-    ]
+    assert [claim["claim_id"] for claim in second_body["claims"]] == ["claim_cursor_c"]
     assert second_body["has_more"] is False
     assert second_body["next_cursor"] is None
     assert "credential_value" not in str(second_body).lower()
@@ -5917,13 +5874,11 @@ def test_connector_sync_checkpoint_claim_replays_same_idempotency_key(
     }
 
     first_response = client.post(
-        "/demo/manufacturing/connectors/runs/checkpoints/"
-        "chk_checkpoint_worker_replay/claims",
+        "/demo/manufacturing/connectors/runs/checkpoints/chk_checkpoint_worker_replay/claims",
         json=payload,
     )
     second_response = client.post(
-        "/demo/manufacturing/connectors/runs/checkpoints/"
-        "chk_checkpoint_worker_replay/claims",
+        "/demo/manufacturing/connectors/runs/checkpoints/chk_checkpoint_worker_replay/claims",
         json=payload,
     )
 
@@ -5956,8 +5911,7 @@ def test_connector_sync_checkpoint_claim_rejects_second_active_worker_claim(
         )
     client = TestClient(app)
     first_response = client.post(
-        "/demo/manufacturing/connectors/runs/checkpoints/"
-        "chk_checkpoint_worker_conflict/claims",
+        "/demo/manufacturing/connectors/runs/checkpoints/chk_checkpoint_worker_conflict/claims",
         json={
             "tenant_id": "tenant_demo_manufacturing",
             "claim_id": "claim_checkpoint_conflict_20260625_1000",
@@ -5970,8 +5924,7 @@ def test_connector_sync_checkpoint_claim_rejects_second_active_worker_claim(
     assert first_response.status_code == 201
 
     second_response = client.post(
-        "/demo/manufacturing/connectors/runs/checkpoints/"
-        "chk_checkpoint_worker_conflict/claims",
+        "/demo/manufacturing/connectors/runs/checkpoints/chk_checkpoint_worker_conflict/claims",
         json={
             "tenant_id": "tenant_demo_manufacturing",
             "claim_id": "claim_checkpoint_conflict_20260625_1005",
@@ -6037,8 +5990,7 @@ def test_connector_sync_checkpoint_claim_expires_old_claim_before_takeover(
     client = TestClient(app)
 
     response = client.post(
-        "/demo/manufacturing/connectors/runs/checkpoints/"
-        "chk_checkpoint_worker_takeover/claims",
+        "/demo/manufacturing/connectors/runs/checkpoints/chk_checkpoint_worker_takeover/claims",
         json={
             "tenant_id": "tenant_demo_manufacturing",
             "claim_id": "claim_checkpoint_takeover_20260625_1000",
@@ -6063,16 +6015,13 @@ def test_connector_sync_checkpoint_claim_expires_old_claim_before_takeover(
         )
 
     claims_by_id = {claim.claim_id: claim for claim in claims}
-    assert claims_by_id[
-        "claim_checkpoint_takeover_expired_20260625_0900"
-    ].status == "expired"
+    assert claims_by_id["claim_checkpoint_takeover_expired_20260625_0900"].status == "expired"
     assert claims_by_id["claim_checkpoint_takeover_20260625_1000"].status == "claimed"
     assert len(events) == 1
     assert events[0].actor_id == "axis-sync-worker-role-new"
     assert events[0].payload["checkpoint_id"] == "chk_checkpoint_worker_takeover"
     assert (
-        events[0].payload["expired_claim_id"]
-        == "claim_checkpoint_takeover_expired_20260625_0900"
+        events[0].payload["expired_claim_id"] == "claim_checkpoint_takeover_expired_20260625_0900"
     )
     assert events[0].payload["replacement_claim_id"] == "claim_checkpoint_takeover_20260625_1000"
     assert events[0].payload["external_sync_started"] is False
@@ -6096,8 +6045,7 @@ def test_connector_sync_checkpoint_claim_renew_extends_worker_lease_without_live
         )
     client = TestClient(app)
     claim_response = client.post(
-        "/demo/manufacturing/connectors/runs/checkpoints/"
-        "chk_checkpoint_worker_renew/claims",
+        "/demo/manufacturing/connectors/runs/checkpoints/chk_checkpoint_worker_renew/claims",
         json={
             "tenant_id": "tenant_demo_manufacturing",
             "claim_id": "claim_checkpoint_renew_20260625_1000",
@@ -6174,8 +6122,7 @@ def test_connector_sync_checkpoint_claim_release_closes_worker_lease_without_liv
         )
     client = TestClient(app)
     claim_response = client.post(
-        "/demo/manufacturing/connectors/runs/checkpoints/"
-        "chk_checkpoint_worker_release/claims",
+        "/demo/manufacturing/connectors/runs/checkpoints/chk_checkpoint_worker_release/claims",
         json={
             "tenant_id": "tenant_demo_manufacturing",
             "claim_id": "claim_checkpoint_release_20260625_1000",
@@ -6260,9 +6207,7 @@ def test_connector_sync_checkpoint_repository_filters_created_before(
             created_before=newer,
         )
 
-    assert [checkpoint.checkpoint_id for checkpoint in checkpoints] == [
-        "chk_checkpoint_page_older"
-    ]
+    assert [checkpoint.checkpoint_id for checkpoint in checkpoints] == ["chk_checkpoint_page_older"]
 
 
 def test_connector_sync_checkpoint_repository_filters_created_after(
@@ -6437,9 +6382,7 @@ def test_connector_sync_checkpoints_endpoint_requires_read_scope() -> None:
 
     assert response.status_code == 403
     assert response.json()["detail"]["reason"] == "missing_required_scope"
-    assert response.json()["detail"]["required_permission"] == (
-        "connectors:sync:checkpoint:read"
-    )
+    assert response.json()["detail"]["required_permission"] == ("connectors:sync:checkpoint:read")
 
 
 def test_execute_external_db_live_query_preflight_blocks_secret_material_returned(
@@ -6519,9 +6462,7 @@ def test_execute_external_db_live_query_preflight_blocks_secret_material_returne
     assert result_summary["credential_lease_secret_material_returned"] == "true"
     assert result_summary["secret_retrieval_decision"] == "blocked_secret_material_returned"
     assert result_summary["checkpoint_claim_evidence_status"] == "validated"
-    assert result_summary["checkpoint_claim_id"] == (
-        "claim_live_preflight_secret_blocked_20260622"
-    )
+    assert result_summary["checkpoint_claim_id"] == ("claim_live_preflight_secret_blocked_20260622")
     assert result_summary["external_query_started"] == "false"
     assert result_summary["credential_material_returned"] == "false"
     assert "vault://" not in str(body).lower()
@@ -6606,9 +6547,7 @@ def test_execute_external_db_live_query_preflight_blocks_unknown_egress_policy(
     assert result_summary["secret_retrieval_decision"] == "not_started"
     assert result_summary["credential_lease_evidence_status"] == "validated"
     assert result_summary["checkpoint_claim_evidence_status"] == "validated"
-    assert result_summary["checkpoint_claim_id"] == (
-        "claim_live_preflight_unknown_policy_20260622"
-    )
+    assert result_summary["checkpoint_claim_id"] == ("claim_live_preflight_unknown_policy_20260622")
     assert result_summary["external_query_started"] == "false"
     assert result_summary["credential_material_returned"] == "false"
     assert result_summary["graph_mutation_started"] == "false"
@@ -6694,9 +6633,7 @@ def test_execute_external_db_live_query_preflight_blocks_missing_persisted_egres
     assert result_summary["egress_policy_decision"] == "blocked_policy_not_found"
     assert result_summary["secret_retrieval_decision"] == "not_started"
     assert result_summary["checkpoint_claim_evidence_status"] == "validated"
-    assert result_summary["checkpoint_claim_id"] == (
-        "claim_live_preflight_missing_policy_20260622"
-    )
+    assert result_summary["checkpoint_claim_id"] == ("claim_live_preflight_missing_policy_20260622")
     assert result_summary["external_query_started"] == "false"
     assert result_summary["credential_material_returned"] == "false"
     assert result_summary["graph_mutation_started"] == "false"
@@ -6782,10 +6719,7 @@ def test_execute_external_db_live_query_preflight_blocks_missing_secret_referenc
     assert result_summary["credential_lease_evidence_status"] == "failed"
     assert result_summary["credential_lease_ref"] == ""
     assert result_summary["secret_reference_evidence_status"] == "failed"
-    assert (
-        result_summary["secret_reference_result_status"]
-        == "secret_reference_missing_lease_ref"
-    )
+    assert result_summary["secret_reference_result_status"] == "secret_reference_missing_lease_ref"
     assert result_summary["secret_reference_lease_ref"] == ""
     assert result_summary["secret_retrieval_decision"] == "blocked_secret_reference_evidence"
     assert result_summary["checkpoint_claim_evidence_status"] == "validated"

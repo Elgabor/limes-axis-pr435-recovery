@@ -410,15 +410,21 @@ def test_oidc_callback_rejects_state_mismatch_without_token_exchange() -> None:
     assert token_requests == []
 
 
-def test_identity_session_rejects_tampered_session_cookie_when_auth_required() -> None:
+def test_identity_session_reports_tampered_session_cookie_without_honoring_it() -> None:
     settings = _settings(oidc_session_cookie_secure=False)
     client = TestClient(create_app(settings))
     client.cookies.set("axis_session", "tampered")
 
+    # The session report stays readable so the console can render a sign-in
+    # gate; a tampered cookie is classified, never honored, and leaks nothing.
     response = client.get("/identity/session")
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["reason"] == "invalid_session_cookie"
+    assert response.status_code == 200
+    body = response.json()
+    assert body["authenticated"] is False
+    assert body["actor_id"] is None
+    assert body["tenant_id"] is None
+    assert body["unauthenticated_reason"] == "invalid_session_cookie"
 
 
 def test_oidc_session_logout_revokes_persisted_session_and_deletes_cookie() -> None:
@@ -450,8 +456,9 @@ def test_oidc_session_logout_revokes_persisted_session_and_deletes_cookie() -> N
 
     response = client.get("/identity/session")
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["reason"] == "missing_authorization"
+    assert response.status_code == 200
+    assert response.json()["authenticated"] is False
+    assert response.json()["unauthenticated_reason"] == "missing_authorization"
 
 
 def test_oidc_federated_logout_revokes_session_and_redirects_to_idp_without_tokens() -> None:
@@ -533,8 +540,12 @@ def test_revoked_oidc_session_cookie_cannot_authenticate_again() -> None:
 
     response = client.get("/identity/session")
 
-    assert response.status_code == 401
-    assert response.json()["detail"]["reason"] == "revoked_session_cookie"
+    assert response.status_code == 200
+    body = response.json()
+    assert body["authenticated"] is False
+    assert body["actor_id"] is None
+    assert body["tenant_id"] is None
+    assert body["unauthenticated_reason"] == "revoked_session_cookie"
     with factory() as session:
         persisted_session = _one_oidc_browser_session(session)
         assert persisted_session["status"] == "revoked"

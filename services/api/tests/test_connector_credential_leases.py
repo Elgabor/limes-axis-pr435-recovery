@@ -4,6 +4,7 @@ from runpy import run_path
 
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -404,8 +405,7 @@ def test_connector_credential_leases_endpoint_reports_audit_payload_invariants(
                     "secret_material_returned": "false",
                     "provider_mode": "deferred",
                     "provider_lease_ref": (
-                        "deferred-lease://tenant_demo_manufacturing/"
-                        "lease_payload_mismatch_target"
+                        "deferred-lease://tenant_demo_manufacturing/lease_payload_mismatch_target"
                     ),
                 },
                 granted_at=datetime(2026, 6, 27, 10, 0, tzinfo=UTC),
@@ -434,8 +434,7 @@ def test_connector_credential_leases_endpoint_reports_audit_payload_invariants(
             "audit_event_id": str(lease_audit_event.id),
             "reason": "lease_audit_event_payload_mismatch",
             "detail": (
-                "Lease audit event payload must match connector_id, "
-                "handle_id and lease_id."
+                "Lease audit event payload must match connector_id, handle_id and lease_id."
             ),
         }
     ]
@@ -725,14 +724,11 @@ def test_request_connector_credential_lease_uses_provider_specific_runtime_when_
     assert response.status_code == 201
     body = response.json()
     assert body["lease_mode"] == "provider_specific_vault_kms_lease"
-    assert body["lease_result"]["adapter"] == (
-        "axis-provider-specific-vault-kms-lease-adapter"
-    )
+    assert body["lease_result"]["adapter"] == ("axis-provider-specific-vault-kms-lease-adapter")
     assert body["lease_result"]["status"] == "lease_executed"
     assert body["lease_result"]["provider_mode"] == "hashicorp_vault"
     assert body["lease_result"]["provider_lease_ref"] == (
-        "vault://axis/leases/tenant_demo_manufacturing/"
-        "lease_file_csv_provider_vault_20260622"
+        "vault://axis/leases/tenant_demo_manufacturing/lease_file_csv_provider_vault_20260622"
     )
     assert body["lease_result"]["external_secret_read"] == "false"
     assert body["lease_result"]["secret_material_returned"] == "false"
@@ -885,9 +881,61 @@ def test_openapi_exposes_connector_credential_lease_endpoints() -> None:
     assert "/demo/manufacturing/connectors/credential-leases" in paths
     assert "get" in paths["/demo/manufacturing/connectors/credential-leases"]
     assert "post" in paths["/demo/manufacturing/connectors/credential-leases"]
-    assert (
-        "/demo/manufacturing/connectors/credential-leases/{lease_id}/renew" in paths
-    )
-    assert (
-        "/demo/manufacturing/connectors/credential-leases/{lease_id}/revoke" in paths
-    )
+    assert "/demo/manufacturing/connectors/credential-leases/{lease_id}/renew" in paths
+    assert "/demo/manufacturing/connectors/credential-leases/{lease_id}/revoke" in paths
+
+
+def test_lease_create_rejects_non_string_runtime_result_values() -> None:
+    """The persisted lease_result is public-safe string evidence.
+
+    A boolean here used to persist silently and then fail the whole lease
+    registry read model at query time; the write boundary must reject it.
+    """
+    with pytest.raises(ValidationError, match="secret_material_returned"):
+        ConnectorCredentialLeaseCreate(
+            tenant_id="tenant_demo_manufacturing",
+            connector_id="external_db_operational_mirror",
+            handle_id="cred_external_db_readonly",
+            lease_id="lease_invalid_bool_result",
+            requested_by="axis-connector-runtime-role",
+            lease_purpose="governed_dry_run",
+            secret_provider="external_vault",
+            secret_ref="vault://axis/demo/connectors/external-db-readonly",
+            permission_decision={
+                "allowed": True,
+                "reason": "all_required_scopes_present",
+            },
+            lease_result={
+                "adapter": "axis-self-hosted-vault-kms-lease-adapter",
+                "status": "lease_executed",
+                "provider_lease_ref": "self-hosted-vault-kms://tenant/lease_x",
+                "secret_material_returned": False,
+            },
+            granted_at=datetime(2026, 8, 23, 10, 0, tzinfo=UTC),
+            expires_at=datetime(2026, 8, 23, 10, 15, tzinfo=UTC),
+            renewal_due_at=datetime(2026, 8, 23, 10, 10, tzinfo=UTC),
+        )
+
+
+def test_lease_create_requires_complete_permission_decision() -> None:
+    """A decision without its reason is not governance evidence.
+
+    Console contracts render `allowed` + `reason`; a partial decision passed
+    raw repository writes once and then failed every registry parse. The
+    Create model is the boundary that keeps persisted rows readable.
+    """
+    with pytest.raises(ValidationError):
+        ConnectorCredentialLeaseCreate(
+            tenant_id="tenant_demo_manufacturing",
+            connector_id="external_db_operational_mirror",
+            handle_id="cred_external_db_readonly",
+            lease_id="lease_missing_reason",
+            requested_by="axis-connector-runtime-role",
+            lease_purpose="governed_dry_run",
+            secret_provider="external_vault",
+            secret_ref="vault://axis/demo/connectors/external-db-readonly",
+            permission_decision={"allowed": True},
+            granted_at=datetime(2026, 8, 23, 10, 0, tzinfo=UTC),
+            expires_at=datetime(2026, 8, 23, 10, 15, tzinfo=UTC),
+            renewal_due_at=datetime(2026, 8, 23, 10, 10, tzinfo=UTC),
+        )

@@ -17,8 +17,10 @@ import {
   type TenantRecord,
 } from "@/lib/platform-tenants";
 import { toAxisOperatorError, type AxisOperatorError } from "@/lib/axis-api";
+import { deriveGovernedActor } from "@/lib/governed-action";
 import { safeRandomUuid } from "@/lib/ids";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
+import { useIdentitySession } from "@/lib/use-identity-session";
 import { useConsole } from "@/providers/console-provider";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
@@ -34,6 +36,8 @@ type SubmissionState =
 
 export function TenantProvisionForm() {
   const { session } = useOidcConsoleSession();
+  const identity = useIdentitySession();
+  const { ssoBlocked } = deriveGovernedActor(identity.data ?? null, "platform-tenant-operator");
   const { triggerRefresh } = useConsole();
   const [form, setForm] = useState<TenantProvisionFormState>(emptyTenantProvisionForm);
   const [idempotencyKey, setIdempotencyKey] = useState<string>(() => safeRandomUuid());
@@ -46,6 +50,10 @@ export function TenantProvisionForm() {
 
   async function submitProvision(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (ssoBlocked) {
+      return;
+    }
 
     const validationErrors = validateTenantProvisionForm(form);
     setFieldErrors(validationErrors);
@@ -273,10 +281,17 @@ export function TenantProvisionForm() {
             value={form.notesText}
           />
         </Field>
-        <button className="inline-flex items-center justify-center gap-2 rounded-full bg-navy px-4 py-2 text-sm font-medium text-white transition-all duration-300 select-none hover:bg-signal hover:shadow-[0_8px_24px_rgb(47_100_255/0.35)] disabled:cursor-not-allowed disabled:opacity-55 dark:bg-signal dark:hover:bg-white dark:hover:text-navy dark:hover:shadow-none" disabled={submission.phase === "saving"} type="submit">
-          <Building2 size={15} />
-          {submission.phase === "saving" ? "Provisioning" : "Provision tenant"}
-        </button>
+        {ssoBlocked ? (
+          <p className="m-0 flex items-center gap-2 text-sm text-muted" role="status">
+            <Building2 aria-hidden="true" className="shrink-0 text-signal" size={15} />
+            Sign in with SSO to provision tenants.
+          </p>
+        ) : (
+          <button className="inline-flex items-center justify-center gap-2 rounded-full bg-navy px-4 py-2 text-sm font-medium text-white transition-all duration-300 select-none hover:bg-signal hover:shadow-[0_8px_24px_rgb(47_100_255/0.35)] disabled:cursor-not-allowed disabled:opacity-55 dark:bg-signal dark:hover:bg-white dark:hover:text-navy dark:hover:shadow-none" disabled={submission.phase === "saving"} type="submit">
+            <Building2 size={15} />
+            {submission.phase === "saving" ? "Provisioning" : "Provision tenant"}
+          </button>
+        )}
       </form>
 
       {submission.phase === "failed" ? (

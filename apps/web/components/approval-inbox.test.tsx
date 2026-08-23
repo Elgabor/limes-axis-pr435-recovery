@@ -21,6 +21,10 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+vi.mock("@/lib/use-identity-session", () => ({
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 vi.mock("@/providers/console-provider", () => ({
   useConsole: () => ({ triggerRefresh: mocks.triggerRefresh }),
 }));
@@ -264,6 +268,75 @@ describe("ApprovalInbox states", () => {
     expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
   });
 
+  it("counts API-reconciled decisions as decided, not pending", () => {
+    mockQuery({
+      data: {
+        ...inboxFixture,
+        approvals: [
+          inboxFixture.approvals[0],
+          { ...inboxFixture.approvals[0], approval_id: "appr_decided_fixture", status: "decided" },
+        ],
+      },
+      source: "api",
+    });
+    renderInbox();
+
+    // One genuinely pending, one already decided and reconciled by the API.
+    const metrics = screen.getByLabelText("Approval metrics");
+    expect(metrics).toHaveTextContent(/Pending\s*Needs watching:\s*1(?!\d)/);
+    expect(metrics).toHaveTextContent(/Decided\s*Ready:\s*1(?!\d)/);
+  });
+
+  it("keeps decided approvals out of the actionable queue and in decision history", () => {
+    mockQuery({
+      data: {
+        ...inboxFixture,
+        approvals: [
+          inboxFixture.approvals[0],
+          { ...inboxFixture.approvals[1], status: "decided" },
+        ],
+        decision_history: [
+          {
+            approval_id: "appr_quality_fixture",
+            action: "Place fixture quality hold",
+            risk_level: "medium",
+            status: "approved",
+            decision: "approve",
+            domain: "Quality",
+            workflow_id: "wf_quality_fixture",
+            decided_by: "quality-owner",
+            decided_at: "2026-08-22T08:30:00Z",
+            rationale: "Deviation confirmed by QMS.",
+            audit_event_id: "33333333-3333-4333-8333-333333333333",
+            follow_through_status: "signaled",
+          },
+        ],
+      },
+      source: "api",
+    });
+    renderInbox();
+
+    // The decided item is not offered as actionable queue work…
+    expect(
+      screen.queryByRole("button", { name: /Place fixture quality hold/ }),
+    ).not.toBeInTheDocument();
+    // …but stays visible as terminal history with its recorded facts.
+    const history = within(screen.getByLabelText("Decision history"));
+    expect(history.getByText("Place fixture quality hold")).toBeVisible();
+    expect(screen.getByText(/quality-owner/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "View audit event" }),
+    ).toHaveAttribute("href", "/audit?event_id=33333333-3333-4333-8333-333333333333");
+  });
+
+  it("renders an honest empty state when no decisions have been recorded", () => {
+    mockQuery({ data: inboxFixture, source: "api" });
+    renderInbox();
+
+    expect(screen.getByText("No terminal decisions recorded yet.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Decision history")).toBeInTheDocument();
+  });
+
   it("keeps past follow-through visible when the current approval queue is empty", () => {
     mockQuery(
       { data: { ...inboxFixture, approvals: [] }, source: "api" },
@@ -437,6 +510,9 @@ describe("ApprovalInbox decision flow", () => {
       }),
     );
     expect(mocks.triggerRefresh).toHaveBeenCalledTimes(1);
+    // The decided approval is pinned in the URL so the operator keeps
+    // reviewing exactly what they decided after it leaves the queue.
+    expect(window.location.search).toBe("?approval_id=appr_supply_fixture");
 
     // Inline confirmation links to the created audit event.
     const decisionSection = screen.getByRole("region", { name: "Decision" });

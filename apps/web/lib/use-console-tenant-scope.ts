@@ -1,11 +1,9 @@
 "use client";
 
-import type { IdentitySessionReadModel } from "./platform-overview";
-import { parseIdentitySessionReadModel } from "./runtime-contracts/overview";
+import { IDENTITY_SESSION_ENDPOINT, useIdentitySession } from "./use-identity-session";
 import { resolveConsoleTenantScope } from "./tenant-scope";
-import { useAxisQuery } from "./use-axis-query";
 
-export const IDENTITY_SESSION_ENDPOINT = "/identity/session";
+export { IDENTITY_SESSION_ENDPOINT };
 
 /**
  * Resolve the tenant boundary shared by every tenant-scoped console surface.
@@ -15,9 +13,7 @@ export const IDENTITY_SESSION_ENDPOINT = "/identity/session";
  * transport failures and authenticated sessions without a tenant fail closed.
  */
 export function useConsoleTenantScope() {
-  const identity = useAxisQuery<IdentitySessionReadModel>(IDENTITY_SESSION_ENDPOINT, {
-    parse: parseIdentitySessionReadModel,
-  });
+  const identity = useIdentitySession();
   const tenantScope = resolveConsoleTenantScope(identity.data);
   const tenantId = tenantScope.tenantId;
 

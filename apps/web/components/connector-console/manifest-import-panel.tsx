@@ -17,6 +17,7 @@ import {
   axisFetch,
   axisFetchParsedJson,
   axisResponseRequestId,
+  readAxisResponseBody,
   toAxisOperatorError,
   type AxisOperatorError,
 } from "@/lib/axis-api";
@@ -30,6 +31,7 @@ import {
 } from "@/lib/connectors-console";
 import { safeRandomUuid } from "@/lib/ids";
 import type { IdentitySessionReadModel } from "@/lib/platform-overview";
+import { deriveGovernedActor } from "@/lib/governed-action";
 import {
   parseConnectorManifestBatchValidationResponse,
   parseConnectorManifestDetail,
@@ -96,18 +98,6 @@ export function buildManifestDetailPath(connectorId: string, tenantId: string): 
   );
 }
 
-async function readResponseBody(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text.trim()) {
-    return null;
-  }
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
-}
-
 function concurrentChangeReason(body: unknown): boolean {
   if (!body || typeof body !== "object" || !("detail" in body)) {
     return false;
@@ -150,9 +140,10 @@ export function ManifestImportPanel({
   const [applyState, setApplyState] = useState<ApplyState>({ phase: "idle" });
   const reviewGeneration = useRef(0);
 
-  const ssoBlocked = identitySession != null
-    && identitySession.api_auth_required
-    && !identitySession.authenticated;
+  const { actorId: governedActorId, ssoBlocked } = deriveGovernedActor(
+    identitySession,
+    CONNECTOR_CONSOLE_ACTOR,
+  );
   const invalidCount = validation?.summary.invalid ?? 0;
   const applying = applyState.phase === "applying";
   const canApply = validation !== null
@@ -242,7 +233,7 @@ export function ManifestImportPanel({
           session,
           body: {
             tenant_id: tenantId,
-            registered_by: identitySession?.actor_id ?? CONNECTOR_CONSOLE_ACTOR,
+            registered_by: governedActorId,
             manifests: parsed.documents,
           },
         },
@@ -319,7 +310,7 @@ export function ManifestImportPanel({
           body: {
             ...documents[index],
             tenant_id: tenantId,
-            registered_by: identitySession?.actor_id ?? CONNECTOR_CONSOLE_ACTOR,
+            registered_by: governedActorId,
             ...(replacing ? {
               idempotency_key: idempotencyKeys[index],
               expected_revision_number: replacementRevisions[index],
@@ -328,7 +319,7 @@ export function ManifestImportPanel({
         });
         const expectedStatus = replacing ? 200 : 201;
         if (response.status !== expectedStatus) {
-          const responseBody = await readResponseBody(response);
+          const responseBody = await readAxisResponseBody(response);
           const conflict = response.status === 409 && concurrentChangeReason(responseBody);
           const fallbackMessage = conflict && connectorId
             ? copy.concurrentConflict(connectorId)

@@ -13,12 +13,10 @@ import { NotificationPanel } from "@/components/topbar/notification-panel";
 import { apiStatusClass } from "@/lib/identity-format";
 import { isNavActive } from "@/lib/nav";
 import type {
-  IdentitySessionReadModel,
   ManufacturingNotificationCenter,
 } from "@/lib/platform-overview";
 import { useAxisQuery } from "@/lib/use-axis-query";
 import {
-  parseIdentitySessionReadModel,
   parseManufacturingNotificationCenter,
 } from "@/lib/runtime-contracts/overview";
 import {
@@ -28,6 +26,7 @@ import {
   OPERATIONS_API_PREFIX,
 } from "@/lib/tenant-scope";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
+import { useIdentitySession } from "@/lib/use-identity-session";
 import { useConsole } from "@/providers/console-provider";
 
 type TopbarPanel = "notifications" | "help" | "account" | null;
@@ -53,13 +52,9 @@ export function ConsoleTopbar({
     useCallback(() => setActivePanel(null), []),
   );
   const { session } = useOidcConsoleSession();
-  const {
-    data: identitySession,
-    source: identitySessionSource,
-  } =
-    useAxisQuery<IdentitySessionReadModel>("/identity/session", {
-      parse: parseIdentitySessionReadModel,
-    });
+  const identity = useIdentitySession();
+  const identitySession = identity.data;
+  const identitySessionSource = identity.source;
   const tenantScope = resolveConsoleTenantScope(identitySession);
   const tenantId = tenantScope.tenantId;
   const notificationsEnabled = identitySessionSource === "api" && tenantId !== null;

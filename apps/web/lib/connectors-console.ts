@@ -5,6 +5,7 @@ import type {
   ConnectorPreviewSample,
   ConnectorRegistryItem,
 } from "./connectors-demo";
+import { OPERATIONS_API_PREFIX } from "./tenant-scope";
 
 /*
  * Pure helpers behind the connector console: client-side CSV parsing for the
@@ -15,7 +16,13 @@ import type {
 
 export const CONNECTOR_SYNC_DISPATCH_SCOPE = "connectors:sync:dispatch";
 export const CONNECTOR_SYNC_EXECUTE_SCOPE = "connectors:sync:execute";
+export const CONNECTOR_MANIFEST_LIFECYCLE_SCOPE = "connectors:manifest:lifecycle";
+export const CONNECTOR_MANIFEST_ENABLE_LIVE_SCOPE = "connectors:manifest:enable_live";
+export const SOURCE_DISCOVERY_SCOPE = "connectors:source:discover";
 export const CONNECTOR_MANIFEST_BATCH_LIMIT = 50;
+
+/** The one connector whose source operations reach a real external database. */
+export const EXTERNAL_DB_CONNECTOR_ID = "external_db_operational_mirror";
 
 /** Fallback actor recorded on unauthenticated demo writes; the API rebinds it to the OIDC principal when a session exists. */
 export const CONNECTOR_CONSOLE_ACTOR = "connector-console-operator";
@@ -441,4 +448,347 @@ export function pendingProposalCount(proposals: ConnectorOntologyProposalRecord[
 /** Manifest lifecycle states in which the API allows connector run operations. */
 export function manifestAllowsRuns(manifest: { status: string } | null): boolean {
   return manifest !== null && ["active_preview", "active_live"].includes(manifest.status);
+}
+
+// ---------------------------------------------------------------------------
+// Manifest lifecycle transitions
+
+/**
+ * Allowed lifecycle targets per current status, mirroring the API's
+ * `MANIFEST_LIFECYCLE_TRANSITIONS` (connector_manifests.py). Deprecation is
+ * terminal; only the API decides whether a requested transition is legal.
+ */
+export function manifestLifecycleTargets(status: string | null | undefined): string[] {
+  switch (status) {
+    case "registered_preview_only":
+      return ["active_preview", "deprecated"];
+    case "active_preview":
+      return ["active_live", "deprecated"];
+    case "active_live":
+      return ["deprecated"];
+    default:
+      return [];
+  }
+}
+
+/** Mirrors the API's `ConnectorManifestLifecycleRequest` (extra="forbid"). */
+export type ConnectorManifestLifecyclePayload = {
+  tenant_id: string;
+  transitioned_by: string;
+  target_status: string;
+  actor_scopes: string[];
+  required_scope: string;
+  transition_reason: string;
+  evidence_refs: string[];
+};
+
+/**
+ * Scopes the API checks for a transition, mirroring
+ * `_required_scopes_for_target` (connector_manifests.py): live enablement
+ * demands the base lifecycle scope *and* the dedicated enable-live scope.
+ */
+export function manifestLifecycleScopes(targetStatus: string): string[] {
+  return targetStatus === "active_live"
+    ? [CONNECTOR_MANIFEST_LIFECYCLE_SCOPE, CONNECTOR_MANIFEST_ENABLE_LIVE_SCOPE]
+    : [CONNECTOR_MANIFEST_LIFECYCLE_SCOPE];
+}
+
+export function buildManifestLifecycleRequest(input: {
+  tenantId: string;
+  actorId: string;
+  targetStatus: string;
+  reason: string;
+  evidenceRefs?: string[];
+}): ConnectorManifestLifecyclePayload {
+  const scopes = manifestLifecycleScopes(input.targetStatus);
+  return {
+    tenant_id: input.tenantId,
+    transitioned_by: input.actorId,
+    target_status: input.targetStatus,
+    // Demo-mode deployments have no OIDC principal, so the API evaluates the
+    // grants declared here; authenticated sessions are re-stamped server-side
+    // from the verified token.
+    actor_scopes: scopes,
+    required_scope: scopes[0],
+    transition_reason: input.reason,
+    evidence_refs: input.evidenceRefs ?? [],
+  };
+}
+
+export type SourceOperationRefs = {
+  connectionProfileId: string;
+  schemaName?: string;
+  credentialLeaseId: string;
+  egressPolicyId: string;
+};
+
+/**
+ * Build verify/discover payloads from operator-supplied references. Lease
+ * and egress evidence are resolved server-side from persisted records; the
+ * payload only names them. Demo mode declares its scope in the body, same
+ * convention as lifecycle transitions.
+ */
+export function buildSourceVerifyRequest(input: {
+  tenantId: string;
+  actorId: string;
+  refs: SourceOperationRefs;
+  token: string;
+}) {
+  const token = input.token.toLowerCase().replaceAll("-", "");
+  return {
+    tenant_id: input.tenantId,
+    connector_id: EXTERNAL_DB_CONNECTOR_ID,
+    verification_id: `verify_console_${token}`,
+    requested_by: input.actorId,
+    connection_profile_id: input.refs.connectionProfileId,
+    credential_lease_id: input.refs.credentialLeaseId,
+    egress_policy_id: input.refs.egressPolicyId,
+    actor_scopes: [SOURCE_DISCOVERY_SCOPE],
+  };
+}
+
+export function buildSourceDiscoveryRequest(input: {
+  tenantId: string;
+  actorId: string;
+  refs: SourceOperationRefs;
+  token: string;
+}) {
+  if (!input.refs.schemaName) {
+    throw new Error("Schema name is required for source discovery.");
+  }
+  const token = input.token.toLowerCase().replaceAll("-", "");
+  return {
+    tenant_id: input.tenantId,
+    connector_id: EXTERNAL_DB_CONNECTOR_ID,
+    discovery_id: `discovery_console_${token}`,
+    requested_by: input.actorId,
+    connection_profile_id: input.refs.connectionProfileId,
+    schema_name: input.refs.schemaName,
+    credential_lease_id: input.refs.credentialLeaseId,
+    egress_policy_id: input.refs.egressPolicyId,
+    actor_scopes: [SOURCE_DISCOVERY_SCOPE],
+  };
+}
+
+export const SOURCE_ACTIVATION_SCOPE = "connectors:source:activate";
+
+export type SourceActivationSelection = {
+  bindingId: string;
+  resourceName: string;
+  expectedSchemaFingerprint: string;
+};
+
+export function buildSourceActivationRequest(input: {
+  tenantId: string;
+  actorId: string;
+  refs: SourceOperationRefs;
+  reason: string;
+  activationToken: string;
+  selections: SourceActivationSelection[];
+}) {
+  if (input.selections.length === 0) {
+    throw new Error("At least one table must be selected for activation.");
+  }
+  const activationId = `activation_console_${input.activationToken
+    .toLowerCase()
+    .replaceAll("-", "")}`;
+  return {
+    tenant_id: input.tenantId,
+    connector_id: EXTERNAL_DB_CONNECTOR_ID,
+    activation_id: activationId,
+    requested_by: input.actorId,
+    connection_profile_id: input.refs.connectionProfileId,
+    credential_lease_id: input.refs.credentialLeaseId,
+    egress_policy_id: input.refs.egressPolicyId,
+    activation_reason: input.reason,
+    selections: input.selections.map((selection) => ({
+      binding_id: selection.bindingId,
+      resource_name: selection.resourceName,
+      expected_schema_fingerprint: selection.expectedSchemaFingerprint,
+    })),
+    actor_scopes: [SOURCE_ACTIVATION_SCOPE],
+  };
+}
+
+export const SOURCE_INGESTION_SCOPE = "connectors:source:ingest";
+export const SOURCE_INGESTION_READ_SCOPE = "connectors:source:ingest:read";
+
+export const SOURCE_INGESTION_ENDPOINTS = {
+  eligibility: `${OPERATIONS_API_PREFIX}/connectors/external-db/source-ingestion/eligibility`,
+  overview: `${OPERATIONS_API_PREFIX}/connectors/external-db/source-ingestion/overview`,
+  requests: `${OPERATIONS_API_PREFIX}/connectors/external-db/source-ingestion-requests`,
+} as const;
+
+/**
+ * Build the governed ingestion request payload. The operator only names
+ * bindings; the server pins each schema fingerprint from the active binding
+ * itself, so no fingerprint ever crosses the client boundary. Demo mode
+ * declares its scope in the body, same convention as discovery/activation.
+ */
+export function buildSourceIngestionRequest(input: {
+  tenantId: string;
+  actorId: string;
+  requestId: string;
+  reason: string;
+  bindingIds: string[];
+  stage?: "validate" | "extract";
+}) {
+  const requestId = input.requestId.trim();
+  const reason = input.reason.trim();
+  if (!requestId) {
+    throw new Error("A request ID is required for governed ingestion.");
+  }
+  if (!reason) {
+    throw new Error("A governance reason is required for ingestion requests.");
+  }
+  const bindingIds = [...new Set(input.bindingIds)];
+  if (bindingIds.length === 0) {
+    throw new Error("At least one pending binding must be selected for ingestion.");
+  }
+  return {
+    tenant_id: input.tenantId,
+    connector_id: EXTERNAL_DB_CONNECTOR_ID,
+    request_id: requestId,
+    requested_by: input.actorId,
+    reason,
+    stage: input.stage ?? "validate",
+    selections: bindingIds.map((binding_id) => ({ binding_id })),
+    actor_scopes: [SOURCE_INGESTION_SCOPE],
+  };
+}
+
+export const SOURCE_EXTRACTION_BATCHES_ENDPOINT = (
+  requestId: string,
+) =>
+  `${SOURCE_INGESTION_ENDPOINTS.requests}/${encodeURIComponent(requestId)}/batches`;
+
+export const SOURCE_EXTRACTION_RECONCILIATION_ENDPOINT = (
+  requestId: string,
+) =>
+  `${SOURCE_INGESTION_ENDPOINTS.requests}/${encodeURIComponent(
+    requestId,
+  )}/batches/reconciliation`;
+
+/** Fenced re-dispatch of a dead-lettered governed ingestion request. */
+export function buildSourceIngestionRedispatchRequest(input: {
+  tenantId: string;
+  actorId: string;
+  reason: string;
+  idempotencyKey: string;
+}) {
+  const reason = input.reason.trim();
+  const key = input.idempotencyKey.trim();
+  if (!reason) {
+    throw new Error("A remediation reason is required to re-dispatch.");
+  }
+  if (!key) {
+    throw new Error("An idempotency key is required to re-dispatch.");
+  }
+  return {
+    tenant_id: input.tenantId,
+    requeued_by: input.actorId,
+    reason,
+    idempotency_key: key,
+    actor_scopes: [SOURCE_INGESTION_SCOPE],
+  };
+}
+
+/** Fenced cancel of a still-pending governed ingestion request. */
+export function buildSourceIngestionCancelRequest(input: {
+  tenantId: string;
+  actorId: string;
+  reason?: string;
+}) {
+  return {
+    tenant_id: input.tenantId,
+    cancelled_by: input.actorId,
+    ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
+    actor_scopes: [SOURCE_INGESTION_SCOPE],
+  };
+}
+
+/**
+ * Read paths carry the demo read scope as a repeated query parameter — the
+ * same convention the checkpoint evidence endpoints use for GET scopes.
+ */
+export function buildSourceIngestionReadPath(input: {
+  endpoint: string;
+  tenantId: string;
+  connectorId?: string;
+  requestId?: string;
+}): string {
+  const query = new URLSearchParams({ tenant_id: input.tenantId });
+  if (input.connectorId !== undefined) {
+    query.set("connector_id", input.connectorId);
+  }
+  query.append("actor_scopes", SOURCE_INGESTION_READ_SCOPE);
+  const suffix = input.requestId !== undefined
+    ? `/${encodeURIComponent(input.requestId)}`
+    : "";
+  return `${input.endpoint}${suffix}?${query.toString()}`;
+}
+
+const LIVE_SYNC_MODES = ["live_query", "live_sync", "scheduled_sync"];
+const LIVE_REQUIRED_ALLOWED_OPERATIONS = ["live_query", "external_egress"];
+const LIVE_FORBIDDEN_BLOCKED_OPERATIONS = ["live_query", "external_egress"];
+
+export type LiveEnablementRequirement = {
+  met: boolean;
+};
+
+/**
+ * Which of the API's live-enablement preconditions this connector's manifest
+ * already satisfies. The API re-validates every gate; this list only tells
+ * the operator what to expect before they try.
+ */
+export function liveEnablementRequirements(
+  connector: ConnectorRegistryItem,
+): Record<string, LiveEnablementRequirement> {
+  const syncModes = connector.manifest.sync_modes ?? [];
+  const allowedOperations = connector.runtime_policy.allowed_operations ?? [];
+  const blockedOperations = connector.runtime_policy.blocked_operations ?? [];
+  const egressPolicy = (connector.runtime_policy.egress_policy ?? "").trim().toLowerCase();
+
+  return {
+    liveSyncMode: {
+      met: syncModes.some((mode) => LIVE_SYNC_MODES.includes(mode)),
+    },
+    liveOperationsAllowed: {
+      met:
+        LIVE_REQUIRED_ALLOWED_OPERATIONS.every((operation) => allowedOperations.includes(operation))
+        && !blockedOperations.some((operation) =>
+          LIVE_FORBIDDEN_BLOCKED_OPERATIONS.includes(operation)
+        ),
+    },
+    egressBoundaryNamed: {
+      met: egressPolicy !== "" && egressPolicy !== "none" && egressPolicy !== "no-external-egress",
+    },
+  };
+}
+
+export function allLiveRequirementsMet(
+  requirements: Record<string, LiveEnablementRequirement>,
+): boolean {
+  return Object.values(requirements).every((requirement) => requirement.met);
+}
+
+/** Evidence categories the API demands for live enablement, with accepted prefixes. */
+const LIVE_EVIDENCE_PREFIXES: Record<string, string[]> = {
+  approval: ["approval:"],
+  policy: ["policy:"],
+  credential: ["credential:", "secret:", "vault:"],
+};
+
+/**
+ * Which evidence categories are still missing under the API's
+ * `_has_required_live_evidence` contract, so the console can ask for the
+ * right references before the submission is rejected.
+ */
+export function missingLiveEvidenceCategories(evidenceRefs: string[]): string[] {
+  const normalizedRefs = evidenceRefs.map((ref) => ref.trim().toLowerCase());
+  return Object.entries(LIVE_EVIDENCE_PREFIXES)
+    .filter(([, prefixes]) =>
+      !normalizedRefs.some((ref) => prefixes.some((prefix) => ref.startsWith(prefix)))
+    )
+    .map(([category]) => category);
 }

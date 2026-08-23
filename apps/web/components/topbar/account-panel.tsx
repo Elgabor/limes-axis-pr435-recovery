@@ -26,18 +26,14 @@ import {
   identitySessionTone,
   operatorInitials,
 } from "@/lib/identity-format";
-import { buildOidcAuthorizeUrl, buildOidcLogoutUrl } from "@/lib/oidc-session";
+import {
+  buildOidcAuthorizeUrl,
+  buildOidcLogoutUrl,
+  currentReturnPath,
+} from "@/lib/oidc-session";
 import type { IdentitySessionReadModel } from "@/lib/platform-overview";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
-
-function currentReturnPath(): string {
-  if (typeof window === "undefined") {
-    return "/";
-  }
-
-  return `${window.location.pathname}${window.location.search}`;
-}
 
 export function AccountPanel({
   className,

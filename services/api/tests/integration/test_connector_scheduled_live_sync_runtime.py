@@ -225,8 +225,8 @@ def _seed_axis_state(
             secret_ref=f"env://{ENV_SECRET_VAR}",
             vault_kms_policy={"ttl_seconds": "900", "max_ttl_seconds": "1800"},
             permission_decision={
-                "allowed": "true",
-                "scope": "connectors:credential_lease:request",
+                "allowed": True,
+                "reason": "all_required_scopes_present",
             },
             lease_result={
                 "adapter": "axis-provider-specific-vault-kms-lease-adapter",
@@ -234,7 +234,7 @@ def _seed_axis_state(
                 "provider_lease_ref": (
                     f"env://axis/leases/{TENANT_ID}/{EXTERNAL_DB_LEASE_ID}"
                 ),
-                "secret_material_returned": False,
+                "secret_material_returned": "false",
             },
             granted_at=now,
             expires_at=now.replace(year=now.year + 1),

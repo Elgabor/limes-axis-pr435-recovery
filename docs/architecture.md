@@ -181,6 +181,29 @@ size and content type, and appends
 is intentionally self-hosted and extractable, so future MinIO/S3/WORM retention
 profiles can replace the storage implementation without bypassing approval,
 checksum or audit gates.
+Governed source ingestion extends the boundary with a two-stage pipeline:
+validation (fingerprint freshness against Axis' own observations, no dial) and
+— only when both dispatch and extraction flags are enabled — bounded read-only
+extraction through a typed runtime port whose self-hosted Postgres adapter
+reuses the shared lease/egress evidence and read-only session hardening. Row
+payloads persist exclusively in the canonical object store under deterministic
+tenant-scoped keys; the operational database keeps metadata-only batch records
+(counts, digests, watermarks, provenance), and raw rows never enter API views,
+audit payloads, logs or errors. Batch evidence is a first-class read model —
+keyset-paginated, filterable, scoped by the ingestion read scope — and a
+read-only reconciliation service compares deterministic tenant/request key
+prefixes against recorded metadata to surface divergence between the two
+stores without any repair capability. A cross-request overview read model
+aggregates connector-level status (including its dead-lettered subset) behind
+the same read scope, and each request exposes an append-only per-attempt
+timeline whose entries are metadata-only verdicts recorded by the dispatcher.
+Batch envelopes can leave the platform only as approval-gated, checksummed,
+metadata-only export bundles: requested and decided under dedicated scopes,
+materialized once through the governed object-store seam with TOCTOU checksum
+verification, and retrievable back only from the local filesystem adapter with
+digest verification and read-audit evidence — never row payloads, never
+watermark values, never a cloud client constructed by these surfaces.
+
 Connector ontology
 proposal records persist preview-derived proposed nodes for review, link to
 `connector.ontology_proposals.recorded` audit events and keep graph mutation

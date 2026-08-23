@@ -18,6 +18,11 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+vi.mock("@/lib/use-identity-session", () => ({
+  IDENTITY_SESSION_ENDPOINT: "/identity/session",
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 // The console renders its own ConsolePage (dynamic source label); stub the
 // scaffold so the test focuses on the settings panels rather than the topbar.
 vi.mock("@/components/console-page", () => ({
@@ -117,6 +122,7 @@ const identityFixture: IdentitySessionReadModel = {
   capabilities: [],
   limitations: [],
   notes: [],
+  unauthenticated_reason: null,
 };
 
 const deploymentFixture: DeploymentReadinessReport = {

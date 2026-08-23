@@ -114,11 +114,24 @@ export type ConnectorManifestRecord = {
   created_at: string;
 };
 
+/** One governed lifecycle transition of one connector, newest first. */
+export type ConnectorManifestTransition = {
+  from_status: string;
+  target_status: string;
+  transitioned_by: string;
+  transition_reason: string;
+  evidence_refs: string[];
+  audit_event_id: string;
+  audit_event_type: string;
+  transitioned_at: string;
+};
+
 export type ConnectorManifestDetail = {
   tenant_id: string;
   connector_id: string;
   current_revision: ConnectorManifestRecord;
   revisions: ConnectorManifestRecord[];
+  transitions: ConnectorManifestTransition[];
 };
 
 export type ManufacturingConnectorManifestRegistry = {

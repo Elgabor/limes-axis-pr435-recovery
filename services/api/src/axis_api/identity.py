@@ -141,6 +141,7 @@ class StaticJwksOidcVerifier:
         *,
         client_id: str,
         nonce: str,
+        access_token: str | None = None,
     ) -> dict:
         try:
             claims = jwt.decode(
@@ -149,6 +150,12 @@ class StaticJwksOidcVerifier:
                 algorithms=self.algorithms,
                 audience=client_id,
                 issuer=self.issuer,
+                # Identity providers (Keycloak included) embed an `at_hash`
+                # claim that binds the ID token to the access token issued in
+                # the same token response. python-jose refuses to decode such
+                # a token unless the access token is supplied for comparison —
+                # and verifying the binding here is the stronger posture.
+                access_token=access_token,
             )
         except JWTError as exc:
             raise OidcAuthenticationError("invalid_id_token") from exc
@@ -264,31 +271,55 @@ class RemoteJwksOidcVerifier(StaticJwksOidcVerifier):
             raise OidcAuthenticationError("jwks_fetch_failed") from exc
 
 
-def bind_request_actor(
-    request_model: BaseModel,
+TENANT_MISMATCH_MESSAGE = (
+    "The authenticated OIDC tenant cannot access this tenant scope."
+)
+ACTOR_MISMATCH_MESSAGE = "The request actor does not match the authenticated OIDC actor."
+
+
+def bind_request_actor[TRequestModel: BaseModel](
+    request_model: TRequestModel,
     principal: OidcPrincipal | None,
     *,
-    expected_tenant_id: str,
-) -> BaseModel:
+    expected_tenant_id: str | None = None,
+    actor_field: str = "actor_id",
+    tenant_mismatch_message: str = TENANT_MISMATCH_MESSAGE,
+) -> TRequestModel:
+    """Bind one governed write to the verified OIDC principal.
+
+    This is the single contract behind every governed mutation binder:
+
+    - Without a verified principal (public demo mode) the body values stand.
+    - The governing tenant is ``expected_tenant_id`` when given explicitly,
+      otherwise the request body's own ``tenant_id`` field.
+    - A principal bound to another tenant fails closed (``tenant_mismatch``).
+    - A body that names an actor other than the verified principal fails
+      closed (``actor_mismatch``); impersonation is never persisted.
+    - On success the verified principal's identity wins and its scopes are
+      stamped onto ``actor_scopes`` when the model declares that field.
+    """
     if principal is None:
         return request_model
 
-    if principal.tenant_id != expected_tenant_id:
+    governing_tenant = (
+        expected_tenant_id
+        if expected_tenant_id is not None
+        else getattr(request_model, "tenant_id", None)
+    )
+    if principal.tenant_id != governing_tenant:
         raise ActorBindingError(
             reason="tenant_mismatch",
-            message="The authenticated OIDC tenant cannot access this tenant scope.",
+            message=tenant_mismatch_message,
         )
 
-    request_actor = getattr(request_model, "actor_id", None)
+    request_actor = getattr(request_model, actor_field, None)
     if request_actor and request_actor != principal.actor_id:
         raise ActorBindingError(
             reason="actor_mismatch",
-            message="The request actor does not match the authenticated OIDC actor.",
+            message=ACTOR_MISMATCH_MESSAGE,
         )
 
-    return request_model.model_copy(
-        update={
-            "actor_id": principal.actor_id,
-            "actor_scopes": principal.scopes,
-        }
-    )
+    update: dict[str, object] = {actor_field: principal.actor_id}
+    if "actor_scopes" in type(request_model).model_fields:
+        update["actor_scopes"] = principal.scopes
+    return request_model.model_copy(update=update)

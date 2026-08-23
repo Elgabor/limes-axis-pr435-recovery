@@ -24,7 +24,6 @@ import {
 import { buildOidcAuthorizeUrl, buildOidcLogoutUrl } from "@/lib/oidc-session";
 import type { IdentitySessionReadModel } from "@/lib/platform-overview";
 import { parseIdentityBrowserSessionList } from "@/lib/runtime-contracts/identity";
-import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
 import {
   deriveSourceState,
   PROVENANCE_NOT_APPLICABLE,
@@ -32,6 +31,7 @@ import {
 } from "@/lib/source-state";
 import { useAxisQuery } from "@/lib/use-axis-query";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
+import { useIdentitySession } from "@/lib/use-identity-session";
 import { useConsole } from "@/providers/console-provider";
 
 const SESSIONS_ROUTE = "/settings/sessions";
@@ -300,9 +300,7 @@ function SessionListPanel({
 
 export function SessionSecurityConsole() {
   const { apiBaseUrl } = useConsole();
-  const identity = useAxisQuery<IdentitySessionReadModel>("/identity/session", {
-    parse: parseIdentitySessionReadModel,
-  });
+  const identity = useIdentitySession();
   const identitySession = identity.data;
   const signInUrl = buildOidcAuthorizeUrl(apiBaseUrl, SESSIONS_ROUTE);
   const logoutUrl = buildOidcLogoutUrl(apiBaseUrl, SESSIONS_ROUTE);

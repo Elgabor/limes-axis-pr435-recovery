@@ -36,6 +36,27 @@ class DataAssetNotInCatalog(LookupError):
         self.asset_id = asset_id
 
 
+def connector_id_for_asset(
+    repository,
+    *,
+    tenant_id: str,
+    asset_id: str,
+) -> str:
+    """Resolve an asset id to its connector id, failing closed outside the catalog."""
+
+    registry = get_persisted_manufacturing_connector_registry(
+        repository,
+        tenant_id=tenant_id,
+    )
+    connector_ids = {
+        data_asset_id_for_connector(item.manifest.connector_id): item.manifest.connector_id
+        for item in registry.connectors
+    }
+    if asset_id not in connector_ids:
+        raise DataAssetNotInCatalog(tenant_id, asset_id)
+    return connector_ids[asset_id]
+
+
 def ensure_data_asset_in_catalog(
     repository,
     *,
@@ -44,16 +65,7 @@ def ensure_data_asset_in_catalog(
 ) -> None:
     """Fail closed when an operation targets an asset outside the catalog."""
 
-    registry = get_persisted_manufacturing_connector_registry(
-        repository,
-        tenant_id=tenant_id,
-    )
-    known_asset_ids = {
-        data_asset_id_for_connector(item.manifest.connector_id)
-        for item in registry.connectors
-    }
-    if asset_id not in known_asset_ids:
-        raise DataAssetNotInCatalog(tenant_id, asset_id)
+    connector_id_for_asset(repository, tenant_id=tenant_id, asset_id=asset_id)
 
 
 class DataAssetKind(StrEnum):

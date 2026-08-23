@@ -94,6 +94,18 @@ After `make demo-stack-up`, verify the imported realm discovery document:
 make demo-keycloak-check
 ```
 
+You can also dry-run the canonical enterprise realm bootstrap boundary
+(read-only) against the local demo realm. This is the same tool used for
+enterprise realms with their own values — see
+[`docs/runbooks/keycloak-realm-bootstrap.md`](runbooks/keycloak-realm-bootstrap.md).
+Divergence here (for example, canonical platform roles missing from a realm
+imported by an older compose file) is reported as an update plan, never applied
+in check mode:
+
+```bash
+make demo-keycloak-bootstrap-check
+```
+
 Then run:
 
 ```bash

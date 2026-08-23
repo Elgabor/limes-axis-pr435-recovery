@@ -6,7 +6,21 @@ import { Tabs as TabsPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/cn";
 
-export const Tabs = TabsPrimitive.Root;
+export function Tabs({ className, ...props }: ComponentProps<typeof TabsPrimitive.Root>) {
+  return (
+    <TabsPrimitive.Root
+      className={cn(
+        // Tabbed surfaces are usually grid/flex children. Without min-width:0
+        // the strip's intrinsic width inflates the parent track and pushes the
+        // page horizontally on narrow viewports; in plain block flow this is a
+        // no-op. The list itself scrolls (TabsList), nothing is clipped.
+        "min-w-0",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
 
 export function TabsList({ className, ...props }: ComponentProps<typeof TabsPrimitive.List>) {
   return (
@@ -31,6 +45,13 @@ export function TabsTrigger({ className, ...props }: ComponentProps<typeof TabsP
         "data-[state=active]:border-signal/25 data-[state=active]:bg-tint-100 data-[state=active]:text-signal",
         className,
       )}
+      // Roving-focus arrow navigation moves focus programmatically, and
+      // browsers do not follow programmatic focus with scroll-into-view — so
+      // on narrow viewports the newly focused tab can stay clipped outside
+      // the scrolling strip. No-op whenever the tab is already visible.
+      onFocus={(event) =>
+        event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })
+      }
       {...props}
     />
   );

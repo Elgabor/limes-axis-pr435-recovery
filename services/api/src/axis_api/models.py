@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Index,
@@ -666,6 +667,113 @@ class ConnectorManifestRecord(Base):
             "tenant_id",
             "revision_idempotency_key",
             name="uq_connector_manifests_tenant_revision_idempotency",
+        ),
+    )
+
+
+class ConnectorLifecycleEventRecord(Base):
+    """Read-model row for one governed connector manifest lifecycle transition.
+
+    Lifecycle transitions update the current manifest revision in place, so
+    ``connector_manifests`` cannot answer "which transitions happened to this
+    connector". The append-only audit ledger holds the evidence but is not
+    efficiently queryable per connector (the connector reference lives in the
+    JSON payload). This projection is written in the same transaction as the
+    audit event and gives the per-tenant + per-connector transition trail a
+    real index; it deliberately carries typed operator fields only, never raw
+    audit payloads.
+    """
+
+    __tablename__ = "connector_lifecycle_events"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    connector_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    from_status: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_status: Mapped[str] = mapped_column(String(80), nullable=False)
+    transitioned_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    transition_reason: Mapped[str] = mapped_column(String(600), nullable=False)
+    evidence_refs: Mapped[list] = mapped_column(JSON, nullable=False)
+    audit_event_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    audit_event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_connector_lifecycle_events_tenant_connector_created",
+            "tenant_id",
+            "connector_id",
+            "created_at",
+        ),
+    )
+
+
+class ConnectorSourceBinding(Base):
+    """Durable governed binding of one discovered source table for ingestion.
+
+    A binding is created only from evidence Axis actually observed through the
+    bounded discovery boundary: the qualified resource name and the schema
+    fingerprint it carried at activation time. It records which lease and
+    egress policy authorized the operator trail (IDs only, never credential
+    material) and carries an explicit ingestion status so a binding can never
+    be mistaken for data that was already read: today every binding is
+    ``pending_ingestion`` until a real ingestion boundary lands.
+
+    One active binding per (tenant, connector, resource) is enforced with a
+    partial unique index; ``binding_id`` is the operator-supplied deterministic
+    identity that makes repeated submissions replay-safe.
+    """
+
+    __tablename__ = "connector_source_bindings"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    connector_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    asset_id: Mapped[str] = mapped_column(String(220), nullable=False)
+    binding_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    connection_profile_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    resource_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    schema_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    credential_lease_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    egress_policy_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
+    ingestion_status: Mapped[str] = mapped_column(String(60), nullable=False)
+    activated_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    activation_reason: Mapped[str] = mapped_column(String(600), nullable=False)
+    audit_event_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    audit_event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    activated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint("status IN ('active')", name="ck_connector_source_bindings_status"),
+        CheckConstraint(
+            "ingestion_status IN ('pending_ingestion')",
+            name="ck_connector_source_bindings_ingestion_status",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "binding_id",
+            name="uq_connector_source_bindings_tenant_binding",
+        ),
+        Index(
+            "uq_connector_source_bindings_active_resource",
+            "tenant_id",
+            "connector_id",
+            "resource_name",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+            postgresql_where=text("status = 'active'"),
+        ),
+        Index(
+            "ix_connector_source_bindings_tenant_connector",
+            "tenant_id",
+            "connector_id",
         ),
     )
 
@@ -1461,6 +1569,96 @@ class ConnectorEvidenceSnapshotExportRequest(Base):
     )
 
 
+class ConnectorSourceBatchExportRequest(Base):
+    """Approval-gated export of one request's metadata-only batch envelopes.
+
+    Mirrors the evidence-snapshot export boundary: an operator requests the
+    export, a privileged decision approves or rejects it, and materialization
+    writes the checksummed envelope bundle through the governed object store.
+    The bundle carries counts, digests, presence-only watermarks and storage
+    references — never row payloads or watermark values. No credential
+    material, DSN, or source value belongs in any column.
+    """
+
+    __tablename__ = "connector_source_batch_export_requests"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    connector_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    export_request_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    owner_role: Mapped[str] = mapped_column(String(160), nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(40), nullable=False)
+    approval_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    workflow_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    export_reason: Mapped[str] = mapped_column(String(240), nullable=False)
+    status: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    export_status: Mapped[str] = mapped_column(String(80), nullable=False)
+    storage_status: Mapped[str] = mapped_column(String(80), nullable=False)
+    batch_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    envelope_checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    redaction_policy: Mapped[str] = mapped_column(String(120), nullable=False)
+    controls: Mapped[list] = mapped_column(JSON, nullable=False)
+    permission_decision: Mapped[dict] = mapped_column(JSON, nullable=False)
+    decision: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decision_actor_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(String(600), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    materialization_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    materialization_idempotency_key: Mapped[str | None] = mapped_column(
+        String(200), nullable=True
+    )
+    materialized_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    materialized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    materialization_reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    storage_adapter: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    storage_uri: Mapped[str | None] = mapped_column(String(700), nullable=True)
+    artifact_checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    artifact_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    artifact_content_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    audit_event_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    audit_event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    notes: Mapped[list] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('approval_required', 'approval_approved', "
+            "'approval_rejected', 'changes_requested', 'materialized')",
+            name="ck_connector_source_batch_export_requests_status",
+        ),
+        CheckConstraint(
+            "storage_status IN ('not_written', 'written_local_object_store')",
+            name="ck_connector_source_batch_export_requests_storage_status",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "export_request_id",
+            name="uq_connector_source_batch_export_requests_tenant_request",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "idempotency_key",
+            name="uq_connector_source_batch_export_requests_tenant_idempotency",
+        ),
+        Index(
+            "ix_connector_source_batch_export_requests_tenant_ingestion",
+            "tenant_id",
+            "connector_id",
+            "request_id",
+        ),
+    )
+
+
 class ManufacturingOperationRecord(Base):
     __tablename__ = "manufacturing_operation_records"
 
@@ -1832,5 +2030,166 @@ class PlatformPolicy(Base):
             unique=True,
             postgresql_where=text("status = 'active'"),
             sqlite_where=text("status = 'active'"),
+        ),
+    )
+
+
+class ConnectorSourceIngestionRequest(Base):
+    """Durable governed request to run the ingestion boundary's supported stage.
+
+    An operator pins one or more active source bindings (by ``binding_id``) at
+    request time; the server records the schema fingerprint each binding
+    carried, so execution can prove — per selection — whether that evidence is
+    still fresh. This batch's runtime performs the validation stage only: it
+    never dials the source and never reads rows, and its evidence says so.
+
+    The row doubles as the outbox entry for dispatch: claim tokens with lease
+    expiry fence concurrent workers, retries carry jittered backoff through
+    ``available_at``, and terminal failures dead-letter with public-safe error
+    codes. Selections are stored as ID/fingerprint pairs only — no credential
+    material ever enters this table.
+    """
+
+    __tablename__ = "connector_source_ingestion_requests"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    connector_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    reason: Mapped[str] = mapped_column(String(600), nullable=False)
+    stage: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="validate", server_default="validate"
+    )
+    selections: Mapped[list] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="pending", server_default="pending", index=True
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    claim_token: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    requeued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requeued_by: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    requeue_reason: Mapped[str | None] = mapped_column(String(600), nullable=True)
+    requeue_idempotency_key: Mapped[str | None] = mapped_column(
+        String(180), nullable=True
+    )
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    evidence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    audit_event_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    audit_event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'dispatching', 'completed', 'failed', 'cancelled')",
+            name="ck_connector_source_ingestion_requests_status",
+        ),
+        CheckConstraint(
+            "stage IN ('validate', 'extract')",
+            name="ck_connector_source_ingestion_requests_stage",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "request_id",
+            name="uq_connector_source_ingestion_requests_tenant_request",
+        ),
+        Index("ix_connector_source_ingestion_requests_dispatch", "status", "available_at", "id"),
+        Index(
+            "ix_connector_source_ingestion_requests_stale_claim",
+            "status",
+            "lease_expires_at",
+            "id",
+        ),
+        Index(
+            "ix_connector_source_ingestion_requests_tenant_connector",
+            "tenant_id",
+            "connector_id",
+        ),
+    )
+
+
+class ConnectorSourceExtractionBatch(Base):
+    """Metadata-only record of one bounded extraction batch.
+
+    Raw rows never enter Postgres: the batch payload lives in the canonical
+    object store and this row carries exactly what governance needs to reason
+    about it — identity, pinned vs observed fingerprints, ordering mode and
+    cursor watermark, counts, truncation truth, applied limits, digest, storage
+    reference, classification, provenance, and the audit binding. No credential
+    material, DSN, or source value belongs in any column.
+    """
+
+    __tablename__ = "connector_source_extraction_batches"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    connector_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    batch_key: Mapped[str] = mapped_column(String(240), nullable=False)
+    binding_id: Mapped[str] = mapped_column(String(180), nullable=False)
+    resource_name: Mapped[str] = mapped_column(String(240), nullable=False)
+    pinned_schema_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    observed_schema_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    ordering_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    cursor_watermark: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    truncated: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    limit_reason: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    limits_applied: Mapped[dict] = mapped_column(JSON, nullable=False)
+    provenance: Mapped[dict] = mapped_column(JSON, nullable=False)
+    digest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    storage_adapter: Mapped[str] = mapped_column(String(80), nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    storage_uri: Mapped[str] = mapped_column(String(700), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    stored_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    classification: Mapped[str] = mapped_column(String(40), nullable=False)
+    executed_by: Mapped[str] = mapped_column(String(160), nullable=False)
+    audit_event_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    audit_event_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "ordering_mode IN ('primary_key', 'none')",
+            name="ck_connector_source_extraction_batches_ordering_mode",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "batch_key",
+            name="uq_connector_source_extraction_batches_tenant_batch_key",
+        ),
+        Index("ix_connector_source_extraction_batches_tenant_request", "tenant_id", "request_id"),
+        Index(
+            "ix_connector_source_extraction_batches_binding",
+            "tenant_id",
+            "connector_id",
+            "binding_id",
         ),
     )

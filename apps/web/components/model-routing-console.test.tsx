@@ -14,6 +14,10 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+vi.mock("@/lib/use-identity-session", () => ({
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 import { ModelRoutingConsole } from "./model-routing-console";
 
 const publicIdentity: IdentitySessionReadModel = {
@@ -33,6 +37,7 @@ const publicIdentity: IdentitySessionReadModel = {
   capabilities: [],
   limitations: [],
   notes: [],
+  unauthenticated_reason: null,
 };
 
 function unavailableResult() {

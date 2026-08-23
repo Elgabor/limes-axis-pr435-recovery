@@ -239,6 +239,8 @@ export type IdentitySessionReadModel = {
   capabilities: string[];
   limitations: string[];
   notes: string[];
+  /** Why no API-verified actor is attached; null when authenticated or demo mode. */
+  unauthenticated_reason: string | null;
 };
 
 export type DemoReadinessCounts = Record<PlatformStatus, number>;

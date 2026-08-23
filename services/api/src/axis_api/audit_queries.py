@@ -354,6 +354,7 @@ def _payload_preview(payload: dict) -> dict[str, str]:
         "idempotency_key",
         "snapshot_id",
         "connector_id",
+        "policy_id",
         "workflow_signal_status",
         "permission_decision",
         "payload_field_names",

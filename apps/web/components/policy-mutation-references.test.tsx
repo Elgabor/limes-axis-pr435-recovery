@@ -1,14 +1,16 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PlatformPolicyRecord } from "@/lib/platform-policies";
+import type { IdentitySessionReadModel } from "@/lib/platform-overview";
 
 const mocks = vi.hoisted(() => ({
   createPlatformPolicy: vi.fn(),
   evaluatePlatformPolicy: vi.fn(),
   revisePlatformPolicy: vi.fn(),
   triggerRefresh: vi.fn(),
+  useAxisQuery: vi.fn(),
 }));
 
 vi.mock("@/lib/platform-policies", async (importOriginal) => ({
@@ -26,6 +28,14 @@ vi.mock("@/lib/use-oidc-session", () => ({
   useOidcConsoleSession: () => ({ session: null }),
 }));
 
+vi.mock("@/lib/use-axis-query", () => ({
+  useAxisQuery: mocks.useAxisQuery,
+}));
+
+vi.mock("@/lib/use-identity-session", () => ({
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 vi.mock("@/providers/console-provider", () => ({
   useConsole: () => ({ triggerRefresh: mocks.triggerRefresh }),
 }));
@@ -34,6 +44,26 @@ import { AxisApiError } from "@/lib/axis-api";
 import { PolicyCreateForm } from "./policy-create-form";
 import { PolicyEvaluationPanel } from "./policy-evaluation-panel";
 import { PolicyReviseForm } from "./policy-revise-form";
+
+const publicDemoIdentity: IdentitySessionReadModel = {
+  authenticated: false,
+  mode: "public_demo",
+  actor_id: null,
+  tenant_id: null,
+  scopes: [],
+  expires_at: null,
+  api_auth_required: false,
+  enterprise_sso_ready: false,
+  readiness_status: "ready",
+  issuer: "",
+  audience: "",
+  jwks_source: "disabled",
+  session_boundary: "public_demo",
+  capabilities: [],
+  limitations: [],
+  notes: [],
+  unauthenticated_reason: null,
+};
 
 const currentPolicy: PlatformPolicyRecord = {
   tenant_id: "tenant_fixture",
@@ -64,6 +94,12 @@ beforeEach(() => {
   mocks.evaluatePlatformPolicy.mockReset();
   mocks.revisePlatformPolicy.mockReset();
   mocks.triggerRefresh.mockReset();
+  mocks.useAxisQuery.mockReset();
+  mocks.useAxisQuery.mockImplementation(() => ({
+    data: publicDemoIdentity,
+    source: "api",
+    errorRequestId: null,
+  }));
 });
 
 describe("policy mutation request references", () => {
@@ -77,10 +113,18 @@ describe("policy mutation request references", () => {
     });
     render(<PolicyCreateForm tenantId="tenant_fixture" />);
 
-    await user.type(screen.getByLabelText("New policy id"), "deny_fixture_actions");
-    await user.type(screen.getByLabelText("New policy display name"), "Deny fixture actions");
-    await user.type(screen.getByLabelText("New policy description"), "Blocks fixture actions.");
-    await user.type(screen.getByLabelText("New policy action domains"), "Operations");
+    fireEvent.change(screen.getByLabelText("New policy id"), {
+      target: { value: "deny_fixture_actions" },
+    });
+    fireEvent.change(screen.getByLabelText("New policy display name"), {
+      target: { value: "Deny fixture actions" },
+    });
+    fireEvent.change(screen.getByLabelText("New policy description"), {
+      target: { value: "Blocks fixture actions." },
+    });
+    fireEvent.change(screen.getByLabelText("New policy action domains"), {
+      target: { value: "Operations" },
+    });
     await user.click(screen.getByRole("button", { name: "Author policy" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -133,5 +177,46 @@ describe("policy mutation request references", () => {
     );
     expect(screen.getByText("request-policy-evaluate-503")).toBeInTheDocument();
     expect(screen.queryByText(/policy-database-credential/)).not.toBeInTheDocument();
+  });
+});
+
+describe("policy mutation SSO gate", () => {
+  const enforcedIdentity = {
+    ...publicDemoIdentity,
+    mode: "sso",
+    api_auth_required: true,
+    enterprise_sso_ready: true,
+    session_boundary: "cookie",
+    jwks_source: "remote",
+  };
+
+  beforeEach(() => {
+    mocks.useAxisQuery.mockImplementation(() => ({
+      data: enforcedIdentity,
+      source: "api",
+      errorRequestId: null,
+    }));
+  });
+
+  it("replaces authoring with an SSO gate when sign-in is enforced", () => {
+    render(<PolicyCreateForm tenantId="tenant_fixture" />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Sign in with SSO to author platform policies.",
+    );
+    expect(screen.queryByRole("button", { name: "Author policy" })).not.toBeInTheDocument();
+    expect(mocks.createPlatformPolicy).not.toHaveBeenCalled();
+  });
+
+  it("replaces revision appending with an SSO gate when sign-in is enforced", () => {
+    render(<PolicyReviseForm current={currentPolicy} tenantId="tenant_fixture" />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Sign in with SSO to append policy revisions.",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Append revision" }),
+    ).not.toBeInTheDocument();
+    expect(mocks.revisePlatformPolicy).not.toHaveBeenCalled();
   });
 });

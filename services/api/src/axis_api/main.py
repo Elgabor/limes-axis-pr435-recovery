@@ -1,7 +1,9 @@
+import base64
 import logging
 from collections.abc import AsyncIterator, Generator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path as StoreRootPath
 from threading import Event, Thread
 from typing import Annotated, NamedTuple
 from uuid import UUID
@@ -265,6 +267,18 @@ from axis_api.connector_ontology_proposals import (
     build_connector_ontology_proposal_registry,
     record_demo_connector_ontology_proposals,
 )
+from axis_api.connector_postgres_discovery import (
+    ConnectorSourceDiscoveryRequest,
+    ConnectorSourceDiscoveryRuntime,
+    ConnectorSourceOperationError,
+    ConnectorSourceVerifyRequest,
+    SourceDiscoveryOutcome,
+    SourceScopeDenied,
+    SourceVerificationOutcome,
+    connector_source_discovery_runtime_from_settings,
+    record_connector_source_discovery,
+    record_connector_source_verification,
+)
 from axis_api.connector_promotion_policies import (
     ConnectorPromotionPolicyConflict,
     ConnectorPromotionPolicyCreateRequest,
@@ -331,6 +345,58 @@ from axis_api.connector_runs import (
     release_connector_sync_checkpoint_claim,
     renew_connector_sync_checkpoint_claim,
 )
+from axis_api.connector_source_activation import (
+    ConnectorSourceActivationConflict,
+    ConnectorSourceActivationError,
+    ConnectorSourceActivationOutcome,
+    ConnectorSourceActivationRequest,
+    ConnectorSourceBindingsView,
+    SourceActivationScopeDenied,
+    list_connector_source_bindings,
+    record_connector_source_activation,
+)
+from axis_api.connector_source_batch_exports import (
+    ConnectorSourceBatchExportDecisionInput,
+    ConnectorSourceBatchExportDecisionResult,
+    ConnectorSourceBatchExportError,
+    ConnectorSourceBatchExportMaterializationInput,
+    ConnectorSourceBatchExportMaterializationResult,
+    ConnectorSourceBatchExportRequestInput,
+    ConnectorSourceBatchExportRequestRecord,
+    ConnectorSourceBatchExportScopeDenied,
+    LocalBatchExportArtifactReader,
+    decide_connector_source_batch_export_request,
+    materialize_connector_source_batch_export_request,
+    read_connector_source_batch_export_artifact,
+    record_connector_source_batch_export_request,
+)
+from axis_api.connector_source_extraction import planned_extraction_limits
+from axis_api.connector_source_extraction_reconciliation import (
+    LocalReconcilableObjectStore,
+    SourceExtractionReconciliationReport,
+    reconcile_request_batches,
+)
+from axis_api.connector_source_ingestion import (
+    SOURCE_INGESTION_READ_SCOPE,
+    ConnectorSourceIngestionCancelRequest,
+    ConnectorSourceIngestionError,
+    ConnectorSourceIngestionOverview,
+    ConnectorSourceIngestionRequeueRequest,
+    ConnectorSourceIngestionSubmission,
+    SourceExtractionBatchesPage,
+    SourceIngestionEligibilityView,
+    SourceIngestionRequestView,
+    SourceIngestionScopeDenied,
+    build_connector_source_ingestion_overview,
+    cancel_connector_source_ingestion_request,
+    get_connector_source_ingestion_request_view,
+    list_connector_source_extraction_batches_page,
+    list_connector_source_ingestion_request_views,
+    max_source_ingestion_selections,
+    preview_source_ingestion_eligibility,
+    record_connector_source_ingestion_request,
+    requeue_connector_source_ingestion_request,
+)
 from axis_api.connectors import (
     ConnectorCsvPreviewRequest,
     ConnectorCsvPreviewResult,
@@ -354,6 +420,10 @@ from axis_api.data_asset_discovery import (
     DataAssetResourcesView,
     list_data_asset_resources,
     record_data_resource_observation,
+)
+from axis_api.data_asset_lineage import (
+    DataAssetLineageView,
+    build_data_asset_lineage_view,
 )
 from axis_api.data_asset_stewardship import (
     DataAssetStewardshipConflict,
@@ -399,6 +469,8 @@ from axis_api.deployment_readiness import (
 )
 from axis_api.errors import AxisErrorCode
 from axis_api.identity import (
+    ACTOR_MISMATCH_MESSAGE,
+    TENANT_MISMATCH_MESSAGE,
     ActorBindingError,
     OidcAuthenticationError,
     OidcPrincipal,
@@ -506,6 +578,8 @@ from axis_api.model_routing_reference import (
 from axis_api.models import OidcBrowserSession
 from axis_api.object_storage import (
     COMPLIANCE_RETENTION_MODE,
+    LOCAL_FILESYSTEM_ADAPTER,
+    LocalObjectStore,
     ObjectLockCapability,
     ObjectStore,
     ObjectStoreConfigurationError,
@@ -563,7 +637,11 @@ from axis_api.ontology_reference import (
     OntologyReferenceRecordNotFound,
     get_persisted_manufacturing_ontology,
 )
-from axis_api.permissions import PermissionRequest, evaluate_permission
+from axis_api.permissions import (
+    TENANT_MISMATCH_REASON,
+    ScopeAuthorizationError,
+    authorize_principal_scopes,
+)
 from axis_api.persistence import (
     AxisPersistenceRepository,
     OidcBrowserSessionCreate,
@@ -897,6 +975,18 @@ ConnectorLiveSyncRuntimeDependency = Annotated[
 ]
 
 
+def connector_source_discovery_runtime(
+    request: Request,
+) -> ConnectorSourceDiscoveryRuntime:
+    return request.app.state.connector_source_discovery_runtime
+
+
+ConnectorSourceDiscoveryRuntimeDependency = Annotated[
+    ConnectorSourceDiscoveryRuntime,
+    Depends(connector_source_discovery_runtime),
+]
+
+
 def credential_lease_runtime(request: Request) -> CredentialLeaseRuntime:
     return request.app.state.credential_lease_runtime
 
@@ -948,17 +1038,24 @@ def _record_request_usage_admission(
             ) from exc
 
 
-def oidc_principal(
+def _resolve_request_principal(
     request: Request,
-    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
-) -> OidcPrincipal | None:
+    authorization: str | None,
+) -> tuple[OidcPrincipal | None, str | None]:
+    """Resolve the verified request principal without raising auth failures.
+
+    Returns ``(principal, None)`` on success, or ``(None, reason)`` with
+    ``reason`` drawn from the same public classification the 401 responses
+    already expose (``missing_authorization``, ``invalid_session_cookie``,
+    ``expired_session_cookie``, ``invalid_token``, ...). Tenant admission for
+    every successfully verified principal — bearer, cookie, or previously
+    cached — fails closed here, so no caller can skip it.
+    """
     settings: Settings = request.app.state.settings
     cached_principal = getattr(request.state, "axis_principal", None)
     if authorization and isinstance(cached_principal, OidcPrincipal):
         _enforce_tenant_admission(request, cached_principal)
-        _annotate_request_span_with_principal(cached_principal)
-        _record_request_usage_admission(request, cached_principal)
-        return cached_principal
+        return cached_principal, None
     if not authorization:
         session_cookie = request.cookies.get(session_cookie_name(settings))
         if session_cookie:
@@ -992,32 +1089,29 @@ def oidc_principal(
                         ):
                             cookie_failure_reason = "invalid_session_cookie"
                         else:
-                            repository.touch_oidc_browser_session(
-                                session_hash, datetime.now(UTC)
-                            )
+                            repository.touch_oidc_browser_session(session_hash, datetime.now(UTC))
                             principal = OidcPrincipal(
                                 actor_id=stored_session.actor_id,
                                 tenant_id=stored_session.tenant_id,
                                 scopes=list(stored_session.scopes),
                                 expires_at=int(
-                                    ensure_aware_datetime(
-                                        stored_session.expires_at
-                                    ).timestamp()
+                                    ensure_aware_datetime(stored_session.expires_at).timestamp()
                                 ),
                                 session_source="secure_cookie",
                             )
                 if cookie_failure_reason is not None:
-                    raise OidcCookieValidationError(cookie_failure_reason)
+                    return None, cookie_failure_reason
                 if principal is not None:
                     _enforce_tenant_admission(request, principal)
-                    _annotate_request_span_with_principal(principal)
                     request.state.axis_principal = principal
-                    _record_request_usage_admission(request, principal)
-                    return principal
+                    return principal, None
             except (
                 OidcCodeFlowConfigurationError,
                 OidcCookieValidationError,
             ) as exc:
+                # Configuration problems are deliberately not distinguishable
+                # from tampered cookies here: the public reason taxonomy stays
+                # within the four browser-session failure classes.
                 reason = getattr(exc, "reason", "invalid_session_cookie")
                 public_reason = (
                     reason
@@ -1030,44 +1124,52 @@ def oidc_principal(
                     }
                     else "invalid_session_cookie"
                 )
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail={
-                        "code": AxisErrorCode.AUTH_REQUIRED.value,
-                        "message": "The OIDC session cookie could not be verified.",
-                        "reason": public_reason,
-                    },
-                ) from exc
+                return None, public_reason
         if settings.oidc_auth_required:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={
-                    "code": AxisErrorCode.AUTH_REQUIRED.value,
-                    "message": "A valid OIDC bearer token is required.",
-                    "reason": "missing_authorization",
-                },
-            )
+            return None, "missing_authorization"
         request.state.axis_principal = None
-        return None
+        return None, None
 
     try:
-        principal = request.app.state.identity_verifier.verify_authorization_header(
-            authorization
-        )
+        principal = request.app.state.identity_verifier.verify_authorization_header(authorization)
     except OidcAuthenticationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={
-                "code": AxisErrorCode.AUTH_REQUIRED.value,
-                "message": "The OIDC bearer token could not be verified.",
-                "reason": exc.reason,
-            },
-        ) from exc
+        return None, exc.reason
     _enforce_tenant_admission(request, principal)
-    _annotate_request_span_with_principal(principal)
     request.state.axis_principal = principal
-    _record_request_usage_admission(request, principal)
-    return principal
+    return principal, None
+
+
+def oidc_principal(
+    request: Request,
+    authorization: Annotated[str | None, Header(alias="Authorization")] = None,
+) -> OidcPrincipal | None:
+    principal, failure_reason = _resolve_request_principal(request, authorization)
+    if principal is not None:
+        _annotate_request_span_with_principal(principal)
+        _record_request_usage_admission(request, principal)
+        return principal
+    if failure_reason is None:
+        # Explicitly anonymous in a deployment that does not require auth
+        # (public demo mode); tenant endpoints authorize reads themselves.
+        return None
+    cookie_failure_classes = {
+        "invalid_session_cookie",
+        "revoked_session_cookie",
+        "expired_session_cookie",
+        "idle_session_timeout",
+    }
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={
+            "code": AxisErrorCode.AUTH_REQUIRED.value,
+            "message": (
+                "The OIDC session cookie could not be verified."
+                if failure_reason in cookie_failure_classes
+                else "A valid OIDC bearer token is required."
+            ),
+            "reason": failure_reason,
+        },
+    )
 
 
 def _connector_sync_rows(record) -> int:
@@ -1275,17 +1377,14 @@ def _claim_session_refresh(
                 status_code=status.HTTP_409_CONFLICT,
                 reason="refresh_not_available",
                 message=(
-                    "No refresh token is stored for this session; sign in again to "
-                    "extend it."
+                    "No refresh token is stored for this session; sign in again to extend it."
                 ),
                 error_code=AxisErrorCode.CONFLICT,
             )
         # Decrypt before claiming so an unreadable credential does not strand the
         # session in the refreshing state.
         try:
-            refresh_token = decrypt_refresh_token(
-                stored_session.refresh_token_ciphertext, settings
-            )
+            refresh_token = decrypt_refresh_token(stored_session.refresh_token_ciphertext, settings)
         except OidcTokenExchangeError:
             _expire_stored_session(
                 repository,
@@ -1577,12 +1676,26 @@ def _oidc_readiness_summary(settings: Settings) -> dict[str, object]:
     }
 
 
+DEMO_TENANT_ID = "tenant_demo_manufacturing"
+
+
+def _actor_binding_http_exception(exc: ActorBindingError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": AxisErrorCode.PERMISSION_DENIED.value,
+            "message": exc.message,
+            "reason": exc.reason,
+        },
+    )
+
+
 def _bind_tenant_actor(
     request_model,
     principal: OidcPrincipal | None,
     tenant_id: str,
 ):
-    if principal is None and tenant_id != "tenant_demo_manufacturing":
+    if principal is None and tenant_id != DEMO_TENANT_ID:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={
@@ -1598,18 +1711,11 @@ def _bind_tenant_actor(
             expected_tenant_id=tenant_id,
         )
     except ActorBindingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": exc.message,
-                "reason": exc.reason,
-            },
-        ) from exc
+        raise _actor_binding_http_exception(exc) from exc
 
 
 def _bind_demo_actor(request_model, principal: OidcPrincipal | None):
-    return _bind_tenant_actor(request_model, principal, "tenant_demo_manufacturing")
+    return _bind_tenant_actor(request_model, principal, DEMO_TENANT_ID)
 
 
 def _bind_demo_tenant_actor(request_model, principal: OidcPrincipal | None):
@@ -1619,12 +1725,10 @@ def _bind_demo_tenant_actor(request_model, principal: OidcPrincipal | None):
     the actor identity; this variant additionally rejects a request body whose
     ``tenant_id`` differs from the authenticated principal's tenant, so a bound
     write can never land in another tenant's scope (same ``tenant_mismatch``
-    contract as ``_bind_platform_policy_actor``).
+    contract as ``_bind_body_tenant_actor``).
     """
     bound_request = _bind_demo_actor(request_model, principal)
-    if principal is not None and getattr(bound_request, "tenant_id", None) != (
-        principal.tenant_id
-    ):
+    if principal is not None and getattr(bound_request, "tenant_id", None) != (principal.tenant_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
@@ -1637,36 +1741,42 @@ def _bind_demo_tenant_actor(request_model, principal: OidcPrincipal | None):
 
 
 def _bind_audit_actor(request_model, principal: OidcPrincipal | None):
-    if principal is None:
-        return request_model
+    try:
+        return bind_request_actor(request_model, principal, actor_field="actor_id")
+    except ActorBindingError as exc:
+        raise _actor_binding_http_exception(exc) from exc
 
-    request_tenant = getattr(request_model, "tenant_id", None)
-    if request_tenant != principal.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "reason": "tenant_mismatch",
-            },
+
+def _scope_denial_http_exception(
+    exc: ScopeAuthorizationError,
+    *,
+    default_required_permission: str | None = None,
+) -> HTTPException:
+    decision_reason = exc.decision.reason
+    tenant_mismatch = decision_reason == TENANT_MISMATCH_REASON
+    if decision_reason.startswith("missing_scope:"):
+        required_permission = decision_reason.removeprefix("missing_scope:")
+        reason = "missing_required_scope"
+    else:
+        required_permission = default_required_permission or exc.required_scopes[0]
+        reason = (
+            "missing_required_scope"
+            if decision_reason.startswith("missing_relationship_scope:")
+            else decision_reason
         )
-
-    request_actor = getattr(request_model, "actor_id", None)
-    if request_actor and request_actor != principal.actor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The request actor does not match the authenticated OIDC actor.",
-                "reason": "actor_mismatch",
-            },
-        )
-
-    return request_model.model_copy(
-        update={
-            "actor_id": principal.actor_id,
-            "actor_scopes": principal.scopes,
-        }
+    detail: dict[str, object] = {
+        "code": AxisErrorCode.PERMISSION_DENIED.value,
+        "message": exc.message,
+        "required_permission": required_permission,
+        "reason": reason,
+    }
+    # Cross-tenant denials predate the permission_reason evidence field; the
+    # extra key stays absent there so existing denial contracts are stable.
+    if not tenant_mismatch:
+        detail["permission_reason"] = decision_reason
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=detail,
     )
 
 
@@ -1678,45 +1788,16 @@ def _authorize_audit_scope(
     message: str,
     resource: str,
 ) -> None:
-    if principal is None:
-        return
-
-    if principal.tenant_id != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "required_permission": required_scope,
-                "reason": "tenant_mismatch",
-            },
-        )
-
-    decision = evaluate_permission(
-        PermissionRequest(
+    try:
+        authorize_principal_scopes(
             tenant_id=tenant_id,
-            actor_id=principal.actor_id,
-            actor_scopes=principal.scopes,
+            principal=principal,
             required_scopes=[required_scope],
-            attributes={
-                "surface": "audit",
-                "resource": resource,
-            },
+            attributes={"surface": "audit", "resource": resource},
+            message=message,
         )
-    )
-    if not decision.allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": message,
-                "required_permission": required_scope,
-                "reason": "missing_required_scope"
-                if decision.reason.startswith("missing_scope:")
-                else decision.reason,
-                "permission_reason": decision.reason,
-            },
-        )
+    except ScopeAuthorizationError as exc:
+        raise _scope_denial_http_exception(exc) from exc
 
 
 def _run_object_legal_hold(
@@ -1743,111 +1824,40 @@ def _run_object_legal_hold(
             detail={
                 "code": AxisErrorCode.CONNECTOR_UNAVAILABLE.value,
                 "message": (
-                    "The configured object store cannot enforce S3 object-lock "
-                    "legal holds."
+                    "The configured object store cannot enforce S3 object-lock legal holds."
                 ),
                 "reason": exc.reason,
             },
         ) from exc
 
 
+def _bind_demo_field_actor(
+    request_model,
+    principal: OidcPrincipal | None,
+    actor_field: str,
+):
+    """Bind a demo write whose actor identity lives in ``actor_field``."""
+    try:
+        return bind_request_actor(
+            request_model,
+            principal,
+            actor_field=actor_field,
+            expected_tenant_id=DEMO_TENANT_ID,
+        )
+    except ActorBindingError as exc:
+        raise _actor_binding_http_exception(exc) from exc
+
+
 def _bind_demo_created_by(request_model, principal: OidcPrincipal | None):
-    if principal is None:
-        return request_model
-
-    if principal.tenant_id != "tenant_demo_manufacturing":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "reason": "tenant_mismatch",
-            },
-        )
-
-    request_actor = getattr(request_model, "created_by", None)
-    if request_actor and request_actor != principal.actor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The request actor does not match the authenticated OIDC actor.",
-                "reason": "actor_mismatch",
-            },
-        )
-
-    return request_model.model_copy(
-        update={
-            "created_by": principal.actor_id,
-            "actor_scopes": principal.scopes,
-        }
-    )
+    return _bind_demo_field_actor(request_model, principal, "created_by")
 
 
 def _bind_demo_enabled_by(request_model, principal: OidcPrincipal | None):
-    if principal is None:
-        return request_model
-
-    if principal.tenant_id != "tenant_demo_manufacturing":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "reason": "tenant_mismatch",
-            },
-        )
-
-    request_actor = getattr(request_model, "enabled_by", None)
-    if request_actor and request_actor != principal.actor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The request actor does not match the authenticated OIDC actor.",
-                "reason": "actor_mismatch",
-            },
-        )
-
-    return request_model.model_copy(
-        update={
-            "enabled_by": principal.actor_id,
-            "actor_scopes": principal.scopes,
-        }
-    )
+    return _bind_demo_field_actor(request_model, principal, "enabled_by")
 
 
 def _bind_demo_updated_by(request_model, principal: OidcPrincipal | None):
-    if principal is None:
-        return request_model
-
-    if principal.tenant_id != "tenant_demo_manufacturing":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "reason": "tenant_mismatch",
-            },
-        )
-
-    request_actor = getattr(request_model, "updated_by", None)
-    if request_actor and request_actor != principal.actor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The request actor does not match the authenticated OIDC actor.",
-                "reason": "actor_mismatch",
-            },
-        )
-
-    return request_model.model_copy(
-        update={
-            "updated_by": principal.actor_id,
-            "actor_scopes": principal.scopes,
-        }
-    )
+    return _bind_demo_field_actor(request_model, principal, "updated_by")
 
 
 def _platform_policy_denied_detail(exc: PlatformPolicyEnforcementDenied, message: str) -> dict:
@@ -1863,38 +1873,44 @@ def _platform_policy_denied_detail(exc: PlatformPolicyEnforcementDenied, message
     }
 
 
-def _bind_platform_policy_actor(request_model, principal: OidcPrincipal | None, actor_field: str):
-    if principal is None:
-        return request_model
-
-    request_tenant = getattr(request_model, "tenant_id", None)
-    if request_tenant != principal.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "reason": "tenant_mismatch",
-            },
+def _bind_body_tenant_actor(
+    request_model,
+    principal: OidcPrincipal | None,
+    actor_field: str,
+    *,
+    tenant_mismatch_message: str = TENANT_MISMATCH_MESSAGE,
+) -> object:
+    """Bind a write whose governing tenant is declared in the request body."""
+    try:
+        return bind_request_actor(
+            request_model,
+            principal,
+            actor_field=actor_field,
+            tenant_mismatch_message=tenant_mismatch_message,
         )
+    except ActorBindingError as exc:
+        raise _actor_binding_http_exception(exc) from exc
 
-    request_actor = getattr(request_model, actor_field, None)
-    if request_actor and request_actor != principal.actor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The request actor does not match the authenticated OIDC actor.",
-                "reason": "actor_mismatch",
-            },
+
+def _authorize_scopes_for_tenant(
+    *,
+    tenant_id: str,
+    principal: OidcPrincipal | None,
+    required_scope: str,
+    surface: str,
+    resource: str,
+    message: str,
+) -> None:
+    try:
+        authorize_principal_scopes(
+            tenant_id=tenant_id,
+            principal=principal,
+            required_scopes=[required_scope],
+            attributes={"surface": surface, "resource": resource},
+            message=message,
         )
-
-    return request_model.model_copy(
-        update={
-            actor_field: principal.actor_id,
-            "actor_scopes": principal.scopes,
-        }
-    )
+    except ScopeAuthorizationError as exc:
+        raise _scope_denial_http_exception(exc) from exc
 
 
 def _authorize_platform_policy_read(
@@ -1903,45 +1919,14 @@ def _authorize_platform_policy_read(
     principal: OidcPrincipal | None,
     resource: str,
 ) -> None:
-    if principal is None:
-        return
-
-    if principal.tenant_id != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "required_permission": PLATFORM_POLICY_READ_SCOPE,
-                "reason": "tenant_mismatch",
-            },
-        )
-
-    decision = evaluate_permission(
-        PermissionRequest(
-            tenant_id=tenant_id,
-            actor_id=principal.actor_id,
-            actor_scopes=principal.scopes,
-            required_scopes=[PLATFORM_POLICY_READ_SCOPE],
-            attributes={
-                "surface": "platform_policies",
-                "resource": resource,
-            },
-        )
+    _authorize_scopes_for_tenant(
+        tenant_id=tenant_id,
+        principal=principal,
+        required_scope=PLATFORM_POLICY_READ_SCOPE,
+        surface="platform_policies",
+        resource=resource,
+        message="The actor cannot read platform policies.",
     )
-    if not decision.allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The actor cannot read platform policies.",
-                "required_permission": PLATFORM_POLICY_READ_SCOPE,
-                "reason": "missing_required_scope"
-                if decision.reason.startswith("missing_scope:")
-                else decision.reason,
-                "permission_reason": decision.reason,
-            },
-        )
 
 
 def _authorize_model_endpoint_read(
@@ -1950,45 +1935,14 @@ def _authorize_model_endpoint_read(
     principal: OidcPrincipal | None,
     resource: str,
 ) -> None:
-    if principal is None:
-        return
-
-    if principal.tenant_id != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "required_permission": MODEL_ENDPOINT_READ_SCOPE,
-                "reason": "tenant_mismatch",
-            },
-        )
-
-    decision = evaluate_permission(
-        PermissionRequest(
-            tenant_id=tenant_id,
-            actor_id=principal.actor_id,
-            actor_scopes=principal.scopes,
-            required_scopes=[MODEL_ENDPOINT_READ_SCOPE],
-            attributes={
-                "surface": "model_endpoints",
-                "resource": resource,
-            },
-        )
+    _authorize_scopes_for_tenant(
+        tenant_id=tenant_id,
+        principal=principal,
+        required_scope=MODEL_ENDPOINT_READ_SCOPE,
+        surface="model_endpoints",
+        resource=resource,
+        message="The actor cannot read the model routing surface.",
     )
-    if not decision.allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The actor cannot read the model routing surface.",
-                "required_permission": MODEL_ENDPOINT_READ_SCOPE,
-                "reason": "missing_required_scope"
-                if decision.reason.startswith("missing_scope:")
-                else decision.reason,
-                "permission_reason": decision.reason,
-            },
-        )
 
 
 def _bind_platform_tenant_actor(request_model, principal: OidcPrincipal | None):
@@ -2009,7 +1963,7 @@ def _bind_platform_tenant_actor(request_model, principal: OidcPrincipal | None):
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The request actor does not match the authenticated OIDC actor.",
+                "message": ACTOR_MISMATCH_MESSAGE,
                 "reason": "actor_mismatch",
             },
         )
@@ -2022,45 +1976,53 @@ def _bind_platform_tenant_actor(request_model, principal: OidcPrincipal | None):
     )
 
 
+def _authorize_cross_tenant_operator_scopes(
+    principal: OidcPrincipal | None,
+    *,
+    required_scopes: list[str],
+    surface: str,
+    resource: str,
+    message: str,
+    fallback_required_scope: str,
+) -> None:
+    """Gate a platform-operator read with operator scopes, no tenant binding.
+
+    The operator acts from their own tenant, so the evaluated tenant is the
+    principal's own and cross-tenant authority comes from the dedicated
+    ``platform:*`` scopes alone.
+    """
+    if principal is None:
+        return
+
+    try:
+        authorize_principal_scopes(
+            tenant_id=principal.tenant_id,
+            principal=principal,
+            required_scopes=required_scopes,
+            attributes={"surface": surface, "resource": resource},
+            message=message,
+            bind_tenant=False,
+        )
+    except ScopeAuthorizationError as exc:
+        raise _scope_denial_http_exception(
+            exc,
+            default_required_permission=fallback_required_scope,
+        ) from exc
+
+
 def _authorize_platform_tenant_read(
     principal: OidcPrincipal | None,
     *,
     resource: str,
 ) -> None:
-    if principal is None:
-        return
-
-    decision = evaluate_permission(
-        PermissionRequest(
-            tenant_id=principal.tenant_id,
-            actor_id=principal.actor_id,
-            actor_scopes=principal.scopes,
-            required_scopes=[
-                PLATFORM_TENANT_OPERATOR_SCOPE,
-                PLATFORM_TENANT_READ_SCOPE,
-            ],
-            attributes={
-                "surface": "platform_tenants",
-                "resource": resource,
-            },
-        )
+    _authorize_cross_tenant_operator_scopes(
+        principal,
+        required_scopes=[PLATFORM_TENANT_OPERATOR_SCOPE, PLATFORM_TENANT_READ_SCOPE],
+        surface="platform_tenants",
+        resource=resource,
+        message="The actor cannot read platform tenants.",
+        fallback_required_scope=PLATFORM_TENANT_READ_SCOPE,
     )
-    if not decision.allowed:
-        required_permission = decision.reason.removeprefix("missing_scope:")
-        if required_permission == decision.reason:
-            required_permission = PLATFORM_TENANT_READ_SCOPE
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The actor cannot read platform tenants.",
-                "required_permission": required_permission,
-                "reason": "missing_required_scope"
-                if decision.reason.startswith("missing_scope:")
-                else decision.reason,
-                "permission_reason": decision.reason,
-            },
-        )
 
 
 def _authorize_platform_tenant_usage_read(
@@ -2076,40 +2038,14 @@ def _authorize_platform_tenant_usage_read(
     (the operator authenticates under their own tenant and reads any tenant's
     consumption). Demo/offline mode (no principal) is intentionally not gated.
     """
-    if principal is None:
-        return
-
-    decision = evaluate_permission(
-        PermissionRequest(
-            tenant_id=principal.tenant_id,
-            actor_id=principal.actor_id,
-            actor_scopes=principal.scopes,
-            required_scopes=[
-                PLATFORM_TENANT_OPERATOR_SCOPE,
-                PLATFORM_TENANT_USAGE_SCOPE,
-            ],
-            attributes={
-                "surface": "platform_tenant_usage",
-                "resource": resource,
-            },
-        )
+    _authorize_cross_tenant_operator_scopes(
+        principal,
+        required_scopes=[PLATFORM_TENANT_OPERATOR_SCOPE, PLATFORM_TENANT_USAGE_SCOPE],
+        surface="platform_tenant_usage",
+        resource=resource,
+        message="The actor cannot read platform tenant usage.",
+        fallback_required_scope=PLATFORM_TENANT_USAGE_SCOPE,
     )
-    if not decision.allowed:
-        required_permission = decision.reason.removeprefix("missing_scope:")
-        if required_permission == decision.reason:
-            required_permission = PLATFORM_TENANT_USAGE_SCOPE
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The actor cannot read platform tenant usage.",
-                "required_permission": required_permission,
-                "reason": "missing_required_scope"
-                if decision.reason.startswith("missing_scope:")
-                else decision.reason,
-                "permission_reason": decision.reason,
-            },
-        )
 
 
 def _platform_tenant_denied_http_exception(
@@ -2159,73 +2095,36 @@ def _platform_tenant_lifecycle_conflict_http_exception(
 
 
 def _bind_demo_activated_by(request_model, principal: OidcPrincipal | None):
-    if principal is None:
-        return request_model
-
-    if principal.tenant_id != "tenant_demo_manufacturing":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "reason": "tenant_mismatch",
-            },
-        )
-
-    request_actor = getattr(request_model, "activated_by", None)
-    if request_actor and request_actor != principal.actor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The request actor does not match the authenticated OIDC actor.",
-                "reason": "actor_mismatch",
-            },
-        )
-
-    return request_model.model_copy(
-        update={
-            "activated_by": principal.actor_id,
-            "actor_scopes": principal.scopes,
-        }
-    )
+    return _bind_demo_field_actor(request_model, principal, "activated_by")
 
 
 def _bind_demo_requested_by(request_model, principal: OidcPrincipal | None):
-    if principal is None:
-        return request_model
+    """Bind a demo write whose ``requested_by`` actor carries a tenant scope.
 
-    request_tenant = getattr(request_model, "tenant_id", "tenant_demo_manufacturing")
-    if (
-        principal.tenant_id != "tenant_demo_manufacturing"
-        or request_tenant != principal.tenant_id
+    The principal must be demo-bound *and* a body that names a foreign
+    ``tenant_id`` is rejected even then (same contract as
+    ``_bind_demo_tenant_actor``).
+    """
+    if principal is not None and (
+        getattr(request_model, "tenant_id", DEMO_TENANT_ID) != DEMO_TENANT_ID
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "reason": "tenant_mismatch",
+                "message": TENANT_MISMATCH_MESSAGE,
+                "reason": TENANT_MISMATCH_REASON,
             },
         )
-
-    request_actor = getattr(request_model, "requested_by", None)
-    if request_actor and request_actor != principal.actor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The request actor does not match the authenticated OIDC actor.",
-                "reason": "actor_mismatch",
-            },
+    try:
+        return bind_request_actor(
+            request_model,
+            principal,
+            actor_field="requested_by",
+            expected_tenant_id=DEMO_TENANT_ID,
         )
-
-    return request_model.model_copy(
-        update={
-            "requested_by": principal.actor_id,
-            "actor_scopes": principal.scopes,
-        }
-    )
+    except ActorBindingError as exc:
+        raise _actor_binding_http_exception(exc) from exc
 
 
 def _ontology_read_denied_http_exception(
@@ -2246,46 +2145,24 @@ def _authorize_connector_sync_checkpoint_read(
     actor_scopes: list[str],
     principal: OidcPrincipal | None,
 ) -> None:
-    if principal is not None and principal.tenant_id != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access connector checkpoints.",
-                "required_permission": SYNC_CHECKPOINT_READ_SCOPE,
-                "reason": "tenant_mismatch",
-            },
-        )
-
-    decision = evaluate_permission(
-        PermissionRequest(
+    try:
+        authorize_principal_scopes(
             tenant_id=tenant_id,
-            actor_id=(
-                principal.actor_id
-                if principal is not None
-                else "connector-sync-checkpoint-reader"
-            ),
-            actor_scopes=principal.scopes if principal is not None else actor_scopes,
+            principal=principal,
             required_scopes=[SYNC_CHECKPOINT_READ_SCOPE],
             attributes={
                 "surface": "connectors",
                 "resource": "connector_sync_checkpoints",
             },
+            message="The actor cannot read connector sync checkpoints.",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot access connector checkpoints."
+            ),
+            actor_fallback_id="connector-sync-checkpoint-reader",
+            scope_fallback=actor_scopes,
         )
-    )
-    if not decision.allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The actor cannot read connector sync checkpoints.",
-                "required_permission": SYNC_CHECKPOINT_READ_SCOPE,
-                "reason": "missing_required_scope"
-                if decision.reason.startswith("missing_scope:")
-                else decision.reason,
-                "permission_reason": decision.reason,
-            },
-        )
+    except ScopeAuthorizationError as exc:
+        raise _scope_denial_http_exception(exc) from exc
 
 
 def _authorize_connector_sync_checkpoint_claim_read(
@@ -2293,49 +2170,24 @@ def _authorize_connector_sync_checkpoint_claim_read(
     actor_scopes: list[str],
     principal: OidcPrincipal | None,
 ) -> None:
-    if principal is not None and principal.tenant_id != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": (
-                    "The authenticated OIDC tenant cannot access connector "
-                    "checkpoint claims."
-                ),
-                "required_permission": SYNC_CHECKPOINT_CLAIM_READ_SCOPE,
-                "reason": "tenant_mismatch",
-            },
-        )
-
-    decision = evaluate_permission(
-        PermissionRequest(
+    try:
+        authorize_principal_scopes(
             tenant_id=tenant_id,
-            actor_id=(
-                principal.actor_id
-                if principal is not None
-                else "connector-sync-checkpoint-claim-reader"
-            ),
-            actor_scopes=principal.scopes if principal is not None else actor_scopes,
+            principal=principal,
             required_scopes=[SYNC_CHECKPOINT_CLAIM_READ_SCOPE],
             attributes={
                 "surface": "connectors",
                 "resource": "connector_sync_checkpoint_claims",
             },
+            message="The actor cannot read connector sync checkpoint claims.",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot access connector checkpoint claims."
+            ),
+            actor_fallback_id="connector-sync-checkpoint-claim-reader",
+            scope_fallback=actor_scopes,
         )
-    )
-    if not decision.allowed:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The actor cannot read connector sync checkpoint claims.",
-                "required_permission": SYNC_CHECKPOINT_CLAIM_READ_SCOPE,
-                "reason": "missing_required_scope"
-                if decision.reason.startswith("missing_scope:")
-                else decision.reason,
-                "permission_reason": decision.reason,
-            },
-        )
+    except ScopeAuthorizationError as exc:
+        raise _scope_denial_http_exception(exc) from exc
 
 
 def _authorize_connector_tenant_read(
@@ -2355,6 +2207,29 @@ def _authorize_connector_tenant_read(
     _authorize_tenant_read(tenant_id, principal)
 
 
+def _authorize_source_ingestion_read(
+    principal: OidcPrincipal | None,
+    actor_scopes: list[str],
+    *,
+    operation: str,
+) -> None:
+    resolved_scopes = principal.scopes if principal is not None else actor_scopes
+    if SOURCE_INGESTION_READ_SCOPE in resolved_scopes:
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": AxisErrorCode.PERMISSION_DENIED.value,
+            "message": (
+                "The actor lacks the source ingestion read scope required to "
+                f"{operation}."
+            ),
+            "required_permission": SOURCE_INGESTION_READ_SCOPE,
+            "reason": f"missing_scope:{SOURCE_INGESTION_READ_SCOPE}",
+        },
+    )
+
+
 def _authorize_tenant_read(
     tenant_id: str,
     principal: OidcPrincipal | None,
@@ -2366,8 +2241,8 @@ def _authorize_tenant_read(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={
                 "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "reason": "tenant_mismatch",
+                "message": TENANT_MISMATCH_MESSAGE,
+                "reason": TENANT_MISMATCH_REASON,
             },
         )
 
@@ -2384,15 +2259,7 @@ def _authorize_agent_run_tenant_read(
     traffic (no principal) is unaffected, preserving the
     ``AXIS_OIDC_AUTH_REQUIRED`` demo-mode convention.
     """
-    if principal is not None and principal.tenant_id != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The authenticated OIDC tenant cannot access this tenant scope.",
-                "reason": "tenant_mismatch",
-            },
-        )
+    _authorize_tenant_read(tenant_id, principal)
 
 
 def _bind_connector_run_actor(
@@ -2401,38 +2268,14 @@ def _bind_connector_run_actor(
     *,
     actor_field: str,
 ):
-    if principal is None:
-        return request_model
-
-    request_tenant = getattr(request_model, "tenant_id", None)
-    if request_tenant != principal.tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": (
-                    "The authenticated OIDC tenant cannot access this connector "
-                    "run scope."
-                ),
-                "reason": "tenant_mismatch",
-            },
-        )
-
-    request_actor = getattr(request_model, actor_field, None)
-    if request_actor and request_actor != principal.actor_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": AxisErrorCode.PERMISSION_DENIED.value,
-                "message": "The request actor does not match the authenticated OIDC actor.",
-                "reason": "actor_mismatch",
-            },
-        )
-
-    update: dict[str, object] = {actor_field: principal.actor_id}
-    if "actor_scopes" in type(request_model).model_fields:
-        update["actor_scopes"] = principal.scopes
-    return request_model.model_copy(update=update)
+    return _bind_body_tenant_actor(
+        request_model,
+        principal,
+        actor_field,
+        tenant_mismatch_message=(
+            "The authenticated OIDC tenant cannot access this connector run scope."
+        ),
+    )
 
 
 def _usage_metering_projection_loop(
@@ -2461,9 +2304,7 @@ def _usage_metering_projection_loop(
                 "Usage event projection failed; journal rows remain pending.",
                 exc_info=True,
             )
-        delay = projector.retry_delay_seconds(
-            settings.usage_metering_flush_interval_seconds
-        )
+        delay = projector.retry_delay_seconds(settings.usage_metering_flush_interval_seconds)
         stop.wait(timeout=delay)
 
 
@@ -2564,8 +2405,7 @@ def create_app(
         headers = {REQUEST_ID_HEADER: request_id}
         origin = request.headers.get("origin")
         if origin and (
-            "*" in resolved_settings.cors_origins
-            or origin in resolved_settings.cors_origins
+            "*" in resolved_settings.cors_origins or origin in resolved_settings.cors_origins
         ):
             headers.update(
                 {
@@ -2583,9 +2423,7 @@ def create_app(
 
     validate_refresh_token_encryption_key(resolved_settings)
     app.add_middleware(BrowserSessionCsrfMiddleware, settings=resolved_settings)
-    resolved_rate_limit_backend = rate_limit_backend or build_rate_limit_backend(
-        resolved_settings
-    )
+    resolved_rate_limit_backend = rate_limit_backend or build_rate_limit_backend(resolved_settings)
     app.add_middleware(
         ApiRateLimitMiddleware,
         settings=resolved_settings,
@@ -2620,14 +2458,10 @@ def create_app(
     app.state.request_usage_admission_recorder = RequestUsageAdmissionRecorder(
         enabled=resolved_settings.usage_metering_enabled,
         window_seconds=resolved_settings.usage_metering_aggregation_window_seconds,
-        statement_timeout_ms=(
-            resolved_settings.usage_metering_admission_statement_timeout_ms
-        ),
+        statement_timeout_ms=(resolved_settings.usage_metering_admission_statement_timeout_ms),
     )
     app.state.usage_event_projector = UsageEventProjector(
-        failure_threshold=(
-            resolved_settings.usage_metering_projection_failure_threshold
-        ),
+        failure_threshold=(resolved_settings.usage_metering_projection_failure_threshold),
         max_backlog_age_seconds=(
             resolved_settings.usage_metering_projection_max_backlog_age_seconds
         ),
@@ -2676,10 +2510,13 @@ def create_app(
     app.state.connector_execution_runtime = DeferredConnectorExecutionRuntime()
     app.state.connector_sync_scheduler_runtime = DeferredConnectorSyncSchedulerRuntime()
     app.state.connector_sync_dispatch_runtime = DeferredConnectorSyncDispatchRuntime()
-    app.state.connector_sync_execution_runtime = (
-        connector_sync_execution_runtime_from_settings(resolved_settings)
+    app.state.connector_sync_execution_runtime = connector_sync_execution_runtime_from_settings(
+        resolved_settings
     )
     app.state.connector_live_sync_runtime = connector_live_sync_runtime_from_settings(
+        resolved_settings
+    )
+    app.state.connector_source_discovery_runtime = connector_source_discovery_runtime_from_settings(
         resolved_settings
     )
     if resolved_settings.credential_lease_provider_adapters_enabled:
@@ -2889,6 +2726,7 @@ def create_app(
                 id_token,
                 client_id=resolved_settings.oidc_client_id or "",
                 nonce=login_state.nonce,
+                access_token=access_token,
             )
             if id_token_claims.get("sub") != principal.subject_id:
                 raise OidcAuthenticationError("id_token_subject_mismatch")
@@ -2916,9 +2754,7 @@ def create_app(
                 and refresh_token
                 and resolved_settings.oidc_refresh_token_encryption_key
             ):
-                refresh_token_ciphertext = encrypt_refresh_token(
-                    refresh_token, resolved_settings
-                )
+                refresh_token_ciphertext = encrypt_refresh_token(refresh_token, resolved_settings)
             with session_scope(request.app.state.session_factory) as guard_session:
                 guard_repository = AxisPersistenceRepository(guard_session)
                 login_block_reason = _fresh_tenant_admission_denial_reason(
@@ -2933,9 +2769,7 @@ def create_app(
                         AuditEventCreate(
                             tenant_id=principal.tenant_id,
                             actor_id=principal.actor_id,
-                            event_type=tenant_admission_denial_audit_event_type(
-                                login_block_reason
-                            ),
+                            event_type=tenant_admission_denial_audit_event_type(login_block_reason),
                             payload={
                                 "tenant_id": principal.tenant_id,
                                 "reason": login_block_reason,
@@ -3207,17 +3041,13 @@ def create_app(
             principal = request.app.state.identity_verifier.verify_authorization_header(
                 f"Bearer {access_token}"
             )
-            if (
-                principal.actor_id != claim.actor_id
-                or principal.tenant_id != claim.tenant_id
-            ):
+            if principal.actor_id != claim.actor_id or principal.tenant_id != claim.tenant_id:
                 raise OidcAuthenticationError("refresh_principal_mismatch")
             max_age_ceiling: int | None = None
             if claim.absolute_expires_at is not None:
                 max_age_ceiling = int(
                     (
-                        ensure_aware_datetime(claim.absolute_expires_at)
-                        - datetime.now(UTC)
+                        ensure_aware_datetime(claim.absolute_expires_at) - datetime.now(UTC)
                     ).total_seconds()
                 )
             (
@@ -3300,9 +3130,7 @@ def create_app(
                 # Re-capture device metadata from the refreshing request so a
                 # rotated session row reflects the device actually holding the
                 # cookie now; the metadata stays out of audit payloads.
-                client_metadata = extract_session_client_metadata(
-                    request, resolved_settings
-                )
+                client_metadata = extract_session_client_metadata(request, resolved_settings)
                 refresh_finalized = repository.finalize_oidc_browser_session_refresh(
                     session_id_hash=session_hash,
                     rotated_to_session_id_hash=new_session_hash,
@@ -3321,16 +3149,13 @@ def create_app(
                                 "session_boundary": OIDC_SESSION_BOUNDARY,
                                 "expires_at": expires_at.isoformat(),
                                 "absolute_expires_at": (
-                                    ensure_aware_datetime(
-                                        claim.absolute_expires_at
-                                    ).isoformat()
+                                    ensure_aware_datetime(claim.absolute_expires_at).isoformat()
                                     if claim.absolute_expires_at is not None
                                     else None
                                 ),
                                 "refresh_count": refresh_count,
                                 "refresh_token_rotated": bool(
-                                    isinstance(rotated_refresh_token, str)
-                                    and rotated_refresh_token
+                                    isinstance(rotated_refresh_token, str) and rotated_refresh_token
                                 ),
                             },
                         )
@@ -3359,11 +3184,7 @@ def create_app(
                         max_age=session_max_age,
                     )
 
-        if (
-            refresh_failure is not None
-            or refresh_rejected_reason is not None
-            or rotated is None
-        ):
+        if refresh_failure is not None or refresh_rejected_reason is not None or rotated is None:
             failure_reason = (
                 refresh_failure[0]
                 if refresh_failure
@@ -3374,9 +3195,7 @@ def create_app(
                 content={
                     "detail": {
                         "code": AxisErrorCode.AUTH_REQUIRED.value,
-                        "message": (
-                            "The OIDC session refresh failed and the session was revoked."
-                        ),
+                        "message": ("The OIDC session refresh failed and the session was revoked."),
                         "reason": failure_reason,
                     }
                 },
@@ -3406,29 +3225,20 @@ def create_app(
         return principal
 
     def _require_session_admin_scope(principal: OidcPrincipal, *, resource: str) -> None:
-        decision = evaluate_permission(
-            PermissionRequest(
+        try:
+            authorize_principal_scopes(
                 tenant_id=principal.tenant_id,
-                actor_id=principal.actor_id,
-                actor_scopes=principal.scopes,
+                principal=principal,
                 required_scopes=[IDENTITY_SESSION_ADMIN_SCOPE],
                 attributes={
                     "surface": "identity",
                     "resource": resource,
                 },
+                message="Managing other actors' sessions requires the admin scope.",
+                bind_tenant=False,
             )
-        )
-        if not decision.allowed:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "code": AxisErrorCode.PERMISSION_DENIED.value,
-                    "message": "Managing other actors' sessions requires the admin scope.",
-                    "required_permission": IDENTITY_SESSION_ADMIN_SCOPE,
-                    "reason": "missing_required_scope",
-                    "permission_reason": decision.reason,
-                },
-            )
+        except ScopeAuthorizationError as exc:
+            raise _scope_denial_http_exception(exc) from exc
 
     def _current_session_hash(request: Request) -> str | None:
         session_cookie = request.cookies.get(session_cookie_name(resolved_settings))
@@ -3482,9 +3292,7 @@ def create_app(
             has_more = len(stored_sessions) > page_size
             page_sessions = stored_sessions[:page_size]
             next_cursor = (
-                encode_session_cursor(page_sessions[-1])
-                if has_more and page_sessions
-                else None
+                encode_session_cursor(page_sessions[-1]) if has_more and page_sessions else None
             )
             records = [
                 IdentityBrowserSessionRecord(
@@ -3545,9 +3353,7 @@ def create_app(
                     },
                 )
             if stored_session.actor_id != resolved_principal.actor_id:
-                _require_session_admin_scope(
-                    resolved_principal, resource="session_revocation"
-                )
+                _require_session_admin_scope(resolved_principal, resource="session_revocation")
                 revocation_reason = "admin_revocation"
             else:
                 revocation_reason = "self_revocation"
@@ -3566,12 +3372,28 @@ def create_app(
         tags=["system"],
     )
     def identity_session(
-        principal: OidcPrincipalDependency,
+        request: Request,
+        authorization: Annotated[str | None, Header(alias="Authorization")] = None,
     ) -> IdentitySessionReadModel:
+        # Deliberately resolves instead of raising on missing or invalid
+        # credentials: this is the one endpoint an unauthenticated browser must
+        # be able to read so the console can render a sign-in gate rather than
+        # generic error panels when SSO enforcement is on. The response only
+        # ever reports readiness facts and public IdP coordinates (issuer,
+        # audience) — never token material, actor or tenant data for a caller
+        # whose principal did not verify.
+        principal, unauthenticated_reason = _resolve_request_principal(
+            request,
+            authorization,
+        )
+        if principal is not None:
+            _annotate_request_span_with_principal(principal)
+            _record_request_usage_admission(request, principal)
         return build_identity_session_read_model(
             settings=resolved_settings,
             oidc_readiness_report=_oidc_readiness_report(resolved_settings),
             principal=principal,
+            unauthenticated_reason=unauthenticated_reason,
         )
 
     @app.get(
@@ -3813,9 +3635,7 @@ def create_app(
                 status_code=403,
                 detail={
                     "code": AxisErrorCode.PERMISSION_DENIED.value,
-                    "message": (
-                        "Arbitrary policy-set comparison over replay windows is disabled."
-                    ),
+                    "message": ("Arbitrary policy-set comparison over replay windows is disabled."),
                     "reason": exc.reason,
                 },
             ) from exc
@@ -3860,9 +3680,7 @@ def create_app(
                 status_code=403,
                 detail={
                     "code": AxisErrorCode.PERMISSION_DENIED.value,
-                    "message": (
-                        "Arbitrary policy-set comparison over replay windows is disabled."
-                    ),
+                    "message": ("Arbitrary policy-set comparison over replay windows is disabled."),
                     "reason": exc.reason,
                 },
             ) from exc
@@ -4064,8 +3882,7 @@ def create_app(
                 detail={
                     "code": AxisErrorCode.NOT_FOUND.value,
                     "message": (
-                        "The notification is not present in the current tenant "
-                        "notification window."
+                        "The notification is not present in the current tenant notification window."
                     ),
                     "notification_id": exc.notification_id,
                 },
@@ -4075,10 +3892,7 @@ def create_app(
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
                     "code": AxisErrorCode.CONFLICT.value,
-                    "message": (
-                        "The notification acknowledgement conflicts with "
-                        "persisted state."
-                    ),
+                    "message": ("The notification acknowledgement conflicts with persisted state."),
                     "reason": exc.reason,
                     "notification_id": exc.notification_id,
                     "current_state": exc.current_state,
@@ -4267,9 +4081,7 @@ def create_app(
                 status_code=409,
                 detail={
                     "code": AxisErrorCode.POLICY_VIOLATION.value,
-                    "message": (
-                        "The maintenance risk scenario idempotency key conflicts."
-                    ),
+                    "message": ("The maintenance risk scenario idempotency key conflicts."),
                     "scenario_id": exc.scenario_id,
                 },
             ) from exc
@@ -4410,110 +4222,106 @@ def create_app(
         principal: OidcPrincipalDependency,
         response: Response,
     ) -> AgentRunResult:
-      with telemetry.tracer.start_as_current_span("axis.agent_run.start") as span:
-        set_span_attributes(
-            span,
-            {
-                ATTR_TENANT_ID: principal.tenant_id if principal else None,
-                ATTR_ACTOR_ID: principal.actor_id if principal else None,
-            },
-        )
-        try:
-            bound_run_request = _bind_demo_tenant_actor(run_request, principal)
-            result = await start_agent_run(
-                repository,
-                agent_id,
-                bound_run_request,
-                model_runtime,
-                execution_enabled=resolved_settings.agent_run_execution_enabled,
-                max_model_calls=resolved_settings.agent_run_max_model_calls,
-                external_model_egress_enabled=(
-                    resolved_settings.external_model_egress_enabled
-                ),
-                model_prompt_excerpt_chars=(
-                    resolved_settings.model_invocation_prompt_excerpt_chars
-                ),
-                usage_metering_enabled=resolved_settings.usage_metering_enabled,
-                usage_window_seconds=(
-                    resolved_settings.usage_metering_aggregation_window_seconds
-                ),
-                workflow_runtime=workflow_runtime,
+        with telemetry.tracer.start_as_current_span("axis.agent_run.start") as span:
+            set_span_attributes(
+                span,
+                {
+                    ATTR_TENANT_ID: principal.tenant_id if principal else None,
+                    ATTR_ACTOR_ID: principal.actor_id if principal else None,
+                },
             )
-        except AgentReferenceRecordNotFound as exc:
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "code": AxisErrorCode.NOT_FOUND.value,
-                    "message": "Manufacturing agent registry reference record not found.",
-                    "surface": "agents",
-                },
-            ) from exc
-        except AgentReferenceRecordInvalid as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": AxisErrorCode.VALIDATION_FAILED.value,
-                    "message": "Manufacturing agent registry reference payload is invalid.",
-                    "surface": "agents",
-                },
-            ) from exc
-        except AgentRunAgentNotFound as exc:
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "code": AxisErrorCode.NOT_FOUND.value,
-                    "message": "The agent was not found in the persisted registry.",
-                    "reason": "agent_not_found",
-                    "agent_id": agent_id,
-                },
-            ) from exc
-        except AgentRunAgentNotExecutable as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": AxisErrorCode.VALIDATION_FAILED.value,
-                    "message": exc.message,
-                    "reason": exc.reason,
-                    "agent_id": agent_id,
-                },
-            ) from exc
-        except AgentRunPermissionDenied as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": AxisErrorCode.PERMISSION_DENIED.value,
-                    "message": "The actor cannot execute runs for this agent.",
-                    "required_permissions": exc.required_permissions,
-                    "reason": exc.decision.reason,
-                },
-            ) from exc
-        except PlatformPolicyEnforcementDenied as exc:
-            repository.session.commit()
-            raise HTTPException(
-                status_code=403,
-                detail=_platform_policy_denied_detail(
-                    exc,
-                    "A platform policy denies this agent run.",
-                ),
-            ) from exc
-        except AgentRunIdempotencyConflict as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": AxisErrorCode.CONFLICT.value,
-                    "message": (
-                        "The idempotency key already exists with a different payload."
+            try:
+                bound_run_request = _bind_demo_tenant_actor(run_request, principal)
+                result = await start_agent_run(
+                    repository,
+                    agent_id,
+                    bound_run_request,
+                    model_runtime,
+                    execution_enabled=resolved_settings.agent_run_execution_enabled,
+                    max_model_calls=resolved_settings.agent_run_max_model_calls,
+                    external_model_egress_enabled=(resolved_settings.external_model_egress_enabled),
+                    model_prompt_excerpt_chars=(
+                        resolved_settings.model_invocation_prompt_excerpt_chars
                     ),
-                    "reason": "idempotency_key_conflict",
-                    "run_id": str(exc.run_id),
-                },
-            ) from exc
+                    usage_metering_enabled=resolved_settings.usage_metering_enabled,
+                    usage_window_seconds=(
+                        resolved_settings.usage_metering_aggregation_window_seconds
+                    ),
+                    workflow_runtime=workflow_runtime,
+                )
+            except AgentReferenceRecordNotFound as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": AxisErrorCode.NOT_FOUND.value,
+                        "message": "Manufacturing agent registry reference record not found.",
+                        "surface": "agents",
+                    },
+                ) from exc
+            except AgentReferenceRecordInvalid as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": AxisErrorCode.VALIDATION_FAILED.value,
+                        "message": "Manufacturing agent registry reference payload is invalid.",
+                        "surface": "agents",
+                    },
+                ) from exc
+            except AgentRunAgentNotFound as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": AxisErrorCode.NOT_FOUND.value,
+                        "message": "The agent was not found in the persisted registry.",
+                        "reason": "agent_not_found",
+                        "agent_id": agent_id,
+                    },
+                ) from exc
+            except AgentRunAgentNotExecutable as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": AxisErrorCode.VALIDATION_FAILED.value,
+                        "message": exc.message,
+                        "reason": exc.reason,
+                        "agent_id": agent_id,
+                    },
+                ) from exc
+            except AgentRunPermissionDenied as exc:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": AxisErrorCode.PERMISSION_DENIED.value,
+                        "message": "The actor cannot execute runs for this agent.",
+                        "required_permissions": exc.required_permissions,
+                        "reason": exc.decision.reason,
+                    },
+                ) from exc
+            except PlatformPolicyEnforcementDenied as exc:
+                repository.session.commit()
+                raise HTTPException(
+                    status_code=403,
+                    detail=_platform_policy_denied_detail(
+                        exc,
+                        "A platform policy denies this agent run.",
+                    ),
+                ) from exc
+            except AgentRunIdempotencyConflict as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": AxisErrorCode.CONFLICT.value,
+                        "message": ("The idempotency key already exists with a different payload."),
+                        "reason": "idempotency_key_conflict",
+                        "run_id": str(exc.run_id),
+                    },
+                ) from exc
 
-        outcome = "idempotent_replay" if result.idempotent_replay else result.status
-        set_span_attributes(span, {ATTR_OUTCOME: outcome})
-        if result.idempotent_replay:
-            response.status_code = status.HTTP_200_OK
-        return result
+            outcome = "idempotent_replay" if result.idempotent_replay else result.status
+            set_span_attributes(span, {ATTR_OUTCOME: outcome})
+            if result.idempotent_replay:
+                response.status_code = status.HTTP_200_OK
+            return result
 
     @operations_router.get(
         "/agents/{agent_id}/runs",
@@ -4555,9 +4363,7 @@ def create_app(
         has_more = len(results) > page_size
         page_results = results[:page_size]
         next_cursor = (
-            encode_agent_run_cursor(page_results[-1])
-            if has_more and page_results
-            else None
+            encode_agent_run_cursor(page_results[-1]) if has_more and page_results else None
         )
         return AgentRunList(
             tenant_id=tenant_id,
@@ -4794,9 +4600,7 @@ def create_app(
             stewardship=record_view,
         )
         return JSONResponse(
-            status_code=(
-                status.HTTP_201_CREATED if outcome == "created" else status.HTTP_200_OK
-            ),
+            status_code=(status.HTTP_201_CREATED if outcome == "created" else status.HTTP_200_OK),
             content=view.model_dump(mode="json"),
         )
 
@@ -4895,9 +4699,7 @@ def create_app(
             contract=contract_view,
         )
         return JSONResponse(
-            status_code=(
-                status.HTTP_201_CREATED if outcome == "created" else status.HTTP_200_OK
-            ),
+            status_code=(status.HTTP_201_CREATED if outcome == "created" else status.HTTP_200_OK),
             content=view.model_dump(mode="json"),
         )
 
@@ -4921,6 +4723,31 @@ def create_app(
         except DataAssetNotInCatalog as exc:
             raise _data_asset_not_found(tenant_id, asset_id) from exc
         return evaluate_data_asset_contract(
+            repository,
+            tenant_id=tenant_id,
+            asset_id=asset_id,
+        )
+
+    @data_router.get(
+        "/assets/{asset_id}/lineage",
+        response_model=DataAssetLineageView,
+        responses={
+            403: {"description": "Tenant scope read permission denied"},
+            404: {"description": "Tenant or data asset not found"},
+        },
+    )
+    def data_asset_lineage_view_route(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        tenant_id: str = Query(min_length=1),
+        asset_id: str = Path(min_length=1),
+    ) -> DataAssetLineageView:
+        _authorize_tenant_read(tenant_id, principal)
+        try:
+            ensure_data_asset_in_catalog(repository, tenant_id=tenant_id, asset_id=asset_id)
+        except DataAssetNotInCatalog as exc:
+            raise _data_asset_not_found(tenant_id, asset_id) from exc
+        return build_data_asset_lineage_view(
             repository,
             tenant_id=tenant_id,
             asset_id=asset_id,
@@ -5069,9 +4896,7 @@ def create_app(
         except ConnectorManifestRevisionConflict as exc:
             detail = {
                 "code": AxisErrorCode.POLICY_VIOLATION.value,
-                "message": (
-                    "The connector manifest revision conflicts with persisted state."
-                ),
+                "message": ("The connector manifest revision conflicts with persisted state."),
                 "reason": exc.reason,
                 "connector_id": exc.connector_id,
             }
@@ -5150,19 +4975,22 @@ def create_app(
                 bound_lifecycle,
             )
         except ConnectorManifestLifecycleValidationError as exc:
-            status_code = (
-                403
-                if exc.reason
-                in {
-                    "missing_manifest_lifecycle_scope",
-                    "missing_manifest_live_scope",
-                }
-                else 422
-            )
+            scope_denial = exc.reason in {
+                "missing_manifest_lifecycle_scope",
+                "missing_manifest_live_scope",
+            }
+            # Scope denials carry the same permission-denied contract as every
+            # other governed write; only transition-legality failures are
+            # validation errors.
+            status_code = 403 if scope_denial else 422
             raise HTTPException(
                 status_code=status_code,
                 detail={
-                    "code": AxisErrorCode.VALIDATION_FAILED.value,
+                    "code": (
+                        AxisErrorCode.PERMISSION_DENIED.value
+                        if scope_denial
+                        else AxisErrorCode.VALIDATION_FAILED.value
+                    ),
                     "message": exc.message,
                     "reason": exc.reason,
                 },
@@ -5775,9 +5603,7 @@ def create_app(
                 status_code=403,
                 detail={
                     "code": AxisErrorCode.PERMISSION_DENIED.value,
-                    "message": (
-                        "The actor cannot request connector evidence snapshot exports."
-                    ),
+                    "message": ("The actor cannot request connector evidence snapshot exports."),
                     "required_scope": "connectors:evidence:snapshot:export:request",
                     "decision": exc.decision.model_dump(),
                 },
@@ -5787,9 +5613,7 @@ def create_app(
                 status_code=409,
                 detail={
                     "code": AxisErrorCode.CONFLICT.value,
-                    "message": (
-                        "The connector evidence snapshot export request conflicts."
-                    ),
+                    "message": ("The connector evidence snapshot export request conflicts."),
                     "export_request_id": exc.export_request_id,
                     "reason": exc.reason,
                 },
@@ -5799,8 +5623,7 @@ def create_app(
         return result
 
     @operations_router.post(
-        "/connectors/evidence-invariants/snapshots/"
-        "export-requests/{export_request_id}/decision",
+        "/connectors/evidence-invariants/snapshots/export-requests/{export_request_id}/decision",
         response_model=ConnectorEvidenceInvariantSnapshotExportDecisionResult,
         status_code=status.HTTP_201_CREATED,
         tags=["demo"],
@@ -5839,9 +5662,7 @@ def create_app(
                 status_code=403,
                 detail={
                     "code": AxisErrorCode.PERMISSION_DENIED.value,
-                    "message": (
-                        "The actor cannot decide connector evidence snapshot exports."
-                    ),
+                    "message": ("The actor cannot decide connector evidence snapshot exports."),
                     "required_scope": exc.required_permission,
                     "decision": exc.decision.model_dump(),
                     "reason": reason,
@@ -6217,8 +6038,7 @@ def create_app(
                 detail={
                     "code": AxisErrorCode.CONFLICT.value,
                     "message": (
-                        "The connector sync checkpoint claim conflicts with "
-                        "existing evidence."
+                        "The connector sync checkpoint claim conflicts with existing evidence."
                     ),
                     "reason": exc.reason,
                     "active_claim_id": exc.active_claim_id,
@@ -6447,32 +6267,32 @@ def create_app(
             actor_field="executed_by",
         )
         try:
-          with telemetry.tracer.start_as_current_span("axis.connector_sync.execute") as span:
-            set_span_attributes(
-                span,
-                {
-                    ATTR_CONNECTOR_ID: getattr(bound_execution, "connector_id", None),
-                    ATTR_TENANT_ID: principal.tenant_id if principal else None,
-                },
-            )
-            record = execute_demo_connector_sync(
-                repository,
-                run_id,
-                bound_execution,
-                sync_execution_runtime,
-                live_sync_runtime=live_sync_runtime,
-                usage_metering_enabled=resolved_settings.usage_metering_enabled,
-                usage_window_seconds=(
-                    resolved_settings.usage_metering_aggregation_window_seconds
-                ),
-            )
-            rows = _connector_sync_rows(record)
-            set_span_attributes(span, {ATTR_OUTCOME: record.status})
-            if rows:
-                telemetry.connector_sync_rows_counter.add(
-                    rows, {"connector_id": record.connector_id, "status": record.status}
+            with telemetry.tracer.start_as_current_span("axis.connector_sync.execute") as span:
+                set_span_attributes(
+                    span,
+                    {
+                        ATTR_CONNECTOR_ID: getattr(bound_execution, "connector_id", None),
+                        ATTR_TENANT_ID: principal.tenant_id if principal else None,
+                    },
                 )
-            return record
+                record = execute_demo_connector_sync(
+                    repository,
+                    run_id,
+                    bound_execution,
+                    sync_execution_runtime,
+                    live_sync_runtime=live_sync_runtime,
+                    usage_metering_enabled=resolved_settings.usage_metering_enabled,
+                    usage_window_seconds=(
+                        resolved_settings.usage_metering_aggregation_window_seconds
+                    ),
+                )
+                rows = _connector_sync_rows(record)
+                set_span_attributes(span, {ATTR_OUTCOME: record.status})
+                if rows:
+                    telemetry.connector_sync_rows_counter.add(
+                        rows, {"connector_id": record.connector_id, "status": record.status}
+                    )
+                return record
         except ConnectorRunPermissionDenied as exc:
             raise HTTPException(
                 status_code=403,
@@ -6871,9 +6691,7 @@ def create_app(
             404: {"description": "Connector promotion policy or registry reference not found"},
             409: {"description": "Connector promotion policy revision conflict"},
             422: {
-                "description": (
-                    "Connector promotion policy revision or registry validation failed"
-                )
+                "description": ("Connector promotion policy revision or registry validation failed")
             },
         },
         status_code=status.HTTP_201_CREATED,
@@ -7313,6 +7131,1101 @@ def create_app(
                 },
             ) from exc
 
+    @operations_router.post(
+        "/connectors/external-db/verify-source",
+        response_model=SourceVerificationOutcome,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source verification scope or tenant binding denied"},
+            404: {"description": "Credential lease or egress policy not found"},
+            422: {"description": "Verification references do not match the connector"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_verify(
+        verify_request: ConnectorSourceVerifyRequest,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        discovery_runtime: ConnectorSourceDiscoveryRuntimeDependency,
+    ) -> SourceVerificationOutcome:
+        _authorize_connector_tenant_read(verify_request.tenant_id, principal)
+        bound_request = _bind_body_tenant_actor(
+            verify_request,
+            principal,
+            actor_field="requested_by",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot access this connector source."
+            ),
+        )
+        try:
+            return record_connector_source_verification(
+                repository,
+                runtime=discovery_runtime,
+                request=bound_request,
+                principal_scopes=bound_request.actor_scopes,
+            )
+        except SourceScopeDenied as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": AxisErrorCode.PERMISSION_DENIED.value,
+                    "message": (
+                        "The actor lacks the source discovery scope required for "
+                        "connector source verification."
+                    ),
+                    "required_permission": exc.required_scope,
+                    "reason": f"missing_scope:{exc.required_scope}",
+                },
+            ) from exc
+        except ConnectorSourceOperationError as exc:
+            status_code = 404 if exc.reason.endswith("_not_found") else 422
+            raise HTTPException(
+                status_code=status_code,
+                detail={
+                    "code": AxisErrorCode.VALIDATION_FAILED.value,
+                    "message": exc.message,
+                    "reason": exc.reason,
+                },
+            ) from exc
+
+    @operations_router.post(
+        "/connectors/external-db/discover",
+        response_model=SourceDiscoveryOutcome,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source discovery scope or tenant binding denied"},
+            404: {"description": "Credential lease or egress policy not found"},
+            422: {"description": "Discovery references do not match the connector"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_discovery(
+        discovery_request: ConnectorSourceDiscoveryRequest,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        discovery_runtime: ConnectorSourceDiscoveryRuntimeDependency,
+    ) -> SourceDiscoveryOutcome:
+        _authorize_connector_tenant_read(discovery_request.tenant_id, principal)
+        bound_request = _bind_body_tenant_actor(
+            discovery_request,
+            principal,
+            actor_field="requested_by",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot access this connector source."
+            ),
+        )
+        try:
+            return record_connector_source_discovery(
+                repository,
+                runtime=discovery_runtime,
+                request=bound_request,
+                principal_scopes=bound_request.actor_scopes,
+            )
+        except SourceScopeDenied as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": AxisErrorCode.PERMISSION_DENIED.value,
+                    "message": (
+                        "The actor lacks the source discovery scope required for "
+                        "connector schema discovery."
+                    ),
+                    "required_permission": exc.required_scope,
+                    "reason": f"missing_scope:{exc.required_scope}",
+                },
+            ) from exc
+        except ConnectorSourceOperationError as exc:
+            status_code = 404 if exc.reason.endswith("_not_found") else 422
+            raise HTTPException(
+                status_code=status_code,
+                detail={
+                    "code": AxisErrorCode.VALIDATION_FAILED.value,
+                    "message": exc.message,
+                    "reason": exc.reason,
+                },
+            ) from exc
+
+    @operations_router.post(
+        "/connectors/external-db/source-bindings",
+        response_model=ConnectorSourceActivationOutcome,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source activation scope or tenant binding denied"},
+            404: {"description": "Credential lease or egress policy not found"},
+            409: {"description": "An active binding or binding ID already exists"},
+            422: {
+                "description": (
+                    "Activation selections are invalid, stale, duplicate, or oversized"
+                )
+            },
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_activation(
+        activation_request: ConnectorSourceActivationRequest,
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+    ) -> ConnectorSourceActivationOutcome:
+        settings: Settings = request.app.state.settings
+        _authorize_connector_tenant_read(activation_request.tenant_id, principal)
+        bound_request = _bind_body_tenant_actor(
+            activation_request,
+            principal,
+            actor_field="requested_by",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot activate sources for this connector."
+            ),
+        )
+        try:
+            return record_connector_source_activation(
+                repository,
+                request=bound_request,
+                principal_scopes=bound_request.actor_scopes,
+                max_selections=settings.connector_source_activation_max_selections,
+            )
+        except SourceActivationScopeDenied as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": AxisErrorCode.PERMISSION_DENIED.value,
+                    "message": (
+                        "The actor lacks the source activation scope required for "
+                        "binding discovered tables."
+                    ),
+                    "required_permission": exc.required_scope,
+                    "reason": f"missing_scope:{exc.required_scope}",
+                },
+            ) from exc
+        except ConnectorSourceActivationConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": AxisErrorCode.CONFLICT.value,
+                    "message": exc.message,
+                    "reason": exc.reason,
+                },
+            ) from exc
+        except ConnectorSourceOperationError as exc:
+            status_code = 404 if exc.reason.endswith("_not_found") else 422
+            raise HTTPException(
+                status_code=status_code,
+                detail={
+                    "code": AxisErrorCode.VALIDATION_FAILED.value,
+                    "message": exc.message,
+                    "reason": exc.reason,
+                },
+            ) from exc
+        except ConnectorSourceActivationError as exc:
+            detail: dict[str, object] = {
+                "code": AxisErrorCode.VALIDATION_FAILED.value,
+                "message": exc.message,
+                "reason": exc.reason,
+            }
+            if exc.selection_index is not None:
+                detail["selection_index"] = exc.selection_index
+            raise HTTPException(status_code=422, detail=detail) from exc
+
+    @operations_router.get(
+        "/connectors/external-db/source-bindings",
+        response_model=ConnectorSourceBindingsView,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Tenant binding denied"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_bindings(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
+        connector_id: str = Query(default="external_db_operational_mirror", min_length=1),
+    ) -> ConnectorSourceBindingsView:
+        _authorize_connector_tenant_read(tenant_id, principal)
+        return list_connector_source_bindings(
+            repository,
+            tenant_id=tenant_id,
+            connector_id=connector_id,
+        )
+
+    @operations_router.get(
+        "/connectors/external-db/source-ingestion/eligibility",
+        response_model=SourceIngestionEligibilityView,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source ingestion read scope or tenant binding denied"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_ingestion_eligibility(
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
+        connector_id: str = Query(default="external_db_operational_mirror", min_length=1),
+        actor_scopes: list[str] = CheckpointActorScopesQuery,
+    ) -> SourceIngestionEligibilityView:
+        settings: Settings = request.app.state.settings
+        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_source_ingestion_read(
+            principal,
+            actor_scopes,
+            operation="inspect ingestion eligibility",
+        )
+        rows = preview_source_ingestion_eligibility(
+            repository,
+            tenant_id=tenant_id,
+            connector_id=connector_id,
+        )
+        return SourceIngestionEligibilityView(
+            tenant_id=tenant_id,
+            connector_id=connector_id,
+            extraction_available=(
+                settings.source_ingestion_dispatch_enabled
+                and settings.source_ingestion_extraction_enabled
+            ),
+            planned_limits=planned_extraction_limits(settings),
+            rows=rows,
+        )
+
+    @operations_router.get(
+        "/connectors/external-db/source-ingestion/overview",
+        response_model=ConnectorSourceIngestionOverview,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source ingestion read scope or tenant binding denied"},
+            422: {"description": "Pagination cursor invalid"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_ingestion_overview(
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
+        connector_id: str = Query(default="external_db_operational_mirror", min_length=1),
+        cursor: str | None = Query(default=None, min_length=1),
+        limit: int = Query(default=50, ge=1, le=100),
+        actor_scopes: list[str] = CheckpointActorScopesQuery,
+    ) -> ConnectorSourceIngestionOverview:
+        """Cross-request aggregates plus a newest-first page of requests."""
+        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_source_ingestion_read(
+            principal,
+            actor_scopes,
+            operation="read the ingestion overview",
+        )
+        cursor_created_at: datetime | None = None
+        cursor_request_id: str | None = None
+        if cursor is not None:
+            try:
+                decoded = base64.urlsafe_b64decode(cursor.encode()).decode()
+                if base64.urlsafe_b64encode(decoded.encode()).decode() != cursor:
+                    raise ValueError("cursor is not canonical url-safe base64")
+                raw_created_at, raw_request_id = decoded.split("|", 1)
+                cursor_created_at = datetime.fromisoformat(raw_created_at)
+                if raw_request_id == "" or "|" in raw_request_id:
+                    raise ValueError("cursor request id segment is malformed")
+                cursor_request_id = raw_request_id
+            except (ValueError, UnicodeDecodeError, UnicodeEncodeError) as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": AxisErrorCode.VALIDATION_FAILED.value,
+                        "message": "That pagination cursor is not valid.",
+                        "reason": "invalid_cursor",
+                    },
+                ) from exc
+        overview = build_connector_source_ingestion_overview(
+            repository,
+            tenant_id=tenant_id,
+            connector_id=connector_id,
+            limit=limit,
+            cursor_created_at=cursor_created_at,
+            cursor_request_id=cursor_request_id,
+            settings=request.app.state.settings,
+        )
+        encoded_cursor = (
+            base64.urlsafe_b64encode(overview.next_cursor.encode()).decode()
+            if overview.next_cursor
+            else None
+        )
+        return overview.model_copy(update={"next_cursor": encoded_cursor})
+
+    @operations_router.post(
+        "/connectors/external-db/source-ingestion-requests",
+        response_model=SourceIngestionRequestView,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source ingestion scope or tenant binding denied"},
+            409: {"description": "The request ID already names a different request"},
+            422: {
+                "description": (
+                    "Ingestion selections are invalid, stale, inactive, "
+                    "duplicate, or oversized"
+                )
+            },
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_ingestion_request_create(
+        submission: ConnectorSourceIngestionSubmission,
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+    ) -> SourceIngestionRequestView:
+        settings: Settings = request.app.state.settings
+        _authorize_connector_tenant_read(submission.tenant_id, principal)
+        bound_submission = _bind_body_tenant_actor(
+            submission,
+            principal,
+            actor_field="requested_by",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot request ingestion for this connector."
+            ),
+        )
+        try:
+            return record_connector_source_ingestion_request(
+                repository,
+                submission=bound_submission,
+                principal_scopes=bound_submission.actor_scopes,
+                max_selections=max_source_ingestion_selections(settings),
+                settings=settings,
+            )
+        except SourceIngestionScopeDenied as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": AxisErrorCode.PERMISSION_DENIED.value,
+                    "message": (
+                        "The actor lacks the source ingestion scope required for "
+                        "governed ingestion requests."
+                    ),
+                    "required_permission": exc.required_scope,
+                    "reason": f"missing_scope:{exc.required_scope}",
+                },
+            ) from exc
+        except ConnectorSourceIngestionError as exc:
+            status_code = 409 if exc.reason == "request_id_conflict" else 422
+            raise HTTPException(
+                status_code=status_code,
+                detail={
+                    "code": (
+                        AxisErrorCode.CONFLICT.value
+                        if status_code == 409
+                        else AxisErrorCode.VALIDATION_FAILED.value
+                    ),
+                    "message": exc.message,
+                    "reason": exc.reason,
+                },
+            ) from exc
+
+    @operations_router.get(
+        "/connectors/external-db/source-ingestion-requests",
+        response_model=list[SourceIngestionRequestView],
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source ingestion read scope or tenant binding denied"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_ingestion_requests_list(
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
+        connector_id: str = Query(default="external_db_operational_mirror", min_length=1),
+        limit: int = Query(default=50, ge=1, le=200),
+        actor_scopes: list[str] = CheckpointActorScopesQuery,
+    ) -> list[SourceIngestionRequestView]:
+        settings: Settings = request.app.state.settings
+        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_source_ingestion_read(
+            principal,
+            actor_scopes,
+            operation="list ingestion requests",
+        )
+        return list_connector_source_ingestion_request_views(
+            repository,
+            tenant_id=tenant_id,
+            connector_id=connector_id,
+            limit=limit,
+            settings=settings,
+        )
+
+    @operations_router.get(
+        "/connectors/external-db/source-ingestion-requests/{request_id}",
+        response_model=SourceIngestionRequestView,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source ingestion read scope or tenant binding denied"},
+            404: {"description": "Ingestion request not found"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_ingestion_request_status(
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_id: str,
+        tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
+        actor_scopes: list[str] = CheckpointActorScopesQuery,
+    ) -> SourceIngestionRequestView:
+        settings: Settings = request.app.state.settings
+        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_source_ingestion_read(
+            principal,
+            actor_scopes,
+            operation="read ingestion request status",
+        )
+        view = get_connector_source_ingestion_request_view(
+            repository,
+            tenant_id=tenant_id,
+            request_id=request_id,
+            settings=settings,
+        )
+        if view is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": AxisErrorCode.NOT_FOUND.value,
+                    "message": "That ingestion request does not exist.",
+                    "reason": "ingestion_request_not_found",
+                },
+            )
+        return view
+
+    @operations_router.post(
+        "/connectors/external-db/source-ingestion-requests/{request_id}/cancel",
+        response_model=SourceIngestionRequestView,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source ingestion scope or tenant binding denied"},
+            404: {"description": "Ingestion request not found"},
+            409: {"description": "The request was already dispatched or is terminal"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_ingestion_request_cancel(
+        cancel_request: ConnectorSourceIngestionCancelRequest,
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_id: str,
+    ) -> SourceIngestionRequestView:
+        settings: Settings = request.app.state.settings
+        _authorize_connector_tenant_read(cancel_request.tenant_id, principal)
+        bound_cancel = _bind_body_tenant_actor(
+            cancel_request,
+            principal,
+            actor_field="cancelled_by",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot cancel ingestion requests for "
+                "this connector."
+            ),
+        )
+        try:
+            view, outcome = cancel_connector_source_ingestion_request(
+                repository,
+                tenant_id=bound_cancel.tenant_id,
+                request_id=request_id,
+                cancelled_by=bound_cancel.cancelled_by,
+                cancel_reason=bound_cancel.reason or None,
+                principal_scopes=bound_cancel.actor_scopes,
+            )
+        except SourceIngestionScopeDenied as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": AxisErrorCode.PERMISSION_DENIED.value,
+                    "message": (
+                        "The actor lacks the source ingestion scope required to "
+                        "cancel governed ingestion requests."
+                    ),
+                    "required_permission": exc.required_scope,
+                    "reason": f"missing_scope:{exc.required_scope}",
+                },
+            ) from exc
+        if view is None or outcome == "not_found":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": AxisErrorCode.NOT_FOUND.value,
+                    "message": "That ingestion request does not exist.",
+                    "reason": "ingestion_request_not_found",
+                },
+            )
+        if outcome == "conflict":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": AxisErrorCode.CONFLICT.value,
+                    "message": (
+                        "That request can no longer be cancelled because it was "
+                        "already dispatched or reached a terminal state."
+                    ),
+                    "reason": "cancel_conflict",
+                },
+            )
+        return get_connector_source_ingestion_request_view(
+            repository,
+            tenant_id=bound_cancel.tenant_id,
+            request_id=request_id,
+            settings=settings,
+        )
+
+    @operations_router.post(
+        "/connectors/external-db/source-ingestion-requests/{request_id}/requeue",
+        response_model=SourceIngestionRequestView,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source ingestion scope or tenant binding denied"},
+            404: {"description": "Ingestion request not found"},
+            409: {"description": "Only dead-lettered requests can be re-dispatched"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_ingestion_request_requeue(
+        requeue_request: ConnectorSourceIngestionRequeueRequest,
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_id: str,
+    ) -> SourceIngestionRequestView:
+        _authorize_connector_tenant_read(requeue_request.tenant_id, principal)
+        bound = _bind_body_tenant_actor(
+            requeue_request,
+            principal,
+            actor_field="requeued_by",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot re-dispatch ingestion requests "
+                "for this connector."
+            ),
+        )
+        try:
+            _, outcome = requeue_connector_source_ingestion_request(
+                repository,
+                tenant_id=bound.tenant_id,
+                request_id=request_id,
+                requeued_by=bound.requeued_by,
+                reason=bound.reason,
+                idempotency_key=bound.idempotency_key,
+                principal_scopes=bound.actor_scopes,
+            )
+        except SourceIngestionScopeDenied as exc:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": AxisErrorCode.PERMISSION_DENIED.value,
+                    "message": (
+                        "The actor lacks the source ingestion scope required to "
+                        "re-dispatch governed ingestion requests."
+                    ),
+                    "required_permission": exc.required_scope,
+                    "reason": f"missing_scope:{exc.required_scope}",
+                },
+            ) from exc
+        if outcome == "not_found":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": AxisErrorCode.NOT_FOUND.value,
+                    "message": "That ingestion request does not exist.",
+                    "reason": "ingestion_request_not_found",
+                },
+            )
+        if outcome == "conflict":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": AxisErrorCode.CONFLICT.value,
+                    "message": (
+                        "Only dead-lettered requests can be re-dispatched, and the "
+                        "same actor, reason, and idempotency key must be repeated to "
+                        "replay."
+                    ),
+                    "reason": "requeue_conflict",
+                },
+            )
+        return get_connector_source_ingestion_request_view(
+            repository,
+            tenant_id=bound.tenant_id,
+            request_id=request_id,
+            settings=request.app.state.settings,
+        )
+
+    @operations_router.get(
+        "/connectors/external-db/source-ingestion-requests/{request_id}/batches",
+        response_model=SourceExtractionBatchesPage,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source ingestion read scope or tenant binding denied"},
+            404: {"description": "Ingestion request not found"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_extraction_batches(
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_id: str,
+        tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
+        cursor: str | None = Query(default=None, min_length=1),
+        binding_id: str | None = Query(default=None, min_length=1, max_length=180),
+        truncated: bool | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=200),
+        actor_scopes: list[str] = CheckpointActorScopesQuery,
+    ) -> SourceExtractionBatchesPage:
+        """Metadata-only extraction batches; row payloads never appear here."""
+        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_source_ingestion_read(
+            principal,
+            actor_scopes,
+            operation="read extraction batch evidence",
+        )
+        cursor_key: str | None = None
+        if cursor is not None:
+            try:
+                cursor_key = base64.urlsafe_b64decode(cursor.encode()).decode()
+                if base64.urlsafe_b64encode(cursor_key.encode()).decode() != cursor:
+                    raise ValueError("cursor is not canonical url-safe base64")
+            except (ValueError, UnicodeDecodeError, UnicodeEncodeError) as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": AxisErrorCode.VALIDATION_FAILED.value,
+                        "message": "That pagination cursor is not valid.",
+                        "reason": "invalid_cursor",
+                    },
+                ) from exc
+        page = list_connector_source_extraction_batches_page(
+            repository,
+            tenant_id=tenant_id,
+            request_id=request_id,
+            limit=limit,
+            cursor_key=cursor_key,
+            binding_id=binding_id,
+            truncated=truncated,
+        )
+        if page is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": AxisErrorCode.NOT_FOUND.value,
+                    "message": "That ingestion request does not exist.",
+                    "reason": "ingestion_request_not_found",
+                },
+            )
+        encoded_cursor = (
+            base64.urlsafe_b64encode(page.next_cursor.encode()).decode()
+            if page.next_cursor
+            else None
+        )
+        return page.model_copy(update={"next_cursor": encoded_cursor})
+
+    @operations_router.get(
+        "/connectors/external-db/source-ingestion-requests/{request_id}/batches/reconciliation",
+        response_model=SourceExtractionReconciliationReport,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source ingestion read scope or tenant binding denied"},
+            404: {"description": "Ingestion request not found"},
+            409: {"description": "Dry-run refused or store adapter unsupported"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_extraction_reconciliation(
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_id: str,
+        tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
+        dry_run: bool = Query(default=True),
+        actor_scopes: list[str] = CheckpointActorScopesQuery,
+    ) -> SourceExtractionReconciliationReport:
+        """Read-only object-store vs metadata comparison; dry-run only."""
+        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_source_ingestion_read(
+            principal,
+            actor_scopes,
+            operation="run extraction reconciliation",
+        )
+        if not dry_run:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": AxisErrorCode.CONFLICT.value,
+                    "message": (
+                        "Only dry-run reconciliation exists; repair actions are "
+                        "explicitly out of scope."
+                    ),
+                    "reason": "dry_run_only",
+                },
+            )
+        settings: Settings = request.app.state.settings
+        # Local adapter ONLY: constructing cloud clients from an operator GET
+        # would be an external effect this read-only surface must never take.
+        # S3 listing support arrives as its own reviewed, wired change.
+        if settings.connector_export_object_store_adapter != LOCAL_FILESYSTEM_ADAPTER:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": AxisErrorCode.CONFLICT.value,
+                    "message": (
+                        "Reconciliation currently supports the local filesystem "
+                        "object-store adapter."
+                    ),
+                    "reason": "store_adapter_unsupported",
+                },
+            )
+        report = reconcile_request_batches(
+            repository,
+            store=LocalReconcilableObjectStore(
+                StoreRootPath(settings.connector_export_object_store_root)
+            ),
+            local_root=StoreRootPath(settings.connector_export_object_store_root),
+            tenant_id=tenant_id,
+            request_id=request_id,
+        )
+        if report is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": AxisErrorCode.NOT_FOUND.value,
+                    "message": "That ingestion request does not exist.",
+                    "reason": "ingestion_request_not_found",
+                },
+            )
+        return report
+
+    def _map_batch_export_error(exc: ConnectorSourceBatchExportError) -> HTTPException:
+        """One public-safe mapping for every batch-envelope export failure."""
+        not_found_reasons = {
+            "batch_export_request_not_found",
+            "ingestion_request_not_found",
+        }
+        conflict_reasons = {
+            "idempotency_conflict",
+            "export_request_id_already_exists",
+            "batch_envelope_too_large",
+            "decision_conflict",
+            "export_request_not_approved",
+            "export_request_already_materialized",
+            "materialization_idempotency_conflict",
+            "envelope_checksum_changed",
+            "artifact_not_written",
+            "store_adapter_unsupported",
+            "artifact_checksum_mismatch",
+            "artifact_key_unsafe",
+            "artifact_unreadable",
+            "artifact_unparseable",
+        }
+        if exc.reason in not_found_reasons:
+            return HTTPException(
+                status_code=404,
+                detail={
+                    "code": AxisErrorCode.NOT_FOUND.value,
+                    "message": exc.message,
+                    "reason": exc.reason,
+                },
+            )
+        if exc.reason in conflict_reasons:
+            return HTTPException(
+                status_code=409,
+                detail={
+                    "code": AxisErrorCode.CONFLICT.value,
+                    "message": exc.message,
+                    "reason": exc.reason,
+                },
+            )
+        return HTTPException(
+            status_code=422,
+            detail={
+                "code": AxisErrorCode.VALIDATION_FAILED.value,
+                "message": exc.message,
+                "reason": exc.reason,
+            },
+        )
+
+    @operations_router.post(
+        "/connectors/external-db/source-ingestion-requests/{request_id}/"
+        "batch-envelope-export-requests",
+        response_model=ConnectorSourceBatchExportRequestRecord,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Batch export request scope denied"},
+            404: {"description": "Ingestion request not found"},
+            409: {"description": "Idempotency or export request ID conflict"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_batch_export_request_create(
+        export_request: ConnectorSourceBatchExportRequestInput,
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_id: str,
+    ) -> Response:
+        _authorize_connector_tenant_read(export_request.tenant_id, principal)
+        bound = _bind_body_tenant_actor(
+            export_request,
+            principal,
+            actor_field="requested_by",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot request batch-envelope "
+                "exports for this connector."
+            ),
+        )
+        if bound.request_id != request_id:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": AxisErrorCode.VALIDATION_FAILED.value,
+                    "message": "The body and URL must name the same request.",
+                    "reason": "request_path_mismatch",
+                },
+            )
+        try:
+            record = record_connector_source_batch_export_request(
+                repository,
+                request=bound,
+            )
+        except ConnectorSourceBatchExportScopeDenied as exc:
+            required = exc.required_scope
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": AxisErrorCode.PERMISSION_DENIED.value,
+                    "message": (
+                        "The actor lacks the scope required to request "
+                        "batch-envelope exports."
+                    ),
+                    "required_permission": required,
+                    "reason": f"missing_scope:{required}",
+                },
+            ) from exc
+        except ConnectorSourceBatchExportError as exc:
+            raise _map_batch_export_error(exc) from exc
+        status_code = 200 if record.idempotent_replay else 201
+        return JSONResponse(
+            status_code=status_code,
+            content=record.model_dump(mode="json"),
+        )
+
+    @operations_router.post(
+        "/connectors/external-db/source-ingestion-requests/{request_id}/"
+        "batch-envelope-export-requests/{export_request_id}/decision",
+        response_model=ConnectorSourceBatchExportDecisionResult,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Export decision scope denied"},
+            404: {"description": "Export request not found"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_batch_export_decision(
+        decision_input: ConnectorSourceBatchExportDecisionInput,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_id: str,
+        export_request_id: str,
+    ) -> ConnectorSourceBatchExportDecisionResult:
+        _authorize_connector_tenant_read(decision_input.tenant_id, principal)
+        bound = _bind_body_tenant_actor(
+            decision_input,
+            principal,
+            actor_field="actor_id",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot decide batch-envelope "
+                "export requests for this tenant."
+            ),
+        )
+        try:
+            return decide_connector_source_batch_export_request(
+                repository,
+                request_id=request_id,
+                export_request_id=export_request_id,
+                decision_input=bound,
+            )
+        except ConnectorSourceBatchExportScopeDenied as exc:
+            required = exc.required_scope
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": AxisErrorCode.PERMISSION_DENIED.value,
+                    "message": (
+                        "The actor lacks the scope required to decide "
+                        "batch-envelope export requests."
+                    ),
+                    "required_permission": required,
+                    "reason": f"missing_scope:{required}",
+                },
+            ) from exc
+        except ConnectorSourceBatchExportError as exc:
+            raise _map_batch_export_error(exc) from exc
+
+    @operations_router.post(
+        "/connectors/external-db/source-ingestion-requests/{request_id}/"
+        "batch-envelope-export-requests/{export_request_id}/materializations",
+        response_model=ConnectorSourceBatchExportMaterializationResult,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Materialization scope denied"},
+            404: {"description": "Export request not found"},
+            409: {"description": "Approval gate, checksum drift or replay conflict"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_batch_export_materialization(
+        materialization_input: ConnectorSourceBatchExportMaterializationInput,
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_id: str,
+        export_request_id: str,
+    ) -> ConnectorSourceBatchExportMaterializationResult:
+        settings: Settings = request.app.state.settings
+        # Adapter guard BEFORE any object-store construction: this route must
+        # never build a cloud client as a side effect of an operator POST. The
+        # local store below is constructed only for the supported adapter.
+        if settings.connector_export_object_store_adapter != LOCAL_FILESYSTEM_ADAPTER:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": AxisErrorCode.CONFLICT.value,
+                    "message": (
+                        "Batch-envelope materialization currently supports only "
+                        "the local filesystem object-store adapter."
+                    ),
+                    "reason": "store_adapter_unsupported",
+                },
+            )
+        _authorize_connector_tenant_read(
+            materialization_input.tenant_id, principal
+        )
+        bound = _bind_body_tenant_actor(
+            materialization_input,
+            principal,
+            actor_field="actor_id",
+            tenant_mismatch_message=(
+                "The authenticated OIDC tenant cannot materialize batch-envelope "
+                "exports for this tenant."
+            ),
+        )
+        try:
+            result = materialize_connector_source_batch_export_request(
+                repository,
+                object_store=LocalObjectStore(
+                    settings.connector_export_object_store_root
+                ),
+                request_id=request_id,
+                export_request_id=export_request_id,
+                materialization_input=bound,
+            )
+        except ConnectorSourceBatchExportScopeDenied as exc:
+            required = exc.required_scope
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": AxisErrorCode.PERMISSION_DENIED.value,
+                    "message": (
+                        "The actor lacks the scope required to materialize "
+                        "batch-envelope exports."
+                    ),
+                    "required_permission": required,
+                    "reason": f"missing_scope:{required}",
+                },
+            ) from exc
+        except ConnectorSourceBatchExportError as exc:
+            raise _map_batch_export_error(exc) from exc
+        # Fresh single-shot writes are 201; exact replays return the canonical
+        # stored truth as 200 — mirroring the evidence-snapshot export route.
+        return JSONResponse(
+            status_code=200 if result.idempotent_replay else 201,
+            content=result.model_dump(mode="json"),
+        )
+
+    @operations_router.get(
+        "/connectors/external-db/source-ingestion-requests/{request_id}/"
+        "batch-envelope-export-requests/{export_request_id}/artifact",
+        responses={
+            200: {"content": {"application/json": {}}},
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source ingestion read scope or tenant binding denied"},
+            404: {"description": "Export request not found"},
+            409: {"description": "Artifact missing, checksum mismatch, or adapter unsupported"},
+        },
+        tags=["demo"],
+    )
+    def manufacturing_connector_source_batch_export_artifact(
+        request: Request,
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        request_id: str,
+        export_request_id: str,
+        tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
+        actor_scopes: list[str] = CheckpointActorScopesQuery,
+    ) -> Response:
+        """Checksum-verified artifact download; LOCAL adapter only."""
+        settings: Settings = request.app.state.settings
+        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_source_ingestion_read(
+            principal,
+            actor_scopes,
+            operation="retrieve batch-envelope artifacts",
+        )
+        actor_id = principal.actor_id if principal is not None else "console-operator"
+        # Adapter guard FIRST: a non-local deployment must receive its precise
+        # 409 without any reader construction, client creation, or egress.
+        if settings.connector_export_object_store_adapter != LOCAL_FILESYSTEM_ADAPTER:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": AxisErrorCode.CONFLICT.value,
+                    "message": (
+                        "Artifact retrieval supports only the local filesystem "
+                        "object-store adapter."
+                    ),
+                    "reason": "store_adapter_unsupported",
+                },
+            )
+        try:
+            bundle, record, raw = read_connector_source_batch_export_artifact(
+                repository,
+                reader=LocalBatchExportArtifactReader(
+                    StoreRootPath(settings.connector_export_object_store_root)
+                ),
+                tenant_id=tenant_id,
+                request_id=request_id,
+                export_request_id=export_request_id,
+                actor_id=actor_id,
+            )
+        except ConnectorSourceBatchExportError as exc:
+            raise _map_batch_export_error(exc) from exc
+        if bundle.manifest.get("envelope_checksum_sha256") != (
+            record.envelope_checksum_sha256
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": AxisErrorCode.CONFLICT.value,
+                    "message": (
+                        "The stored artifact manifest does not match the export "
+                        "request."
+                    ),
+                    "reason": "artifact_checksum_mismatch",
+                },
+            )
+        return Response(
+            content=raw,
+            media_type=record.artifact_content_type or "application/json",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="{export_request_id}.json"'
+                ),
+            },
+        )
+
     @app.get(
         "/platform/policies",
         response_model=PlatformPolicyRegistry,
@@ -7367,7 +8280,7 @@ def create_app(
         principal: OidcPrincipalDependency,
     ) -> PlatformPolicyRecord:
         try:
-            bound_policy = _bind_platform_policy_actor(policy_request, principal, "created_by")
+            bound_policy = _bind_body_tenant_actor(policy_request, principal, "created_by")
             return record_platform_policy(repository, bound_policy)
         except PlatformPolicyPermissionDenied as exc:
             reason = (
@@ -7468,7 +8381,7 @@ def create_app(
                 },
             )
         try:
-            bound_request = _bind_platform_policy_actor(revise_request, principal, "updated_by")
+            bound_request = _bind_body_tenant_actor(revise_request, principal, "updated_by")
             result = revise_platform_policy(repository, bound_request)
         except PlatformPolicyNotFound as exc:
             raise HTTPException(
@@ -7536,7 +8449,7 @@ def create_app(
         principal: OidcPrincipalDependency,
     ) -> PlatformPolicyDecision:
         try:
-            bound_request = _bind_platform_policy_actor(evaluation_request, principal, "actor_id")
+            bound_request = _bind_body_tenant_actor(evaluation_request, principal, "actor_id")
             return evaluate_platform_policy_request(repository, bound_request)
         except PlatformPolicyPermissionDenied as exc:
             reason = (
@@ -7586,8 +8499,7 @@ def create_app(
                 status_code=409,
                 detail={
                     "code": AxisErrorCode.CONFLICT.value,
-                    "message": "The tenant provisioning request conflicts with "
-                    "persisted state.",
+                    "message": "The tenant provisioning request conflicts with persisted state.",
                     "reason": exc.reason,
                     "tenant_id": exc.tenant_id,
                 },
@@ -7815,9 +8727,7 @@ def create_app(
                 tenant_id,
                 window_start=window_start,
                 window_end=window_end,
-                window_seconds=(
-                    resolved_settings.usage_metering_aggregation_window_seconds
-                ),
+                window_seconds=(resolved_settings.usage_metering_aggregation_window_seconds),
             )
         except TenantNotFound as exc:
             raise _platform_tenant_not_found_http_exception(tenant_id) from exc
@@ -7937,110 +8847,110 @@ def create_app(
         response: Response,
         tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
     ) -> ActionRunPersistenceResult:
-      with telemetry.tracer.start_as_current_span("axis.action_run.create") as span:
-        set_span_attributes(
-            span,
-            {
-                ATTR_ACTION_ID: action_id,
-                ATTR_TENANT_ID: tenant_id,
-                ATTR_ACTOR_ID: principal.actor_id if principal else None,
-            },
-        )
-        try:
-            bound_action_run = _bind_tenant_actor(action_run, principal, tenant_id)
-            result = await record_demo_action_run(
-                repository,
-                action_id,
-                bound_action_run,
-                runtime,
-                tenant_id=tenant_id,
-                workflow_history_persistence_enabled=(
-                    resolved_settings.workflow_history_persistence_enabled
-                ),
+        with telemetry.tracer.start_as_current_span("axis.action_run.create") as span:
+            set_span_attributes(
+                span,
+                {
+                    ATTR_ACTION_ID: action_id,
+                    ATTR_TENANT_ID: tenant_id,
+                    ATTR_ACTOR_ID: principal.actor_id if principal else None,
+                },
             )
-        except DemoActionNotFound as exc:
-            raise HTTPException(status_code=404, detail="Action not found") from exc
-        except ActionReferenceRecordNotFound as exc:
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "code": AxisErrorCode.NOT_FOUND.value,
-                    "message": "Manufacturing action registry reference record not found.",
-                    "surface": "actions",
-                },
-            ) from exc
-        except ActionReferenceRecordInvalid as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": AxisErrorCode.VALIDATION_FAILED.value,
-                    "message": "Manufacturing action registry reference payload is invalid.",
-                    "surface": "actions",
-                },
-            ) from exc
-        except OntologyReferenceRecordNotFound as exc:
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "code": AxisErrorCode.NOT_FOUND.value,
-                    "message": "Manufacturing ontology reference record not found.",
-                    "surface": "ontology",
-                },
-            ) from exc
-        except OntologyReferenceRecordInvalid as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": AxisErrorCode.VALIDATION_FAILED.value,
-                    "message": "Manufacturing ontology reference payload is invalid.",
-                    "surface": "ontology",
-                },
-            ) from exc
-        except ActionPermissionDenied as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": AxisErrorCode.PERMISSION_DENIED.value,
-                    "message": "The actor cannot request this action run.",
-                    "required_permissions": exc.required_permissions,
-                    "reason": exc.decision.reason,
-                },
-            ) from exc
-        except PlatformPolicyEnforcementDenied as exc:
-            repository.session.commit()
-            raise HTTPException(
-                status_code=403,
-                detail=_platform_policy_denied_detail(
-                    exc,
-                    "A platform policy denies this action run.",
-                ),
-            ) from exc
-        except ActionRunIdempotencyConflict as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": AxisErrorCode.POLICY_VIOLATION.value,
-                    "message": "The idempotency key already exists with a different payload.",
-                    "action_run_id": str(exc.action_run_id),
-                },
-            ) from exc
-        except ActionPayloadValidationError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": AxisErrorCode.VALIDATION_FAILED.value,
-                    "message": "The action payload does not match the typed input schema.",
-                    "issues": exc.issues,
-                },
-            ) from exc
+            try:
+                bound_action_run = _bind_tenant_actor(action_run, principal, tenant_id)
+                result = await record_demo_action_run(
+                    repository,
+                    action_id,
+                    bound_action_run,
+                    runtime,
+                    tenant_id=tenant_id,
+                    workflow_history_persistence_enabled=(
+                        resolved_settings.workflow_history_persistence_enabled
+                    ),
+                )
+            except DemoActionNotFound as exc:
+                raise HTTPException(status_code=404, detail="Action not found") from exc
+            except ActionReferenceRecordNotFound as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": AxisErrorCode.NOT_FOUND.value,
+                        "message": "Manufacturing action registry reference record not found.",
+                        "surface": "actions",
+                    },
+                ) from exc
+            except ActionReferenceRecordInvalid as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": AxisErrorCode.VALIDATION_FAILED.value,
+                        "message": "Manufacturing action registry reference payload is invalid.",
+                        "surface": "actions",
+                    },
+                ) from exc
+            except OntologyReferenceRecordNotFound as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": AxisErrorCode.NOT_FOUND.value,
+                        "message": "Manufacturing ontology reference record not found.",
+                        "surface": "ontology",
+                    },
+                ) from exc
+            except OntologyReferenceRecordInvalid as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": AxisErrorCode.VALIDATION_FAILED.value,
+                        "message": "Manufacturing ontology reference payload is invalid.",
+                        "surface": "ontology",
+                    },
+                ) from exc
+            except ActionPermissionDenied as exc:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": AxisErrorCode.PERMISSION_DENIED.value,
+                        "message": "The actor cannot request this action run.",
+                        "required_permissions": exc.required_permissions,
+                        "reason": exc.decision.reason,
+                    },
+                ) from exc
+            except PlatformPolicyEnforcementDenied as exc:
+                repository.session.commit()
+                raise HTTPException(
+                    status_code=403,
+                    detail=_platform_policy_denied_detail(
+                        exc,
+                        "A platform policy denies this action run.",
+                    ),
+                ) from exc
+            except ActionRunIdempotencyConflict as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": AxisErrorCode.POLICY_VIOLATION.value,
+                        "message": "The idempotency key already exists with a different payload.",
+                        "action_run_id": str(exc.action_run_id),
+                    },
+                ) from exc
+            except ActionPayloadValidationError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": AxisErrorCode.VALIDATION_FAILED.value,
+                        "message": "The action payload does not match the typed input schema.",
+                        "issues": exc.issues,
+                    },
+                ) from exc
 
-        outcome = "idempotent_replay" if result.idempotent_replay else "recorded"
-        set_span_attributes(span, {ATTR_OUTCOME: outcome})
-        telemetry.action_run_counter.add(1, {"outcome": outcome})
-        if result.idempotent_replay:
-            response.status_code = status.HTTP_200_OK
+            outcome = "idempotent_replay" if result.idempotent_replay else "recorded"
+            set_span_attributes(span, {ATTR_OUTCOME: outcome})
+            telemetry.action_run_counter.add(1, {"outcome": outcome})
+            if result.idempotent_replay:
+                response.status_code = status.HTTP_200_OK
 
-        return result
+            return result
 
     @operations_router.post(
         "/actions/runs/{action_run_id}/outcome",
@@ -8186,86 +9096,86 @@ def create_app(
         principal: OidcPrincipalDependency,
         tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
     ) -> ApprovalDecisionPersistenceResult:
-      with telemetry.tracer.start_as_current_span("axis.approval.decide") as span:
-        set_span_attributes(
-            span,
-            {
-                ATTR_APPROVAL_ID: approval_id,
-                ATTR_DECISION: getattr(decision.decision, "value", None),
-                ATTR_TENANT_ID: tenant_id,
-                ATTR_ACTOR_ID: principal.actor_id if principal else None,
-            },
-        )
-        try:
-            bound_decision = _bind_tenant_actor(decision, principal, tenant_id)
-            result = await record_demo_approval_decision(
-                repository,
-                approval_id,
-                bound_decision,
-                runtime,
-                tenant_id=tenant_id,
-                workflow_history_persistence_enabled=(
-                    resolved_settings.workflow_history_persistence_enabled
-                ),
-                workflow_signal_outbox_enabled=(
-                    resolved_settings.approval_decision_outbox_enabled
-                ),
+        with telemetry.tracer.start_as_current_span("axis.approval.decide") as span:
+            set_span_attributes(
+                span,
+                {
+                    ATTR_APPROVAL_ID: approval_id,
+                    ATTR_DECISION: getattr(decision.decision, "value", None),
+                    ATTR_TENANT_ID: tenant_id,
+                    ATTR_ACTOR_ID: principal.actor_id if principal else None,
+                },
             )
-            if result.idempotent_replay:
-                response.status_code = status.HTTP_200_OK
-            telemetry.approval_decision_counter.add(
-                1, {"decision": getattr(decision.decision, "value", "unknown")}
-            )
-            return result
-        except DemoApprovalNotFound as exc:
-            raise HTTPException(status_code=404, detail="Approval not found") from exc
-        except ApprovalReferenceRecordNotFound as exc:
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "code": AxisErrorCode.NOT_FOUND.value,
-                    "message": "Manufacturing approval inbox reference record not found.",
-                    "surface": "approvals",
-                },
-            ) from exc
-        except ApprovalReferenceRecordInvalid as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": AxisErrorCode.VALIDATION_FAILED.value,
-                    "message": "Manufacturing approval inbox reference payload is invalid.",
-                    "surface": "approvals",
-                },
-            ) from exc
-        except ApprovalPermissionDenied as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": AxisErrorCode.PERMISSION_DENIED.value,
-                    "message": "The actor cannot decide this approval.",
-                    "required_permission": exc.required_permission,
-                    "reason": exc.decision.reason,
-                },
-            ) from exc
-        except ApprovalDecisionConflict as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail={
-                    "code": AxisErrorCode.CONFLICT.value,
-                    "message": "The approval already has a terminal decision.",
-                    "approval_id": exc.approval_id,
-                    "reason": exc.reason,
-                },
-            ) from exc
-        except PlatformPolicyEnforcementDenied as exc:
-            repository.session.commit()
-            raise HTTPException(
-                status_code=403,
-                detail=_platform_policy_denied_detail(
-                    exc,
-                    "A platform policy denies approving this action.",
-                ),
-            ) from exc
+            try:
+                bound_decision = _bind_tenant_actor(decision, principal, tenant_id)
+                result = await record_demo_approval_decision(
+                    repository,
+                    approval_id,
+                    bound_decision,
+                    runtime,
+                    tenant_id=tenant_id,
+                    workflow_history_persistence_enabled=(
+                        resolved_settings.workflow_history_persistence_enabled
+                    ),
+                    workflow_signal_outbox_enabled=(
+                        resolved_settings.approval_decision_outbox_enabled
+                    ),
+                )
+                if result.idempotent_replay:
+                    response.status_code = status.HTTP_200_OK
+                telemetry.approval_decision_counter.add(
+                    1, {"decision": getattr(decision.decision, "value", "unknown")}
+                )
+                return result
+            except DemoApprovalNotFound as exc:
+                raise HTTPException(status_code=404, detail="Approval not found") from exc
+            except ApprovalReferenceRecordNotFound as exc:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "code": AxisErrorCode.NOT_FOUND.value,
+                        "message": "Manufacturing approval inbox reference record not found.",
+                        "surface": "approvals",
+                    },
+                ) from exc
+            except ApprovalReferenceRecordInvalid as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": AxisErrorCode.VALIDATION_FAILED.value,
+                        "message": "Manufacturing approval inbox reference payload is invalid.",
+                        "surface": "approvals",
+                    },
+                ) from exc
+            except ApprovalPermissionDenied as exc:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": AxisErrorCode.PERMISSION_DENIED.value,
+                        "message": "The actor cannot decide this approval.",
+                        "required_permission": exc.required_permission,
+                        "reason": exc.decision.reason,
+                    },
+                ) from exc
+            except ApprovalDecisionConflict as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": AxisErrorCode.CONFLICT.value,
+                        "message": "The approval already has a terminal decision.",
+                        "approval_id": exc.approval_id,
+                        "reason": exc.reason,
+                    },
+                ) from exc
+            except PlatformPolicyEnforcementDenied as exc:
+                repository.session.commit()
+                raise HTTPException(
+                    status_code=403,
+                    detail=_platform_policy_denied_detail(
+                        exc,
+                        "A platform policy denies approving this action.",
+                    ),
+                ) from exc
 
     @operations_router.get(
         "/approvals/{approval_id}/decision-delivery",
@@ -8404,39 +9314,37 @@ def create_app(
         )
         require_worm_compliance = _audit_export_worm_settings(app.state.settings)
         object_lock_capability = (
-            _audit_export_object_lock_capability(app)
-            if require_worm_compliance
-            else None
+            _audit_export_object_lock_capability(app) if require_worm_compliance else None
         )
         try:
-          with telemetry.tracer.start_as_current_span("axis.audit.export") as span:
-            set_span_attributes(
-                span,
-                {
-                    ATTR_TENANT_ID: tenant_id,
-                    ATTR_EXPORT_FORMAT: format,
-                    ATTR_ACTOR_ID: principal.actor_id if principal else None,
-                },
-            )
-            bundle = export_persisted_audit_events(
-                repository,
-                AuditExportQuery(
-                    tenant_id=tenant_id,
-                    event_type=event_type,
-                    actor_id=actor_id,
-                    scope=scope,
-                    limit=limit,
-                    export_reason=export_reason,
-                    retention_days=retention_days,
-                    legal_hold=legal_hold,
-                    format=format,
-                ),
-                ledger_signer=_audit_ledger_signer_from_settings(app.state.settings),
-                object_lock_capability=object_lock_capability,
-                require_worm_compliance=require_worm_compliance,
-            )
-            telemetry.audit_export_counter.add(1, {"format": format})
-            return bundle
+            with telemetry.tracer.start_as_current_span("axis.audit.export") as span:
+                set_span_attributes(
+                    span,
+                    {
+                        ATTR_TENANT_ID: tenant_id,
+                        ATTR_EXPORT_FORMAT: format,
+                        ATTR_ACTOR_ID: principal.actor_id if principal else None,
+                    },
+                )
+                bundle = export_persisted_audit_events(
+                    repository,
+                    AuditExportQuery(
+                        tenant_id=tenant_id,
+                        event_type=event_type,
+                        actor_id=actor_id,
+                        scope=scope,
+                        limit=limit,
+                        export_reason=export_reason,
+                        retention_days=retention_days,
+                        legal_hold=legal_hold,
+                        format=format,
+                    ),
+                    ledger_signer=_audit_ledger_signer_from_settings(app.state.settings),
+                    object_lock_capability=object_lock_capability,
+                    require_worm_compliance=require_worm_compliance,
+                )
+                telemetry.audit_export_counter.add(1, {"format": format})
+                return bundle
         except AuditExportWormEnforcementError as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -8670,9 +9578,7 @@ def create_app(
         principal: OidcPrincipalDependency,
     ) -> ModelEndpointRecord:
         try:
-            bound_endpoint = _bind_platform_policy_actor(
-                endpoint_request, principal, "created_by"
-            )
+            bound_endpoint = _bind_body_tenant_actor(endpoint_request, principal, "created_by")
             return record_model_endpoint(repository, bound_endpoint)
         except ModelEndpointPermissionDenied as exc:
             raise HTTPException(
@@ -8725,9 +9631,7 @@ def create_app(
         principal: OidcPrincipalDependency,
     ) -> ModelEndpointRecord:
         try:
-            bound_status = _bind_platform_policy_actor(
-                status_request, principal, "updated_by"
-            )
+            bound_status = _bind_body_tenant_actor(status_request, principal, "updated_by")
             return update_model_endpoint_status(repository, endpoint_id, bound_status)
         except ModelEndpointPermissionDenied as exc:
             raise HTTPException(
@@ -8809,109 +9713,101 @@ def create_app(
         runtime: ModelInvocationRuntimeDependency,
         response: Response,
     ) -> ModelInvocationResult:
-      with telemetry.tracer.start_as_current_span("axis.model_invocation.invoke") as span:
-        set_span_attributes(
-            span,
-            {
-                ATTR_TENANT_ID: principal.tenant_id if principal else None,
-                ATTR_ACTOR_ID: principal.actor_id if principal else None,
-            },
-        )
-        try:
-            bound_invocation = _bind_platform_policy_actor(
-                invocation_request, principal, "actor_id"
+        with telemetry.tracer.start_as_current_span("axis.model_invocation.invoke") as span:
+            set_span_attributes(
+                span,
+                {
+                    ATTR_TENANT_ID: principal.tenant_id if principal else None,
+                    ATTR_ACTOR_ID: principal.actor_id if principal else None,
+                },
             )
-            result = await invoke_model(
-                repository,
-                bound_invocation,
-                runtime,
-                external_model_egress_enabled=(
-                    resolved_settings.external_model_egress_enabled
-                ),
-                prompt_excerpt_chars=(
-                    resolved_settings.model_invocation_prompt_excerpt_chars
-                ),
-                usage_metering_enabled=resolved_settings.usage_metering_enabled,
-                usage_window_seconds=(
-                    resolved_settings.usage_metering_aggregation_window_seconds
-                ),
-            )
-        except ModelInvocationPermissionDenied as exc:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": AxisErrorCode.PERMISSION_DENIED.value,
-                    "message": "The actor cannot invoke models.",
-                    "required_permission": exc.required_permission,
-                    "reason": "missing_required_scope"
-                    if exc.decision.reason.startswith("missing_scope:")
-                    else exc.decision.reason,
-                    "permission_reason": exc.decision.reason,
-                },
-            ) from exc
-        except PlatformPolicyEnforcementDenied as exc:
-            repository.session.commit()
-            raise HTTPException(
-                status_code=403,
-                detail=_platform_policy_denied_detail(
-                    exc,
-                    "A platform policy denies this model invocation.",
-                ),
-            ) from exc
-        except ModelEgressBlocked as exc:
-            repository.session.commit()
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "code": AxisErrorCode.MODEL_PROVIDER_BLOCKED.value,
-                    "message": exc.message,
-                    "reason": exc.egress_decision,
-                    "endpoint_id": exc.route_decision.endpoint_id,
-                    "hosting_boundary": exc.route_decision.hosting_boundary,
-                    "audit_event_id": (
-                        str(exc.audit_event_id)
-                        if exc.audit_event_id is not None
-                        else None
+            try:
+                bound_invocation = _bind_body_tenant_actor(
+                    invocation_request, principal, "actor_id"
+                )
+                result = await invoke_model(
+                    repository,
+                    bound_invocation,
+                    runtime,
+                    external_model_egress_enabled=(resolved_settings.external_model_egress_enabled),
+                    prompt_excerpt_chars=(resolved_settings.model_invocation_prompt_excerpt_chars),
+                    usage_metering_enabled=resolved_settings.usage_metering_enabled,
+                    usage_window_seconds=(
+                        resolved_settings.usage_metering_aggregation_window_seconds
                     ),
-                    "audit_event_type": exc.audit_event_type,
-                },
-            ) from exc
-        except ModelInvocationIdempotencyConflict as exc:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": AxisErrorCode.CONFLICT.value,
-                    "message": (
-                        "The idempotency key already exists with a different payload."
+                )
+            except ModelInvocationPermissionDenied as exc:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": AxisErrorCode.PERMISSION_DENIED.value,
+                        "message": "The actor cannot invoke models.",
+                        "required_permission": exc.required_permission,
+                        "reason": "missing_required_scope"
+                        if exc.decision.reason.startswith("missing_scope:")
+                        else exc.decision.reason,
+                        "permission_reason": exc.decision.reason,
+                    },
+                ) from exc
+            except PlatformPolicyEnforcementDenied as exc:
+                repository.session.commit()
+                raise HTTPException(
+                    status_code=403,
+                    detail=_platform_policy_denied_detail(
+                        exc,
+                        "A platform policy denies this model invocation.",
                     ),
-                    "reason": "idempotency_key_conflict",
-                    "invocation_id": str(exc.invocation_id),
-                },
-            ) from exc
-        except ModelInvocationValidationError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": AxisErrorCode.VALIDATION_FAILED.value,
-                    "message": exc.message,
-                    "reason": exc.reason,
-                },
-            ) from exc
+                ) from exc
+            except ModelEgressBlocked as exc:
+                repository.session.commit()
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": AxisErrorCode.MODEL_PROVIDER_BLOCKED.value,
+                        "message": exc.message,
+                        "reason": exc.egress_decision,
+                        "endpoint_id": exc.route_decision.endpoint_id,
+                        "hosting_boundary": exc.route_decision.hosting_boundary,
+                        "audit_event_id": (
+                            str(exc.audit_event_id) if exc.audit_event_id is not None else None
+                        ),
+                        "audit_event_type": exc.audit_event_type,
+                    },
+                ) from exc
+            except ModelInvocationIdempotencyConflict as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": AxisErrorCode.CONFLICT.value,
+                        "message": ("The idempotency key already exists with a different payload."),
+                        "reason": "idempotency_key_conflict",
+                        "invocation_id": str(exc.invocation_id),
+                    },
+                ) from exc
+            except ModelInvocationValidationError as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": AxisErrorCode.VALIDATION_FAILED.value,
+                        "message": exc.message,
+                        "reason": exc.reason,
+                    },
+                ) from exc
 
-        set_span_attributes(
-            span,
-            {
-                ATTR_OUTCOME: result.status,
-                ATTR_MODEL_PROVIDER_ID: result.endpoint_id,
-                ATTR_MODEL_ID: result.model_id,
-                ATTR_MODEL_LATENCY_MS: result.latency_ms,
-                ATTR_MODEL_INPUT_TOKENS: result.input_tokens,
-                ATTR_MODEL_OUTPUT_TOKENS: result.output_tokens,
-            },
-        )
-        if result.idempotent_replay or result.status == "model_invocation_deferred":
-            response.status_code = status.HTTP_200_OK
-        return result
+            set_span_attributes(
+                span,
+                {
+                    ATTR_OUTCOME: result.status,
+                    ATTR_MODEL_PROVIDER_ID: result.endpoint_id,
+                    ATTR_MODEL_ID: result.model_id,
+                    ATTR_MODEL_LATENCY_MS: result.latency_ms,
+                    ATTR_MODEL_INPUT_TOKENS: result.input_tokens,
+                    ATTR_MODEL_OUTPUT_TOKENS: result.output_tokens,
+                },
+            )
+            if result.idempotent_replay or result.status == "model_invocation_deferred":
+                response.status_code = status.HTTP_200_OK
+            return result
 
     @app.post(
         "/platform/models/invocations/preview",
@@ -8928,15 +9824,11 @@ def create_app(
         principal: OidcPrincipalDependency,
     ) -> ModelInvocationPreview:
         try:
-            bound_preview = _bind_platform_policy_actor(
-                preview_request, principal, "actor_id"
-            )
+            bound_preview = _bind_body_tenant_actor(preview_request, principal, "actor_id")
             return preview_model_invocation(
                 repository,
                 bound_preview,
-                external_model_egress_enabled=(
-                    resolved_settings.external_model_egress_enabled
-                ),
+                external_model_egress_enabled=(resolved_settings.external_model_egress_enabled),
             )
         except ModelInvocationPermissionDenied as exc:
             raise HTTPException(
@@ -8995,9 +9887,7 @@ def create_app(
         has_more = len(results) > page_size
         page_results = results[:page_size]
         next_cursor = (
-            encode_model_invocation_cursor(page_results[-1])
-            if has_more and page_results
-            else None
+            encode_model_invocation_cursor(page_results[-1]) if has_more and page_results else None
         )
         return ModelInvocationList(
             tenant_id=tenant_id,

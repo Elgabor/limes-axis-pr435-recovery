@@ -49,6 +49,10 @@ import { Field } from "@/components/ui/field";
 import { InspectDrawer } from "@/components/ui/inspect-drawer";
 import { Select } from "@/components/ui/select";
 import { SourcePill } from "@/components/ui/source-pill";
+import {
+  missingRequiredScopePermission,
+  ScopeDenialPanel,
+} from "@/components/ui/scope-denial";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
 
 const AUDIT_EVENTS_ENDPOINT = `${OPERATIONS_API_PREFIX}/audit/events`;
@@ -280,6 +284,11 @@ export function AuditExplorer() {
       return <LoadingPanel layout="detail" />;
     }
 
+    const deniedScope = missingRequiredScopePermission(auditQuery);
+    if (deniedScope) {
+      return <ScopeDenialPanel requiredPermission={deniedScope} subject="audit ledger" />;
+    }
+
     return (
       <ErrorPanel
         detail={strings.audit.error.detail}
@@ -452,7 +461,11 @@ export function AuditExplorer() {
           </div>
         </section>
 
-        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4">
+        <section
+          aria-label="Selected audit event"
+          className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4"
+          data-audit-detail
+        >
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
             <div>
               <p className="eyebrow m-0">{selectedEvent.category}</p>

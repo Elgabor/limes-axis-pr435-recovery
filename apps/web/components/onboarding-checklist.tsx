@@ -87,6 +87,19 @@ function stepState(count: number | null): OnboardingStepState {
 }
 
 /**
+ * A connector counts as connected only once its manifest is activated —
+ * registration alone never moves data, so a tenant full of dormant
+ * registered_preview_only manifests still has this step open.
+ */
+export function activatedConnectorCount(
+  connectors: ManufacturingConnectorRegistry["connectors"],
+): number {
+  return connectors.filter((connector) =>
+    ["active_preview", "active_live"].includes(connector.persisted_manifest?.status ?? ""),
+  ).length;
+}
+
+/**
  * Five best-effort registry queries — one per step, nothing else. Each
  * failing or pending query yields a null count and an "unknown" step.
  */
@@ -113,7 +126,7 @@ function useOnboardingSteps(tenantId: string): OnboardingStep[] {
   });
 
   const counts: Record<OnboardingStepId, number | null> = {
-    connectors: connectors.data ? connectors.data.connectors.length : null,
+    connectors: connectors.data ? activatedConnectorCount(connectors.data.connectors) : null,
     ontology: ontology.data ? ontology.data.nodes.length : null,
     policies: policies.data ? policies.data.policy_count : null,
     agents: agents.data ? agents.data.agents.length : null,

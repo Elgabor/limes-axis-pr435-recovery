@@ -192,11 +192,22 @@ const connectorManifestRegistry = z.object({
   manifests: z.array(connectorManifestRecord),
   manifest_notes: stringArraySchema,
 });
+const connectorManifestTransition = z.object({
+  from_status: z.string(),
+  target_status: z.string(),
+  transitioned_by: z.string(),
+  transition_reason: z.string(),
+  evidence_refs: stringArraySchema,
+  audit_event_id: z.string(),
+  audit_event_type: z.string(),
+  transitioned_at: z.string(),
+});
 const connectorManifestDetail = z.object({
   tenant_id: z.string(),
   connector_id: z.string(),
   current_revision: connectorManifestRecord,
   revisions: z.array(connectorManifestRecord),
+  transitions: z.array(connectorManifestTransition),
 }).superRefine((detail, context) => {
   const revisions = [detail.current_revision, ...detail.revisions];
   revisions.forEach((revision, index) => {
@@ -492,6 +503,10 @@ export function parseConnectorManifestDetail(value: unknown) {
   return parseContract(connectorManifestDetail, value);
 }
 
+export function parseConnectorManifestRecord(value: unknown) {
+  return parseContract(connectorManifestRecord, value);
+}
+
 export function parseConnectorManifestBatchValidationResponse(value: unknown) {
   return parseContract(connectorManifestBatchValidationResponse, value);
 }
@@ -550,4 +565,300 @@ export function parseConnectorExternalDbPreviewResult(
 
 export function parseConnectorRunRecord(value: unknown): ConnectorRunRecord {
   return parseContract(connectorRunRecord, value);
+}
+
+const sourceVerificationResult = z.object({
+  adapter: z.string(),
+  status: z.string(),
+  block_reason: z.string(),
+  database_name: z.string(),
+  evidence_summary: stringRecord,
+  notes: stringArraySchema,
+});
+
+const sourceDiscoveryTable = z.object({
+  schema_name: z.string(),
+  table_name: z.string(),
+  column_names: stringArraySchema,
+  column_fingerprint: z.string(),
+  columns_truncated: z.boolean(),
+});
+
+const sourceDiscoveryObservation = z.object({
+  table_name: z.string(),
+  observation: z.object({
+    resource_name: z.string(),
+    schema_fingerprint: nullableStringSchema,
+    previous_fingerprint: nullableStringSchema,
+    drift_state: z.string(),
+    last_source_kind: z.string(),
+    first_seen_at: z.string(),
+    last_seen_at: z.string(),
+    observation_count: z.number(),
+    observed_by: z.string(),
+  }),
+});
+
+const sourceVerificationOutcome = z.object({
+  verification_id: z.string(),
+  result: sourceVerificationResult,
+  correlation_ref: z.string(),
+});
+
+const sourceDiscoveryOutcome = z.object({
+  discovery_id: z.string(),
+  result: z.object({
+    adapter: z.string(),
+    status: z.string(),
+    block_reason: z.string(),
+    discovered_schema: z.string(),
+    tables: z.array(sourceDiscoveryTable),
+    tables_truncated: z.boolean(),
+    evidence_summary: stringRecord,
+    notes: stringArraySchema,
+  }),
+  observations: z.array(sourceDiscoveryObservation),
+  correlation_ref: z.string(),
+});
+
+export type SourceVerificationOutcome = z.infer<typeof sourceVerificationOutcome>;
+export type SourceDiscoveryOutcome = z.infer<typeof sourceDiscoveryOutcome>;
+
+export function parseSourceVerificationOutcome(
+  value: unknown,
+): SourceVerificationOutcome {
+  return parseContract(sourceVerificationOutcome, value);
+}
+
+export function parseSourceDiscoveryOutcome(value: unknown): SourceDiscoveryOutcome {
+  return parseContract(sourceDiscoveryOutcome, value);
+}
+
+const sourceBindingView = z.object({
+  binding_id: z.string(),
+  resource_name: z.string(),
+  schema_fingerprint: z.string(),
+  status: z.string(),
+  ingestion_status: z.string(),
+  outcome: z.string(),
+  connection_profile_id: z.string(),
+  activated_by: z.string(),
+  activated_at: z.string(),
+});
+
+export type SourceBindingView = z.infer<typeof sourceBindingView>;
+
+const sourceActivationOutcome = z.object({
+  tenant_id: z.string(),
+  connector_id: z.string(),
+  activation_id: z.string(),
+  bindings: z.array(sourceBindingView),
+  correlation_ref: z.string(),
+});
+
+const sourceBindingsView = z.object({
+  tenant_id: z.string(),
+  connector_id: z.string(),
+  bindings: z.array(sourceBindingView),
+});
+
+type SourceActivationOutcome = z.infer<typeof sourceActivationOutcome>;
+type SourceBindingsView = z.infer<typeof sourceBindingsView>;
+
+export function parseSourceActivationOutcome(value: unknown): SourceActivationOutcome {
+  return parseContract(sourceActivationOutcome, value);
+}
+
+export function parseSourceBindingsView(value: unknown): SourceBindingsView {
+  return parseContract(sourceBindingsView, value);
+}
+
+const sourceIngestionSelection = z.object({
+  binding_id: z.string(),
+  resource_name: z.string(),
+  schema_fingerprint: z.string(),
+});
+
+const sourceExtractionSummary = z.object({
+  batch_count: z.number(),
+  total_rows: z.number(),
+  truncated_any: z.boolean(),
+});
+
+const sourceIngestionAttemptSelection = z.object({
+  binding_id: z.string(),
+  resource_name: z.string(),
+  outcome: z.enum(["validated", "failed"]),
+  reason: z.string().nullable(),
+});
+
+const sourceIngestionAttempt = z.object({
+  attempt_number: z.number(),
+  outcome: z.enum(["completed", "retried", "dead_lettered"]),
+  error_code: z.string().nullable(),
+  finished_at: z.string().nullable(),
+  selections: z.array(sourceIngestionAttemptSelection),
+});
+
+export type SourceIngestionAttemptSelection = z.infer<typeof sourceIngestionAttemptSelection>;
+export type SourceIngestionAttempt = z.infer<typeof sourceIngestionAttempt>;
+
+const sourceIngestionRequestView = z.object({
+  tenant_id: z.string(),
+  connector_id: z.string(),
+  request_id: z.string(),
+  requested_by: z.string(),
+  reason: z.string(),
+  stage: z.enum(["validate", "extract"]),
+  status: z.enum(["pending", "dispatching", "completed", "failed", "cancelled"]),
+  attempt_count: z.number(),
+  selections: z.array(sourceIngestionSelection),
+  outcome: z.string(),
+  planned_limits: z.record(z.string(), z.number()).nullable(),
+  extraction: sourceExtractionSummary.nullable(),
+  attempts: z.array(sourceIngestionAttempt).default([]),
+  attempts_truncated: z.boolean().default(false),
+  last_error: z.string().nullable(),
+  completed_at: z.string().nullable(),
+  dead_lettered_at: z.string().nullable(),
+  cancelled_at: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export type SourceIngestionRequestView = z.infer<typeof sourceIngestionRequestView>;
+
+export type SourceExtractionSummary = z.infer<typeof sourceExtractionSummary>;
+
+const sourceIngestionEligibilityRow = z.object({
+  binding_id: z.string(),
+  resource_name: z.string(),
+  schema_fingerprint: z.string(),
+  eligible: z.boolean(),
+  blocked_reason: z.string().nullable(),
+});
+
+const eligibilityRowsSchema = z.array(sourceIngestionEligibilityRow);
+
+export type SourceIngestionEligibilityRow = z.infer<typeof sourceIngestionEligibilityRow>;
+
+const sourceIngestionEligibilityView = z.object({
+  tenant_id: z.string(),
+  connector_id: z.string(),
+  extraction_available: z.boolean(),
+  planned_limits: z.record(z.string(), z.number()).nullable(),
+  rows: eligibilityRowsSchema,
+});
+
+export type SourceIngestionEligibilityView = z.infer<typeof sourceIngestionEligibilityView>;
+
+export function parseSourceIngestionEligibilityView(
+  value: unknown,
+): SourceIngestionEligibilityView {
+  return parseContract(sourceIngestionEligibilityView, value);
+}
+
+const sourceExtractionBatchView = z.object({
+  batch_key: z.string(),
+  binding_id: z.string(),
+  resource_name: z.string(),
+  pinned_schema_fingerprint: z.string(),
+  observed_schema_fingerprint: z.string(),
+  ordering_mode: z.enum(["primary_key", "none"]),
+  has_watermark: z.boolean(),
+  row_count: z.number(),
+  byte_size: z.number(),
+  truncated: z.boolean(),
+  limit_reason: z.string().nullable(),
+  duration_ms: z.number(),
+  digest_sha256: z.string(),
+  storage_uri: z.string(),
+  content_type: z.string(),
+  stored_size_bytes: z.number(),
+  classification: z.string(),
+  executed_by: z.string(),
+  created_at: z.string(),
+});
+
+const sourceExtractionBatchesPage = z.object({
+  tenant_id: z.string(),
+  connector_id: z.string(),
+  request_id: z.string(),
+  total_count: z.number(),
+  next_cursor: z.string().nullable(),
+  batches: z.array(sourceExtractionBatchView),
+});
+
+export type SourceExtractionBatchView = z.infer<typeof sourceExtractionBatchView>;
+export type SourceExtractionBatchesPage = z.infer<typeof sourceExtractionBatchesPage>;
+
+export function parseSourceExtractionBatchesPage(
+  value: unknown,
+): SourceExtractionBatchesPage {
+  return parseContract(sourceExtractionBatchesPage, value);
+}
+
+const sourceExtractionReconciliationReport = z.object({
+  tenant_id: z.string(),
+  request_id: z.string(),
+  dry_run: z.boolean(),
+  clean_matches: z.number(),
+  digest_mismatches: z.number(),
+  missing_objects: z.number(),
+  orphaned_objects: z.number(),
+  findings: z.array(
+    z.object({
+      classification: z.enum([
+        "clean_match",
+        "digest_mismatch",
+        "missing_object",
+        "orphaned_object",
+      ]),
+      batch_key: z.string().nullable(),
+      storage_key: z.string().nullable(),
+    }),
+  ),
+});
+
+export type SourceExtractionReconciliationReport = z.infer<
+  typeof sourceExtractionReconciliationReport
+>;
+
+export function parseSourceExtractionReconciliationReport(
+  value: unknown,
+): SourceExtractionReconciliationReport {
+  return parseContract(sourceExtractionReconciliationReport, value);
+}
+
+export function parseSourceIngestionRequestView(value: unknown): SourceIngestionRequestView {
+  return parseContract(sourceIngestionRequestView, value);
+}
+
+export function parseSourceIngestionRequestViews(
+  value: unknown,
+): SourceIngestionRequestView[] {
+  return parseContract(z.array(sourceIngestionRequestView), value);
+}
+
+const sourceIngestionOverviewSummary = z.object({
+  status_counts: z.record(z.string(), z.number()),
+  total_count: z.number(),
+  dead_lettered_count: z.number(),
+  extract_stage_count: z.number(),
+  last_activity_at: z.string().nullable(),
+});
+
+const sourceIngestionOverview = z.object({
+  tenant_id: z.string(),
+  connector_id: z.string(),
+  summary: sourceIngestionOverviewSummary,
+  requests: z.array(sourceIngestionRequestView),
+  next_cursor: z.string().nullable(),
+});
+
+export type SourceIngestionOverviewSummary = z.infer<typeof sourceIngestionOverviewSummary>;
+export type SourceIngestionOverview = z.infer<typeof sourceIngestionOverview>;
+
+export function parseSourceIngestionOverview(value: unknown): SourceIngestionOverview {
+  return parseContract(sourceIngestionOverview, value);
 }

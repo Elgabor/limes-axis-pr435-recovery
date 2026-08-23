@@ -274,8 +274,8 @@ def seed_credentials(
             secret_ref=f"vault://axis/demo/{handle_id}",
             vault_kms_policy={"ttl_seconds": "900", "max_ttl_seconds": "1800"},
             permission_decision={
-                "allowed": "true",
-                "scope": "connectors:credential_lease:request",
+                "allowed": True,
+                "reason": "all_required_scopes_present",
             },
             lease_result={
                 "adapter": "axis-self-hosted-vault-kms-lease-adapter",
@@ -283,7 +283,7 @@ def seed_credentials(
                 "provider_lease_ref": (
                     f"self-hosted-vault-kms://{TENANT_ID}/{lease_id}"
                 ),
-                "secret_material_returned": False,
+                "secret_material_returned": "false",
             },
             granted_at=now,
             expires_at=now.replace(year=now.year + 1),
@@ -528,7 +528,7 @@ def external_db_live_sync_plan_request(
             "provider_lease_ref": (
                 f"self-hosted-vault-kms://{TENANT_ID}/{EXTERNAL_DB_LEASE_ID}"
             ),
-            "secret_material_returned": False,
+            "secret_material_returned": "false",
         },
         egress_policy_evidence={
             "egress_policy_evidence_status": "validated",

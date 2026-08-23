@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useState, type KeyboardEvent } from "react";
 import { ChevronDown, ChevronRight, Inbox, ShieldAlert } from "lucide-react";
 
@@ -22,6 +23,8 @@ import type { ActionRunList } from "@/lib/action-demo";
 import {
   approvalDecisionLabel,
   approvalRiskClass,
+  type ApprovalDecision,
+  type ApprovalDecisionHistoryEntry,
   type ApprovalInboxItem,
   type ManufacturingApprovalInbox,
 } from "@/lib/approval-demo";
@@ -38,7 +41,6 @@ import {
   parseManufacturingAuditExplorer,
 } from "@/lib/runtime-contracts/audit";
 import type { ManufacturingAuditExplorer } from "@/lib/audit-demo";
-import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
 import {
   buildTenantScopedPath,
   DEMO_TENANT_ID,
@@ -46,6 +48,7 @@ import {
   OPERATIONS_API_PREFIX,
 } from "@/lib/tenant-scope";
 import { useAxisQuery } from "@/lib/use-axis-query";
+import { useIdentitySession } from "@/lib/use-identity-session";
 import { useConsole } from "@/providers/console-provider";
 import { useTenantVocabulary } from "@/providers/tenant-vocabulary-provider";
 
@@ -213,13 +216,13 @@ function BulletList({ items }: { items: string[] }) {
 }
 
 function QueueList({
-  inbox,
+  approvals,
   selectedApproval,
   decisions,
   labelDomain,
   onSelect,
 }: {
-  inbox: ManufacturingApprovalInbox;
+  approvals: ApprovalInboxItem[];
   selectedApproval: ApprovalInboxItem;
   decisions: Record<string, ApprovalDecisionRecord>;
   labelDomain: (domain: string) => string;
@@ -233,14 +236,14 @@ function QueueList({
     }
     event.preventDefault();
 
-    const index = inbox.approvals.findIndex(
+    const index = approvals.findIndex(
       (approval) => approval.approval_id === selectedApproval.approval_id,
     );
     const nextIndex =
       event.key === "ArrowDown"
-        ? Math.min(index + 1, inbox.approvals.length - 1)
+        ? Math.min(index + 1, approvals.length - 1)
         : Math.max(index - 1, 0);
-    const next = inbox.approvals[nextIndex];
+    const next = approvals[nextIndex];
     if (next && next.approval_id !== selectedApproval.approval_id) {
       onSelect(next.approval_id);
       itemRefs.current.get(next.approval_id)?.focus();
@@ -255,8 +258,8 @@ function QueueList({
       </div>
       {/* Roving arrow-key selection across the queue buttons. */}
       <div className="grid gap-2" onKeyDown={handleKeyDown}>
-        {inbox.approvals.map((approval) => {
-          const decision = decisions[approval.approval_id];
+        {approvals.map((approval) => {
+          const decidedLocally = Boolean(decisions[approval.approval_id]);
           const isSelected = approval.approval_id === selectedApproval.approval_id;
 
           return (
@@ -288,14 +291,103 @@ function QueueList({
               </span>
               <span
                 className={`status-pill ${
-                  decision ? "signal-ready" : approvalRiskClass(approval.risk_level)
+                  decidedLocally ? "signal-ready" : approvalRiskClass(approval.risk_level)
                 }`}
               >
-                {decision ? approvalDecisionLabel(decision.decision) : approval.risk_level}
+                {decidedLocally
+                  ? approvalDecisionLabel(decisions[approval.approval_id].decision)
+                  : approval.risk_level}
               </span>
             </button>
           );
         })}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Terminal outcomes, separate from the actionable queue. Every row is derived
+ * from server-side persisted decision records; fields the record does not
+ * carry are omitted rather than invented.
+ */
+function DecisionHistory({
+  entries,
+}: {
+  entries: readonly ApprovalDecisionHistoryEntry[];
+}) {
+  return (
+    <Card className="grid content-start gap-3" as="section">
+      <div aria-label="Decision history" className="grid content-start gap-3">
+        <div className="grid gap-1">
+          <Eyebrow>{strings.approvals.history.eyebrow}</Eyebrow>
+          <h2 className="font-display m-0 text-xl text-ink">
+            {strings.approvals.history.title}
+          </h2>
+          <p className="m-0 text-sm text-muted">{strings.approvals.history.description}</p>
+        </div>
+        {entries.length === 0 ? (
+          <p className="m-0 text-sm text-muted" role="status">
+            {strings.approvals.history.empty}
+          </p>
+        ) : (
+          <ul className="m-0 grid list-none gap-2 p-0">
+            {entries.map((entry) => {
+              const decision = entry.decision as ApprovalDecision | undefined;
+              const knownDecision =
+                decision === "approve" || decision === "reject" || decision === "request_changes";
+              return (
+                <li
+                  className="grid gap-1.5 rounded-2xl border border-line px-4 py-3 dark:border-white/10"
+                  data-decision-history-entry={entry.approval_id}
+                  key={entry.approval_id}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <span className="flex min-w-0 items-center gap-2">
+                      {knownDecision ? (
+                        <span
+                          className={`status-pill ${decision === "approve" ? "signal-ready" : ""}`}
+                        >
+                          {approvalDecisionLabel(decision)}
+                        </span>
+                      ) : (
+                        <span className="status-pill">{entry.decision}</span>
+                      )}
+                      <span className="truncate text-sm font-medium text-ink">
+                        {entry.action}
+                      </span>
+                    </span>
+                    {entry.audit_event_id ? (
+                      <Link
+                        className="inline-flex items-center text-xs font-medium text-signal hover:underline"
+                        href={`/audit?event_id=${encodeURIComponent(entry.audit_event_id)}`}
+                      >
+                        {strings.approvals.decision.auditLink}
+                      </Link>
+                    ) : null}
+                  </div>
+                  <p className="m-0 font-mono text-xs text-muted">
+                    {[
+                      entry.decided_by ?? strings.approvals.history.actorUnknown,
+                      entry.decided_at ? formatTimestamp(entry.decided_at) : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                  {entry.rationale ? (
+                    <p className="m-0 text-sm leading-snug text-muted">{entry.rationale}</p>
+                  ) : null}
+                  {entry.follow_through_status ? (
+                    <p className="m-0 text-xs text-muted">
+                      {strings.approvals.history.followThrough}{" "}
+                      <span className="font-mono">{entry.follow_through_status}</span>
+                    </p>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
     </Card>
   );
@@ -307,6 +399,7 @@ function ApprovalDetail({
   decision,
   domainLabel,
   error,
+  identitySession,
   onDecisionChange,
   onErrorChange,
   tenantId,
@@ -316,6 +409,7 @@ function ApprovalDetail({
   decision: ApprovalDecisionRecord | undefined;
   domainLabel: string;
   error: AxisOperatorError | undefined;
+  identitySession: IdentitySessionReadModel | null;
   onDecisionChange: (approvalId: string, record: ApprovalDecisionRecord | null) => void;
   onErrorChange: (approvalId: string, error: AxisOperatorError | null) => void;
   tenantId: string;
@@ -341,6 +435,7 @@ function ApprovalDetail({
         approval={approval}
         decision={decision}
         error={error}
+        identitySession={identitySession}
         onDecisionChange={onDecisionChange}
         onErrorChange={onErrorChange}
         tenantId={tenantId}
@@ -417,9 +512,7 @@ function ApprovalDetail({
 export function ApprovalInbox() {
   const { labelDomain } = useTenantVocabulary();
   const { triggerRefresh } = useConsole();
-  const identity = useAxisQuery<IdentitySessionReadModel>("/identity/session", {
-    parse: parseIdentitySessionReadModel,
-  });
+  const identity = useIdentitySession();
   const tenantScope = resolveConsoleTenantScope(identity.data);
   const tenantId = tenantScope.tenantId;
   const {
@@ -463,6 +556,10 @@ export function ApprovalInbox() {
   ) {
     setDecision(approvalId, record);
     if (record?.storage === "persisted") {
+      // The decided approval leaves the actionable queue; pin it in the URL so
+      // the operator keeps reviewing exactly what they just decided while the
+      // refreshed queue reconciles and the history section picks it up.
+      setUrlState({ actionRunId: "", approvalId });
       triggerRefresh();
     }
   }
@@ -514,6 +611,12 @@ export function ApprovalInbox() {
   const directActionRunApproval = urlState.actionRunId
     ? inbox.approvals.find((approval) => approval.action_run_id === urlState.actionRunId)
     : undefined;
+  // The actionable queue is server truth minus terminal decisions; decided
+  // work moves to the decision history instead of lingering in the inbox.
+  const actionableApprovals = inbox.approvals.filter(
+    (approval) =>
+      approval.status !== "decided" && !decisions[approval.approval_id],
+  );
   const linkedApprovalId = urlState.actionRunId
     ? actionRunAudit.data?.events.find(
         (event) => event.evidence_refs.includes(urlState.actionRunId),
@@ -524,7 +627,7 @@ export function ApprovalInbox() {
       ?? inbox.approvals.find((approval) => approval.approval_id === linkedApprovalId)
     : urlState.approvalId
       ? inbox.approvals.find((approval) => approval.approval_id === urlState.approvalId)
-      : inbox.approvals[0];
+      : actionableApprovals[0];
 
   if (
     urlState.actionRunId
@@ -558,12 +661,18 @@ export function ApprovalInbox() {
       />
     );
   }
+  // A decision counts as decided whether it was recorded in this session or
+  // already persisted and reconciled into the queue by the API.
   const decidedCount = inbox.approvals.filter(
-    (approval) => decisions[approval.approval_id],
+    (approval) =>
+      Boolean(decisions[approval.approval_id]) || approval.status === "decided",
   ).length;
   const pendingCount = inbox.approvals.length - decidedCount;
   const highRiskCount = inbox.approvals.filter(
-    (approval) => approval.risk_level === "high" && !decisions[approval.approval_id],
+    (approval) =>
+      approval.risk_level === "high"
+      && !decisions[approval.approval_id]
+      && approval.status !== "decided",
   ).length;
 
   const metrics: Metric[] = [
@@ -611,7 +720,7 @@ export function ApprovalInbox() {
         </div>
       </div>
 
-      <MetricStrip metrics={metrics} />
+      <MetricStrip metrics={metrics} label="Approval metrics" />
 
       {selectedApproval ? (
         <MasterDetail
@@ -625,6 +734,7 @@ export function ApprovalInbox() {
               approval={selectedApproval}
               decision={decisions[selectedApproval.approval_id]}
               domainLabel={labelDomain(selectedApproval.domain)}
+              identitySession={identity.data ?? null}
               error={errors[selectedApproval.approval_id]}
               onDecisionChange={handleDecisionChange}
               onErrorChange={setError}
@@ -633,8 +743,8 @@ export function ApprovalInbox() {
           }
           list={
             <QueueList
+              approvals={actionableApprovals}
               decisions={decisions}
-              inbox={inbox}
               labelDomain={labelDomain}
               onSelect={(approvalId) => setUrlState({
                 actionRunId: "",
@@ -651,6 +761,8 @@ export function ApprovalInbox() {
           title={strings.approvals.empty.title}
         />
       )}
+
+      <DecisionHistory entries={inbox.decision_history ?? []} />
 
       <ActionFollowThrough
         actionRuns={actionRunsQuery.data}

@@ -1535,6 +1535,122 @@
         "title": "ApprovalDecisionDeliveryStatus",
         "type": "object"
       },
+      "ApprovalDecisionHistoryEntry": {
+        "description": "Terminal decision record for one approval, from persisted server truth.\n\nFields the decision record does not carry stay ``None``; history entries\nnever invent operator facts.",
+        "properties": {
+          "action": {
+            "minLength": 1,
+            "title": "Action",
+            "type": "string"
+          },
+          "approval_id": {
+            "minLength": 1,
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "audit_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Event Id"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By"
+          },
+          "decision": {
+            "minLength": 1,
+            "title": "Decision",
+            "type": "string"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain"
+          },
+          "follow_through_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Follow Through Status"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "risk_level": {
+            "minLength": 1,
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "status": {
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "workflow_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Id"
+          }
+        },
+        "required": [
+          "approval_id",
+          "action",
+          "risk_level",
+          "decision",
+          "status"
+        ],
+        "title": "ApprovalDecisionHistoryEntry",
+        "type": "object"
+      },
       "ApprovalDecisionOption": {
         "properties": {
           "consequence": {
@@ -6364,6 +6480,13 @@
             "minLength": 1,
             "title": "Tenant Id",
             "type": "string"
+          },
+          "transitions": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectorManifestTransitionView"
+            },
+            "title": "Transitions",
+            "type": "array"
           }
         },
         "required": [
@@ -6691,6 +6814,64 @@
           "idempotency_key"
         ],
         "title": "ConnectorManifestReplaceRequest",
+        "type": "object"
+      },
+      "ConnectorManifestTransitionView": {
+        "description": "One governed lifecycle transition of one connector, newest first.\n\nDeliberately typed operator evidence only: statuses, actor, reason and\nevidence references. Raw audit payloads stay in the ledger.",
+        "properties": {
+          "audit_event_id": {
+            "format": "uuid",
+            "title": "Audit Event Id",
+            "type": "string"
+          },
+          "audit_event_type": {
+            "minLength": 1,
+            "title": "Audit Event Type",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "from_status": {
+            "minLength": 1,
+            "title": "From Status",
+            "type": "string"
+          },
+          "target_status": {
+            "minLength": 1,
+            "title": "Target Status",
+            "type": "string"
+          },
+          "transition_reason": {
+            "minLength": 1,
+            "title": "Transition Reason",
+            "type": "string"
+          },
+          "transitioned_at": {
+            "format": "date-time",
+            "title": "Transitioned At",
+            "type": "string"
+          },
+          "transitioned_by": {
+            "minLength": 1,
+            "title": "Transitioned By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_status",
+          "target_status",
+          "transitioned_by",
+          "transition_reason",
+          "audit_event_id",
+          "audit_event_type",
+          "transitioned_at"
+        ],
+        "title": "ConnectorManifestTransitionView",
         "type": "object"
       },
       "ConnectorManifestValidationResult": {
@@ -9786,6 +9967,1269 @@
         "title": "ConnectorSchemaField",
         "type": "object"
       },
+      "ConnectorSourceActivationOutcome": {
+        "properties": {
+          "activation_id": {
+            "minLength": 1,
+            "title": "Activation Id",
+            "type": "string"
+          },
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/SourceBindingView"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "correlation_ref": {
+            "minLength": 1,
+            "title": "Correlation Ref",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id",
+          "activation_id",
+          "bindings",
+          "correlation_ref"
+        ],
+        "title": "ConnectorSourceActivationOutcome",
+        "type": "object"
+      },
+      "ConnectorSourceActivationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "activation_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Activation Id",
+            "type": "string"
+          },
+          "activation_reason": {
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Activation Reason",
+            "type": "string"
+          },
+          "actor_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actor Scopes",
+            "type": "array"
+          },
+          "connection_profile_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Connection Profile Id",
+            "type": "string"
+          },
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "credential_lease_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Credential Lease Id",
+            "type": "string"
+          },
+          "egress_policy_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Egress Policy Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "minLength": 1,
+            "title": "Requested By",
+            "type": "string"
+          },
+          "selections": {
+            "items": {
+              "$ref": "#/components/schemas/SourceBindingSelection"
+            },
+            "minItems": 1,
+            "title": "Selections",
+            "type": "array"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id",
+          "activation_id",
+          "requested_by",
+          "connection_profile_id",
+          "credential_lease_id",
+          "egress_policy_id",
+          "activation_reason",
+          "selections"
+        ],
+        "title": "ConnectorSourceActivationRequest",
+        "type": "object"
+      },
+      "ConnectorSourceBatchExportDecisionInput": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "actor_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actor Scopes",
+            "type": "array"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 600,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "decision",
+          "actor_id"
+        ],
+        "title": "ConnectorSourceBatchExportDecisionInput",
+        "type": "object"
+      },
+      "ConnectorSourceBatchExportDecisionResult": {
+        "properties": {
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "audit_event_id": {
+            "title": "Audit Event Id",
+            "type": "string"
+          },
+          "audit_event_type": {
+            "title": "Audit Event Type",
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "export_request": {
+            "$ref": "#/components/schemas/ConnectorSourceBatchExportRequestRecord"
+          },
+          "export_request_id": {
+            "title": "Export Request Id",
+            "type": "string"
+          },
+          "export_status": {
+            "title": "Export Status",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "export_request_id",
+          "approval_id",
+          "workflow_id",
+          "decision",
+          "status",
+          "export_status",
+          "actor_id",
+          "export_request",
+          "audit_event_id",
+          "audit_event_type"
+        ],
+        "title": "ConnectorSourceBatchExportDecisionResult",
+        "type": "object"
+      },
+      "ConnectorSourceBatchExportEnvelopeFilter": {
+        "description": "Identity of what the export covers; no filter can widen it.",
+        "properties": {
+          "connector_id": {
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connector_id",
+          "request_id"
+        ],
+        "title": "ConnectorSourceBatchExportEnvelopeFilter",
+        "type": "object"
+      },
+      "ConnectorSourceBatchExportMaterializationInput": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "actor_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actor Scopes",
+            "type": "array"
+          },
+          "idempotency_key": {
+            "maxLength": 200,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "materialization_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9_-]*$",
+            "title": "Materialization Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "materialization_id",
+          "idempotency_key",
+          "actor_id",
+          "reason"
+        ],
+        "title": "ConnectorSourceBatchExportMaterializationInput",
+        "type": "object"
+      },
+      "ConnectorSourceBatchExportMaterializationResult": {
+        "properties": {
+          "artifact_checksum_sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Artifact Checksum Sha256",
+            "type": "string"
+          },
+          "artifact_content_type": {
+            "title": "Artifact Content Type",
+            "type": "string"
+          },
+          "artifact_size_bytes": {
+            "minimum": 0.0,
+            "title": "Artifact Size Bytes",
+            "type": "integer"
+          },
+          "audit_event_id": {
+            "title": "Audit Event Id",
+            "type": "string"
+          },
+          "audit_event_type": {
+            "title": "Audit Event Type",
+            "type": "string"
+          },
+          "export_request": {
+            "$ref": "#/components/schemas/ConnectorSourceBatchExportRequestRecord"
+          },
+          "export_request_id": {
+            "title": "Export Request Id",
+            "type": "string"
+          },
+          "export_status": {
+            "title": "Export Status",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "idempotent_replay": {
+            "default": false,
+            "title": "Idempotent Replay",
+            "type": "boolean"
+          },
+          "materialization_id": {
+            "title": "Materialization Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "storage_adapter": {
+            "title": "Storage Adapter",
+            "type": "string"
+          },
+          "storage_key": {
+            "title": "Storage Key",
+            "type": "string"
+          },
+          "storage_status": {
+            "title": "Storage Status",
+            "type": "string"
+          },
+          "storage_uri": {
+            "title": "Storage Uri",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "export_request_id",
+          "materialization_id",
+          "idempotency_key",
+          "status",
+          "export_status",
+          "storage_status",
+          "storage_adapter",
+          "storage_key",
+          "storage_uri",
+          "artifact_checksum_sha256",
+          "artifact_size_bytes",
+          "artifact_content_type",
+          "export_request",
+          "audit_event_id",
+          "audit_event_type"
+        ],
+        "title": "ConnectorSourceBatchExportMaterializationResult",
+        "type": "object"
+      },
+      "ConnectorSourceBatchExportRequestInput": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actor Scopes",
+            "type": "array"
+          },
+          "approval_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "export_reason": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Export Reason",
+            "type": "string"
+          },
+          "export_request_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9_-]*$",
+            "title": "Export Request Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "maxLength": 200,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "owner_role": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Owner Role",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Requested By",
+            "type": "string"
+          },
+          "risk_level": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "workflow_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id",
+          "request_id",
+          "export_request_id",
+          "idempotency_key",
+          "requested_by",
+          "owner_role",
+          "risk_level",
+          "approval_id",
+          "workflow_id",
+          "export_reason"
+        ],
+        "title": "ConnectorSourceBatchExportRequestInput",
+        "type": "object"
+      },
+      "ConnectorSourceBatchExportRequestRecord": {
+        "properties": {
+          "approval_id": {
+            "title": "Approval Id",
+            "type": "string"
+          },
+          "artifact_checksum_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Checksum Sha256"
+          },
+          "artifact_content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Content Type"
+          },
+          "artifact_size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact Size Bytes"
+          },
+          "audit_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Event Id"
+          },
+          "audit_event_type": {
+            "title": "Audit Event Type",
+            "type": "string"
+          },
+          "controls": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Controls",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "decision_actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Actor Id"
+          },
+          "decision_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Note"
+          },
+          "envelope_checksum_sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Envelope Checksum Sha256",
+            "type": "string"
+          },
+          "envelope_filter": {
+            "$ref": "#/components/schemas/ConnectorSourceBatchExportEnvelopeFilter"
+          },
+          "export_reason": {
+            "title": "Export Reason",
+            "type": "string"
+          },
+          "export_request_id": {
+            "title": "Export Request Id",
+            "type": "string"
+          },
+          "export_status": {
+            "title": "Export Status",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "idempotent_replay": {
+            "default": false,
+            "title": "Idempotent Replay",
+            "type": "boolean"
+          },
+          "materialization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Materialization Id"
+          },
+          "materialization_idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Materialization Idempotency Key"
+          },
+          "materialized_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Materialized At"
+          },
+          "materialized_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Materialized By"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "owner_role": {
+            "title": "Owner Role",
+            "type": "string"
+          },
+          "permission_decision": {
+            "additionalProperties": true,
+            "title": "Permission Decision",
+            "type": "object"
+          },
+          "redaction_policy": {
+            "title": "Redaction Policy",
+            "type": "string"
+          },
+          "requested_batch_count": {
+            "minimum": 0.0,
+            "title": "Requested Batch Count",
+            "type": "integer"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "risk_level": {
+            "title": "Risk Level",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "storage_adapter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Adapter"
+          },
+          "storage_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Key"
+          },
+          "storage_status": {
+            "title": "Storage Status",
+            "type": "string"
+          },
+          "storage_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Uri"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "total_row_count": {
+            "minimum": 0.0,
+            "title": "Total Row Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workflow_id": {
+            "title": "Workflow Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "export_request_id",
+          "idempotency_key",
+          "status",
+          "export_status",
+          "storage_status",
+          "requested_by",
+          "owner_role",
+          "risk_level",
+          "approval_id",
+          "workflow_id",
+          "envelope_filter",
+          "export_reason",
+          "requested_batch_count",
+          "total_row_count",
+          "envelope_checksum_sha256",
+          "redaction_policy",
+          "controls",
+          "permission_decision",
+          "audit_event_type",
+          "notes",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConnectorSourceBatchExportRequestRecord",
+        "type": "object"
+      },
+      "ConnectorSourceBindingsView": {
+        "properties": {
+          "bindings": {
+            "items": {
+              "$ref": "#/components/schemas/SourceBindingView"
+            },
+            "title": "Bindings",
+            "type": "array"
+          },
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id",
+          "bindings"
+        ],
+        "title": "ConnectorSourceBindingsView",
+        "type": "object"
+      },
+      "ConnectorSourceDiscoveryRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actor Scopes",
+            "type": "array"
+          },
+          "connection_profile_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Connection Profile Id",
+            "type": "string"
+          },
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "credential_lease_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Credential Lease Id",
+            "type": "string"
+          },
+          "discovery_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Discovery Id",
+            "type": "string"
+          },
+          "egress_boundary": {
+            "default": "approved_private_endpoint",
+            "minLength": 1,
+            "title": "Egress Boundary",
+            "type": "string"
+          },
+          "egress_policy_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Egress Policy Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "minLength": 1,
+            "title": "Requested By",
+            "type": "string"
+          },
+          "schema_name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Schema Name",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id",
+          "discovery_id",
+          "requested_by",
+          "connection_profile_id",
+          "schema_name",
+          "credential_lease_id",
+          "egress_policy_id"
+        ],
+        "title": "ConnectorSourceDiscoveryRequest",
+        "type": "object"
+      },
+      "ConnectorSourceDiscoveryResult": {
+        "properties": {
+          "adapter": {
+            "minLength": 1,
+            "title": "Adapter",
+            "type": "string"
+          },
+          "block_reason": {
+            "default": "",
+            "minLength": 0,
+            "title": "Block Reason",
+            "type": "string"
+          },
+          "discovered_schema": {
+            "default": "",
+            "minLength": 0,
+            "title": "Discovered Schema",
+            "type": "string"
+          },
+          "evidence_summary": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Evidence Summary",
+            "type": "object"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "status": {
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          },
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredSourceTable"
+            },
+            "title": "Tables",
+            "type": "array"
+          },
+          "tables_truncated": {
+            "default": false,
+            "title": "Tables Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "adapter",
+          "status"
+        ],
+        "title": "ConnectorSourceDiscoveryResult",
+        "type": "object"
+      },
+      "ConnectorSourceIngestionCancelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actor Scopes",
+            "type": "array"
+          },
+          "cancelled_by": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Cancelled By",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "cancelled_by"
+        ],
+        "title": "ConnectorSourceIngestionCancelRequest",
+        "type": "object"
+      },
+      "ConnectorSourceIngestionOverview": {
+        "description": "The daily operator landing read model for governed ingestion.\n\nAggregates plus a bounded newest-first page of requests. Metadata only \u2014\nevery entry reuses the same public-safe view contract as single-request\nreads.",
+        "properties": {
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Opaque keyset cursor over (created_at, request_id).",
+            "title": "Next Cursor"
+          },
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/SourceIngestionRequestView"
+            },
+            "title": "Requests",
+            "type": "array"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/SourceIngestionOverviewSummary"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id",
+          "summary"
+        ],
+        "title": "ConnectorSourceIngestionOverview",
+        "type": "object"
+      },
+      "ConnectorSourceIngestionRequeueRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actor Scopes",
+            "type": "array"
+          },
+          "idempotency_key": {
+            "maxLength": 180,
+            "minLength": 8,
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9._:-]*$",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "requeued_by": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Requeued By",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "requeued_by",
+          "reason",
+          "idempotency_key"
+        ],
+        "title": "ConnectorSourceIngestionRequeueRequest",
+        "type": "object"
+      },
+      "ConnectorSourceIngestionSubmission": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actor Scopes",
+            "type": "array"
+          },
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 600,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9._:-]*$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Requested By",
+            "type": "string"
+          },
+          "selections": {
+            "items": {
+              "$ref": "#/components/schemas/SourceIngestionSelectionInput"
+            },
+            "minItems": 1,
+            "title": "Selections",
+            "type": "array"
+          },
+          "stage": {
+            "default": "validate",
+            "title": "Stage",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id",
+          "request_id",
+          "requested_by",
+          "reason",
+          "selections"
+        ],
+        "title": "ConnectorSourceIngestionSubmission",
+        "type": "object"
+      },
+      "ConnectorSourceVerificationResult": {
+        "properties": {
+          "adapter": {
+            "minLength": 1,
+            "title": "Adapter",
+            "type": "string"
+          },
+          "block_reason": {
+            "default": "",
+            "minLength": 0,
+            "title": "Block Reason",
+            "type": "string"
+          },
+          "database_name": {
+            "default": "",
+            "minLength": 0,
+            "title": "Database Name",
+            "type": "string"
+          },
+          "evidence_summary": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Evidence Summary",
+            "type": "object"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "status": {
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "adapter",
+          "status"
+        ],
+        "title": "ConnectorSourceVerificationResult",
+        "type": "object"
+      },
+      "ConnectorSourceVerifyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "actor_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Actor Scopes",
+            "type": "array"
+          },
+          "connection_profile_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Connection Profile Id",
+            "type": "string"
+          },
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "credential_lease_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Credential Lease Id",
+            "type": "string"
+          },
+          "egress_boundary": {
+            "default": "approved_private_endpoint",
+            "minLength": 1,
+            "title": "Egress Boundary",
+            "type": "string"
+          },
+          "egress_policy_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Egress Policy Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "minLength": 1,
+            "title": "Requested By",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "verification_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Verification Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id",
+          "verification_id",
+          "requested_by",
+          "connection_profile_id",
+          "credential_lease_id",
+          "egress_policy_id"
+        ],
+        "title": "ConnectorSourceVerifyRequest",
+        "type": "object"
+      },
       "ConnectorSyncCheckpointClaimEvidenceInvariant": {
         "properties": {
           "audit_event_id": {
@@ -11241,6 +12685,128 @@
         "title": "DataAssetKind",
         "type": "string"
       },
+      "DataAssetLineagePromotion": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "promotion_id": {
+            "title": "Promotion Id",
+            "type": "string"
+          },
+          "promotion_mode": {
+            "title": "Promotion Mode",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "promotion_id",
+          "status",
+          "promotion_mode",
+          "requested_by",
+          "created_at"
+        ],
+        "title": "DataAssetLineagePromotion",
+        "type": "object"
+      },
+      "DataAssetLineageProposal": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "graph_mutation_status": {
+            "title": "Graph Mutation Status",
+            "type": "string"
+          },
+          "node_id": {
+            "title": "Node Id",
+            "type": "string"
+          },
+          "ontology_type": {
+            "title": "Ontology Type",
+            "type": "string"
+          },
+          "promoted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted At"
+          },
+          "promotions": {
+            "items": {
+              "$ref": "#/components/schemas/DataAssetLineagePromotion"
+            },
+            "title": "Promotions",
+            "type": "array"
+          },
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "proposed_by": {
+            "title": "Proposed By",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "status",
+          "graph_mutation_status",
+          "node_id",
+          "ontology_type",
+          "proposed_by",
+          "created_at"
+        ],
+        "title": "DataAssetLineageProposal",
+        "type": "object"
+      },
+      "DataAssetLineageView": {
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "proposals": {
+            "items": {
+              "$ref": "#/components/schemas/DataAssetLineageProposal"
+            },
+            "title": "Proposals",
+            "type": "array"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "asset_id"
+        ],
+        "title": "DataAssetLineageView",
+        "type": "object"
+      },
       "DataAssetResourceObservationView": {
         "properties": {
           "drift_state": {
@@ -11256,6 +12822,11 @@
           "last_seen_at": {
             "format": "date-time",
             "title": "Last Seen At",
+            "type": "string"
+          },
+          "last_source_kind": {
+            "minLength": 1,
+            "title": "Last Source Kind",
             "type": "string"
           },
           "observation_count": {
@@ -11301,6 +12872,7 @@
           "schema_fingerprint",
           "previous_fingerprint",
           "drift_state",
+          "last_source_kind",
           "first_seen_at",
           "last_seen_at",
           "observation_count",
@@ -12119,6 +13691,46 @@
         "title": "DeploymentReadinessReport",
         "type": "object"
       },
+      "DiscoveredSourceTable": {
+        "properties": {
+          "column_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Column Fingerprint",
+            "type": "string"
+          },
+          "column_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Column Names",
+            "type": "array"
+          },
+          "columns_truncated": {
+            "title": "Columns Truncated",
+            "type": "boolean"
+          },
+          "schema_name": {
+            "minLength": 1,
+            "title": "Schema Name",
+            "type": "string"
+          },
+          "table_name": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Table Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_name",
+          "table_name",
+          "column_fingerprint",
+          "columns_truncated"
+        ],
+        "title": "DiscoveredSourceTable",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -12421,6 +14033,18 @@
               }
             ],
             "title": "Tenant Id"
+          },
+          "unauthenticated_reason": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unauthenticated Reason"
           }
         },
         "required": [
@@ -12767,6 +14391,13 @@
             "minLength": 1,
             "title": "As Of",
             "type": "string"
+          },
+          "decision_history": {
+            "items": {
+              "$ref": "#/components/schemas/ApprovalDecisionHistoryEntry"
+            },
+            "title": "Decision History",
+            "type": "array"
           },
           "plant_name": {
             "anyOf": [
@@ -19085,6 +20716,894 @@
         "title": "RiskSignal",
         "type": "object"
       },
+      "SourceBindingSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_][A-Za-z0-9._:-]*$",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "expected_schema_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Expected Schema Fingerprint",
+            "type": "string"
+          },
+          "resource_name": {
+            "maxLength": 240,
+            "minLength": 1,
+            "title": "Resource Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id",
+          "resource_name",
+          "expected_schema_fingerprint"
+        ],
+        "title": "SourceBindingSelection",
+        "type": "object"
+      },
+      "SourceBindingView": {
+        "properties": {
+          "activated_at": {
+            "format": "date-time",
+            "title": "Activated At",
+            "type": "string"
+          },
+          "activated_by": {
+            "minLength": 1,
+            "title": "Activated By",
+            "type": "string"
+          },
+          "binding_id": {
+            "minLength": 1,
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "connection_profile_id": {
+            "minLength": 1,
+            "title": "Connection Profile Id",
+            "type": "string"
+          },
+          "ingestion_status": {
+            "minLength": 1,
+            "title": "Ingestion Status",
+            "type": "string"
+          },
+          "outcome": {
+            "pattern": "^(activated|replayed)$",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "resource_name": {
+            "minLength": 1,
+            "title": "Resource Name",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "status": {
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id",
+          "resource_name",
+          "schema_fingerprint",
+          "status",
+          "ingestion_status",
+          "outcome",
+          "connection_profile_id",
+          "activated_by",
+          "activated_at"
+        ],
+        "title": "SourceBindingView",
+        "type": "object"
+      },
+      "SourceDiscoveryObservation": {
+        "properties": {
+          "observation": {
+            "$ref": "#/components/schemas/DataAssetResourceObservationView"
+          },
+          "table_name": {
+            "minLength": 1,
+            "title": "Table Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "table_name",
+          "observation"
+        ],
+        "title": "SourceDiscoveryObservation",
+        "type": "object"
+      },
+      "SourceDiscoveryOutcome": {
+        "properties": {
+          "correlation_ref": {
+            "minLength": 1,
+            "title": "Correlation Ref",
+            "type": "string"
+          },
+          "discovery_id": {
+            "minLength": 1,
+            "title": "Discovery Id",
+            "type": "string"
+          },
+          "observations": {
+            "items": {
+              "$ref": "#/components/schemas/SourceDiscoveryObservation"
+            },
+            "title": "Observations",
+            "type": "array"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ConnectorSourceDiscoveryResult"
+          }
+        },
+        "required": [
+          "discovery_id",
+          "result",
+          "correlation_ref"
+        ],
+        "title": "SourceDiscoveryOutcome",
+        "type": "object"
+      },
+      "SourceExtractionBatchView": {
+        "description": "Metadata-only operator view of one extraction batch.\n\nCarries counts, digests and storage references \u2014 never row values. The\nwatermark is disclosed as presence only; its value can name source key\ncolumns and stays out of operator surfaces.",
+        "properties": {
+          "batch_key": {
+            "minLength": 1,
+            "title": "Batch Key",
+            "type": "string"
+          },
+          "binding_id": {
+            "minLength": 1,
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "byte_size": {
+            "minimum": 0.0,
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "classification": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Classification",
+            "type": "string"
+          },
+          "content_type": {
+            "minLength": 1,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "digest_sha256": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Digest Sha256",
+            "type": "string"
+          },
+          "duration_ms": {
+            "minimum": 0.0,
+            "title": "Duration Ms",
+            "type": "integer"
+          },
+          "executed_by": {
+            "minLength": 1,
+            "title": "Executed By",
+            "type": "string"
+          },
+          "has_watermark": {
+            "title": "Has Watermark",
+            "type": "boolean"
+          },
+          "limit_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Reason"
+          },
+          "observed_schema_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Observed Schema Fingerprint",
+            "type": "string"
+          },
+          "ordering_mode": {
+            "pattern": "^(primary_key|none)$",
+            "title": "Ordering Mode",
+            "type": "string"
+          },
+          "pinned_schema_fingerprint": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Pinned Schema Fingerprint",
+            "type": "string"
+          },
+          "resource_name": {
+            "minLength": 1,
+            "title": "Resource Name",
+            "type": "string"
+          },
+          "row_count": {
+            "minimum": 0.0,
+            "title": "Row Count",
+            "type": "integer"
+          },
+          "storage_uri": {
+            "minLength": 1,
+            "title": "Storage Uri",
+            "type": "string"
+          },
+          "stored_size_bytes": {
+            "minimum": 0.0,
+            "title": "Stored Size Bytes",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "batch_key",
+          "binding_id",
+          "resource_name",
+          "pinned_schema_fingerprint",
+          "observed_schema_fingerprint",
+          "ordering_mode",
+          "has_watermark",
+          "row_count",
+          "byte_size",
+          "truncated",
+          "duration_ms",
+          "digest_sha256",
+          "storage_uri",
+          "content_type",
+          "stored_size_bytes",
+          "classification",
+          "executed_by",
+          "created_at"
+        ],
+        "title": "SourceExtractionBatchView",
+        "type": "object"
+      },
+      "SourceExtractionBatchesPage": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/SourceExtractionBatchView"
+            },
+            "title": "Batches",
+            "type": "array"
+          },
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "total_count": {
+            "minimum": 0.0,
+            "title": "Total Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id",
+          "request_id",
+          "total_count"
+        ],
+        "title": "SourceExtractionBatchesPage",
+        "type": "object"
+      },
+      "SourceExtractionReconciliationFinding": {
+        "properties": {
+          "batch_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Key"
+          },
+          "classification": {
+            "pattern": "^(clean_match|digest_mismatch|missing_object|orphaned_object)$",
+            "title": "Classification",
+            "type": "string"
+          },
+          "storage_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Key"
+          }
+        },
+        "required": [
+          "classification"
+        ],
+        "title": "SourceExtractionReconciliationFinding",
+        "type": "object"
+      },
+      "SourceExtractionReconciliationReport": {
+        "description": "Public-safe dry-run report; no row contents or secrets anywhere.",
+        "properties": {
+          "clean_matches": {
+            "minimum": 0.0,
+            "title": "Clean Matches",
+            "type": "integer"
+          },
+          "digest_mismatches": {
+            "minimum": 0.0,
+            "title": "Digest Mismatches",
+            "type": "integer"
+          },
+          "dry_run": {
+            "default": true,
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/SourceExtractionReconciliationFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "missing_objects": {
+            "minimum": 0.0,
+            "title": "Missing Objects",
+            "type": "integer"
+          },
+          "orphaned_objects": {
+            "minimum": 0.0,
+            "title": "Orphaned Objects",
+            "type": "integer"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "request_id",
+          "clean_matches",
+          "digest_mismatches",
+          "missing_objects",
+          "orphaned_objects"
+        ],
+        "title": "SourceExtractionReconciliationReport",
+        "type": "object"
+      },
+      "SourceExtractionSummary": {
+        "description": "Public-safe summary of what extraction durably produced.",
+        "properties": {
+          "batch_count": {
+            "minimum": 0.0,
+            "title": "Batch Count",
+            "type": "integer"
+          },
+          "total_rows": {
+            "minimum": 0.0,
+            "title": "Total Rows",
+            "type": "integer"
+          },
+          "truncated_any": {
+            "default": false,
+            "title": "Truncated Any",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "batch_count",
+          "total_rows"
+        ],
+        "title": "SourceExtractionSummary",
+        "type": "object"
+      },
+      "SourceIngestionAttemptSelectionView": {
+        "description": "One selection's outcome inside one finalized dispatch attempt.",
+        "properties": {
+          "binding_id": {
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "outcome": {
+            "pattern": "^(validated|failed)$",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "resource_name": {
+            "title": "Resource Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id",
+          "resource_name",
+          "outcome"
+        ],
+        "title": "SourceIngestionAttemptSelectionView",
+        "type": "object"
+      },
+      "SourceIngestionAttemptView": {
+        "description": "One finalized dispatch attempt, metadata-only.\n\nThe timeline records what the outbox actually concluded per attempt:\ncompletion, retry (operational), or dead-letter (permanent) \u2014 with the\npublic-safe failure code and each selection's validation verdict. Row\nvalues, fingerprints beyond the pinned pair, and any payload-like material\nnever appear here.",
+        "properties": {
+          "attempt_number": {
+            "minimum": 1.0,
+            "title": "Attempt Number",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "outcome": {
+            "pattern": "^(completed|retried|dead_lettered)$",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "selections": {
+            "items": {
+              "$ref": "#/components/schemas/SourceIngestionAttemptSelectionView"
+            },
+            "title": "Selections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "attempt_number",
+          "outcome"
+        ],
+        "title": "SourceIngestionAttemptView",
+        "type": "object"
+      },
+      "SourceIngestionEligibilityRow": {
+        "description": "One binding's readiness for governed ingestion, honestly labelled.",
+        "properties": {
+          "binding_id": {
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "eligible": {
+            "title": "Eligible",
+            "type": "boolean"
+          },
+          "resource_name": {
+            "title": "Resource Name",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "title": "Schema Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id",
+          "resource_name",
+          "schema_fingerprint",
+          "eligible"
+        ],
+        "title": "SourceIngestionEligibilityRow",
+        "type": "object"
+      },
+      "SourceIngestionEligibilityView": {
+        "description": "Eligibility rows plus the deployment's truthful extraction posture.",
+        "properties": {
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "extraction_available": {
+            "default": false,
+            "title": "Extraction Available",
+            "type": "boolean"
+          },
+          "planned_limits": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Limits"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/SourceIngestionEligibilityRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id"
+        ],
+        "title": "SourceIngestionEligibilityView",
+        "type": "object"
+      },
+      "SourceIngestionOverviewSummary": {
+        "description": "Cross-request status aggregates for one connector, honestly counted.",
+        "properties": {
+          "dead_lettered_count": {
+            "minimum": 0.0,
+            "title": "Dead Lettered Count",
+            "type": "integer"
+          },
+          "extract_stage_count": {
+            "minimum": 0.0,
+            "title": "Extract Stage Count",
+            "type": "integer"
+          },
+          "last_activity_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Activity At"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Status Counts",
+            "type": "object"
+          },
+          "total_count": {
+            "minimum": 0.0,
+            "title": "Total Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status_counts",
+          "total_count",
+          "dead_lettered_count",
+          "extract_stage_count"
+        ],
+        "title": "SourceIngestionOverviewSummary",
+        "type": "object"
+      },
+      "SourceIngestionRequestView": {
+        "properties": {
+          "attempt_count": {
+            "minimum": 0.0,
+            "title": "Attempt Count",
+            "type": "integer"
+          },
+          "attempts": {
+            "items": {
+              "$ref": "#/components/schemas/SourceIngestionAttemptView"
+            },
+            "title": "Attempts",
+            "type": "array"
+          },
+          "attempts_truncated": {
+            "default": false,
+            "title": "Attempts Truncated",
+            "type": "boolean"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "connector_id": {
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "dead_lettered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dead Lettered At"
+          },
+          "extraction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceExtractionSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "outcome": {
+            "pattern": "^(created|replayed)$",
+            "title": "Outcome",
+            "type": "string"
+          },
+          "planned_limits": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Limits"
+          },
+          "reason": {
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "request_id": {
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "requested_by": {
+            "minLength": 1,
+            "title": "Requested By",
+            "type": "string"
+          },
+          "selections": {
+            "items": {
+              "$ref": "#/components/schemas/SourceIngestionSelectionView"
+            },
+            "title": "Selections",
+            "type": "array"
+          },
+          "stage": {
+            "pattern": "^(validate|extract)$",
+            "title": "Stage",
+            "type": "string"
+          },
+          "status": {
+            "pattern": "^(pending|dispatching|completed|failed|cancelled)$",
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector_id",
+          "request_id",
+          "requested_by",
+          "reason",
+          "stage",
+          "status",
+          "attempt_count",
+          "selections",
+          "outcome",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SourceIngestionRequestView",
+        "type": "object"
+      },
+      "SourceIngestionSelectionInput": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "maxLength": 180,
+            "minLength": 1,
+            "title": "Binding Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id"
+        ],
+        "title": "SourceIngestionSelectionInput",
+        "type": "object"
+      },
+      "SourceIngestionSelectionView": {
+        "properties": {
+          "binding_id": {
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "resource_name": {
+            "title": "Resource Name",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "title": "Schema Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_id",
+          "resource_name",
+          "schema_fingerprint"
+        ],
+        "title": "SourceIngestionSelectionView",
+        "type": "object"
+      },
+      "SourceVerificationOutcome": {
+        "properties": {
+          "correlation_ref": {
+            "minLength": 1,
+            "title": "Correlation Ref",
+            "type": "string"
+          },
+          "result": {
+            "$ref": "#/components/schemas/ConnectorSourceVerificationResult"
+          },
+          "verification_id": {
+            "minLength": 1,
+            "title": "Verification Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verification_id",
+          "result",
+          "correlation_ref"
+        ],
+        "title": "SourceVerificationOutcome",
+        "type": "object"
+      },
       "SupplierDelayScenarioRecord": {
         "properties": {
           "audit_event_id": {
@@ -21104,6 +23623,81 @@
           }
         },
         "summary": "Data Asset Contract Evaluation Route",
+        "tags": [
+          "data"
+        ]
+      }
+    },
+    "/data/assets/{asset_id}/lineage": {
+      "get": {
+        "operationId": "data_asset_lineage_view_route_data_assets__asset_id__lineage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "asset_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Asset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataAssetLineageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Tenant scope read permission denied"
+          },
+          "404": {
+            "description": "Tenant or data asset not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Data Asset Lineage View Route",
         "tags": [
           "data"
         ]
@@ -24704,6 +27298,68 @@
         ]
       }
     },
+    "/demo/manufacturing/connectors/external-db/discover": {
+      "post": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_discovery_demo_manufacturing_connectors_external_db_discover_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceDiscoveryOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source discovery scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Credential lease or egress policy not found"
+          },
+          "422": {
+            "description": "Discovery references do not match the connector"
+          }
+        },
+        "summary": "Manufacturing Connector Source Discovery",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
     "/demo/manufacturing/connectors/external-db/preview": {
       "post": {
         "deprecated": true,
@@ -24758,6 +27414,1451 @@
           }
         },
         "summary": "Manufacturing External Db Connector Preview",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-bindings": {
+      "get": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_bindings_demo_manufacturing_connectors_external_db_source_bindings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connector_id",
+            "required": false,
+            "schema": {
+              "default": "external_db_operational_mirror",
+              "minLength": 1,
+              "title": "Connector Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceBindingsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Tenant binding denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Bindings",
+        "tags": [
+          "demo"
+        ]
+      },
+      "post": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_activation_demo_manufacturing_connectors_external_db_source_bindings_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceActivationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceActivationOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source activation scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Credential lease or egress policy not found"
+          },
+          "409": {
+            "description": "An active binding or binding ID already exists"
+          },
+          "422": {
+            "description": "Activation selections are invalid, stale, duplicate, or oversized"
+          }
+        },
+        "summary": "Manufacturing Connector Source Activation",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion-requests": {
+      "get": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_ingestion_requests_list_demo_manufacturing_connectors_external_db_source_ingestion_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connector_id",
+            "required": false,
+            "schema": {
+              "default": "external_db_operational_mirror",
+              "minLength": 1,
+              "title": "Connector Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SourceIngestionRequestView"
+                  },
+                  "title": "Response Manufacturing Connector Source Ingestion Requests List Demo Manufacturing Connectors External Db Source Ingestion Requests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Requests List",
+        "tags": [
+          "demo"
+        ]
+      },
+      "post": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_ingestion_request_create_demo_manufacturing_connectors_external_db_source_ingestion_requests_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceIngestionSubmission"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceIngestionRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion scope or tenant binding denied"
+          },
+          "409": {
+            "description": "The request ID already names a different request"
+          },
+          "422": {
+            "description": "Ingestion selections are invalid, stale, inactive, duplicate, or oversized"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Request Create",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion-requests/{request_id}": {
+      "get": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_ingestion_request_status_demo_manufacturing_connectors_external_db_source_ingestion_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceIngestionRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Request Status",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests": {
+      "post": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_batch_export_request_create_demo_manufacturing_connectors_external_db_source_ingestion_requests__request_id__batch_envelope_export_requests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceBatchExportRequestInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceBatchExportRequestRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Batch export request scope denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "409": {
+            "description": "Idempotency or export request ID conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Batch Export Request Create",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests/{export_request_id}/artifact": {
+      "get": {
+        "deprecated": true,
+        "description": "Checksum-verified artifact download; LOCAL adapter only.",
+        "operationId": "manufacturing_connector_source_batch_export_artifact_demo_manufacturing_connectors_external_db_source_ingestion_requests__request_id__batch_envelope_export_requests__export_request_id__artifact_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "export_request_id",
+            "required": true,
+            "schema": {
+              "title": "Export Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Export request not found"
+          },
+          "409": {
+            "description": "Artifact missing, checksum mismatch, or adapter unsupported"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Batch Export Artifact",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests/{export_request_id}/decision": {
+      "post": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_batch_export_decision_demo_manufacturing_connectors_external_db_source_ingestion_requests__request_id__batch_envelope_export_requests__export_request_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "export_request_id",
+            "required": true,
+            "schema": {
+              "title": "Export Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceBatchExportDecisionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceBatchExportDecisionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Export decision scope denied"
+          },
+          "404": {
+            "description": "Export request not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Batch Export Decision",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests/{export_request_id}/materializations": {
+      "post": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_batch_export_materialization_demo_manufacturing_connectors_external_db_source_ingestion_requests__request_id__batch_envelope_export_requests__export_request_id__materializations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "export_request_id",
+            "required": true,
+            "schema": {
+              "title": "Export Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceBatchExportMaterializationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceBatchExportMaterializationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Materialization scope denied"
+          },
+          "404": {
+            "description": "Export request not found"
+          },
+          "409": {
+            "description": "Approval gate, checksum drift or replay conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Batch Export Materialization",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion-requests/{request_id}/batches": {
+      "get": {
+        "deprecated": true,
+        "description": "Metadata-only extraction batches; row payloads never appear here.",
+        "operationId": "manufacturing_connector_source_extraction_batches_demo_manufacturing_connectors_external_db_source_ingestion_requests__request_id__batches_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "binding_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 180,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Binding Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "truncated",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Truncated"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceExtractionBatchesPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Extraction Batches",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion-requests/{request_id}/batches/reconciliation": {
+      "get": {
+        "deprecated": true,
+        "description": "Read-only object-store vs metadata comparison; dry-run only.",
+        "operationId": "manufacturing_connector_source_extraction_reconciliation_demo_manufacturing_connectors_external_db_source_ingestion_requests__request_id__batches_reconciliation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceExtractionReconciliationReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "409": {
+            "description": "Dry-run refused or store adapter unsupported"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Extraction Reconciliation",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion-requests/{request_id}/cancel": {
+      "post": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_ingestion_request_cancel_demo_manufacturing_connectors_external_db_source_ingestion_requests__request_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceIngestionCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceIngestionRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "409": {
+            "description": "The request was already dispatched or is terminal"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Request Cancel",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion-requests/{request_id}/requeue": {
+      "post": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_ingestion_request_requeue_demo_manufacturing_connectors_external_db_source_ingestion_requests__request_id__requeue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceIngestionRequeueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceIngestionRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "409": {
+            "description": "Only dead-lettered requests can be re-dispatched"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Request Requeue",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion/eligibility": {
+      "get": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_ingestion_eligibility_demo_manufacturing_connectors_external_db_source_ingestion_eligibility_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connector_id",
+            "required": false,
+            "schema": {
+              "default": "external_db_operational_mirror",
+              "minLength": 1,
+              "title": "Connector Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceIngestionEligibilityView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Eligibility",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/source-ingestion/overview": {
+      "get": {
+        "deprecated": true,
+        "description": "Cross-request aggregates plus a newest-first page of requests.",
+        "operationId": "manufacturing_connector_source_ingestion_overview_demo_manufacturing_connectors_external_db_source_ingestion_overview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connector_id",
+            "required": false,
+            "schema": {
+              "default": "external_db_operational_mirror",
+              "minLength": 1,
+              "title": "Connector Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceIngestionOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "422": {
+            "description": "Pagination cursor invalid"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Overview",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/external-db/verify-source": {
+      "post": {
+        "deprecated": true,
+        "operationId": "manufacturing_connector_source_verify_demo_manufacturing_connectors_external_db_verify_source_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceVerificationOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source verification scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Credential lease or egress policy not found"
+          },
+          "422": {
+            "description": "Verification references do not match the connector"
+          }
+        },
+        "summary": "Manufacturing Connector Source Verify",
         "tags": [
           "demo"
         ]
@@ -32312,6 +36413,67 @@
         ]
       }
     },
+    "/operations/connectors/external-db/discover": {
+      "post": {
+        "operationId": "manufacturing_connector_source_discovery_operations_connectors_external_db_discover_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceDiscoveryOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source discovery scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Credential lease or egress policy not found"
+          },
+          "422": {
+            "description": "Discovery references do not match the connector"
+          }
+        },
+        "summary": "Manufacturing Connector Source Discovery",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
     "/operations/connectors/external-db/preview": {
       "post": {
         "operationId": "manufacturing_external_db_connector_preview_operations_connectors_external_db_preview_post",
@@ -32365,6 +36527,1435 @@
           }
         },
         "summary": "Manufacturing External Db Connector Preview",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-bindings": {
+      "get": {
+        "operationId": "manufacturing_connector_source_bindings_operations_connectors_external_db_source_bindings_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connector_id",
+            "required": false,
+            "schema": {
+              "default": "external_db_operational_mirror",
+              "minLength": 1,
+              "title": "Connector Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceBindingsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Tenant binding denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Bindings",
+        "tags": [
+          "demo"
+        ]
+      },
+      "post": {
+        "operationId": "manufacturing_connector_source_activation_operations_connectors_external_db_source_bindings_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceActivationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceActivationOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source activation scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Credential lease or egress policy not found"
+          },
+          "409": {
+            "description": "An active binding or binding ID already exists"
+          },
+          "422": {
+            "description": "Activation selections are invalid, stale, duplicate, or oversized"
+          }
+        },
+        "summary": "Manufacturing Connector Source Activation",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion-requests": {
+      "get": {
+        "operationId": "manufacturing_connector_source_ingestion_requests_list_operations_connectors_external_db_source_ingestion_requests_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connector_id",
+            "required": false,
+            "schema": {
+              "default": "external_db_operational_mirror",
+              "minLength": 1,
+              "title": "Connector Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SourceIngestionRequestView"
+                  },
+                  "title": "Response Manufacturing Connector Source Ingestion Requests List Operations Connectors External Db Source Ingestion Requests Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Requests List",
+        "tags": [
+          "demo"
+        ]
+      },
+      "post": {
+        "operationId": "manufacturing_connector_source_ingestion_request_create_operations_connectors_external_db_source_ingestion_requests_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceIngestionSubmission"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceIngestionRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion scope or tenant binding denied"
+          },
+          "409": {
+            "description": "The request ID already names a different request"
+          },
+          "422": {
+            "description": "Ingestion selections are invalid, stale, inactive, duplicate, or oversized"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Request Create",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion-requests/{request_id}": {
+      "get": {
+        "operationId": "manufacturing_connector_source_ingestion_request_status_operations_connectors_external_db_source_ingestion_requests__request_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceIngestionRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Request Status",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests": {
+      "post": {
+        "operationId": "manufacturing_connector_source_batch_export_request_create_operations_connectors_external_db_source_ingestion_requests__request_id__batch_envelope_export_requests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceBatchExportRequestInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceBatchExportRequestRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Batch export request scope denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "409": {
+            "description": "Idempotency or export request ID conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Batch Export Request Create",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests/{export_request_id}/artifact": {
+      "get": {
+        "description": "Checksum-verified artifact download; LOCAL adapter only.",
+        "operationId": "manufacturing_connector_source_batch_export_artifact_operations_connectors_external_db_source_ingestion_requests__request_id__batch_envelope_export_requests__export_request_id__artifact_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "export_request_id",
+            "required": true,
+            "schema": {
+              "title": "Export Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Export request not found"
+          },
+          "409": {
+            "description": "Artifact missing, checksum mismatch, or adapter unsupported"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Batch Export Artifact",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests/{export_request_id}/decision": {
+      "post": {
+        "operationId": "manufacturing_connector_source_batch_export_decision_operations_connectors_external_db_source_ingestion_requests__request_id__batch_envelope_export_requests__export_request_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "export_request_id",
+            "required": true,
+            "schema": {
+              "title": "Export Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceBatchExportDecisionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceBatchExportDecisionResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Export decision scope denied"
+          },
+          "404": {
+            "description": "Export request not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Batch Export Decision",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion-requests/{request_id}/batch-envelope-export-requests/{export_request_id}/materializations": {
+      "post": {
+        "operationId": "manufacturing_connector_source_batch_export_materialization_operations_connectors_external_db_source_ingestion_requests__request_id__batch_envelope_export_requests__export_request_id__materializations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "export_request_id",
+            "required": true,
+            "schema": {
+              "title": "Export Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceBatchExportMaterializationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceBatchExportMaterializationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Materialization scope denied"
+          },
+          "404": {
+            "description": "Export request not found"
+          },
+          "409": {
+            "description": "Approval gate, checksum drift or replay conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Batch Export Materialization",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion-requests/{request_id}/batches": {
+      "get": {
+        "description": "Metadata-only extraction batches; row payloads never appear here.",
+        "operationId": "manufacturing_connector_source_extraction_batches_operations_connectors_external_db_source_ingestion_requests__request_id__batches_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "binding_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 180,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Binding Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "truncated",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Truncated"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceExtractionBatchesPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Extraction Batches",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion-requests/{request_id}/batches/reconciliation": {
+      "get": {
+        "description": "Read-only object-store vs metadata comparison; dry-run only.",
+        "operationId": "manufacturing_connector_source_extraction_reconciliation_operations_connectors_external_db_source_ingestion_requests__request_id__batches_reconciliation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dry_run",
+            "required": false,
+            "schema": {
+              "default": true,
+              "title": "Dry Run",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceExtractionReconciliationReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "409": {
+            "description": "Dry-run refused or store adapter unsupported"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Extraction Reconciliation",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion-requests/{request_id}/cancel": {
+      "post": {
+        "operationId": "manufacturing_connector_source_ingestion_request_cancel_operations_connectors_external_db_source_ingestion_requests__request_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceIngestionCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceIngestionRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "409": {
+            "description": "The request was already dispatched or is terminal"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Request Cancel",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion-requests/{request_id}/requeue": {
+      "post": {
+        "operationId": "manufacturing_connector_source_ingestion_request_requeue_operations_connectors_external_db_source_ingestion_requests__request_id__requeue_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceIngestionRequeueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceIngestionRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Ingestion request not found"
+          },
+          "409": {
+            "description": "Only dead-lettered requests can be re-dispatched"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Request Requeue",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion/eligibility": {
+      "get": {
+        "operationId": "manufacturing_connector_source_ingestion_eligibility_operations_connectors_external_db_source_ingestion_eligibility_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connector_id",
+            "required": false,
+            "schema": {
+              "default": "external_db_operational_mirror",
+              "minLength": 1,
+              "title": "Connector Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceIngestionEligibilityView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Eligibility",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/source-ingestion/overview": {
+      "get": {
+        "description": "Cross-request aggregates plus a newest-first page of requests.",
+        "operationId": "manufacturing_connector_source_ingestion_overview_operations_connectors_external_db_source_ingestion_overview_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "default": "tenant_demo_manufacturing",
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connector_id",
+            "required": false,
+            "schema": {
+              "default": "external_db_operational_mirror",
+              "minLength": 1,
+              "title": "Connector Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor_scopes",
+            "required": false,
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Actor Scopes",
+              "type": "array"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorSourceIngestionOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source ingestion read scope or tenant binding denied"
+          },
+          "422": {
+            "description": "Pagination cursor invalid"
+          }
+        },
+        "summary": "Manufacturing Connector Source Ingestion Overview",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
+    "/operations/connectors/external-db/verify-source": {
+      "post": {
+        "operationId": "manufacturing_connector_source_verify_operations_connectors_external_db_verify_source_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceVerificationOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source verification scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Credential lease or egress policy not found"
+          },
+          "422": {
+            "description": "Verification references do not match the connector"
+          }
+        },
+        "summary": "Manufacturing Connector Source Verify",
         "tags": [
           "demo"
         ]

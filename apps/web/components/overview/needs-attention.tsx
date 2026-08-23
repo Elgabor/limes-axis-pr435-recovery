@@ -28,7 +28,12 @@ import {
 } from "@/lib/approval-demo";
 import { cn } from "@/lib/cn";
 import { formatElapsedDuration } from "@/lib/format";
-import type { ManufacturingOverview, RiskSignal, WorkflowSummary } from "@/lib/platform-overview";
+import type {
+  IdentitySessionReadModel,
+  ManufacturingOverview,
+  RiskSignal,
+  WorkflowSummary,
+} from "@/lib/platform-overview";
 import { strings } from "@/lib/strings";
 import { deriveSourceState, PROVENANCE_NOT_APPLICABLE } from "@/lib/source-state";
 import { buildTenantScopedPath, DEMO_TENANT_ID, OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
@@ -133,10 +138,12 @@ function rowLinkClass(): string {
 function ApprovalAttentionRow({
   approval,
   actor,
+  identitySession,
   tenantId,
 }: {
   approval: ApprovalInboxItem;
   actor?: { actorId: string; scopes: string[] };
+  identitySession: IdentitySessionReadModel | null;
   tenantId: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -182,6 +189,7 @@ function ApprovalAttentionRow({
             approval={approval}
             decision={decision}
             error={errors[approval.approval_id]}
+            identitySession={identitySession}
             onDecisionChange={setDecision}
             onErrorChange={setError}
             tenantId={tenantId}
@@ -251,10 +259,12 @@ function AttentionSources({
 
 export function NeedsAttention({
   actor,
+  identitySession,
   overview,
   tenantId = DEMO_TENANT_ID,
 }: {
   actor?: { actorId: string; scopes: string[] };
+  identitySession: IdentitySessionReadModel | null;
   overview: OverviewQuery<ManufacturingOverview>;
   tenantId?: string;
 }) {
@@ -292,7 +302,12 @@ export function NeedsAttention({
     );
   }
 
-  const approvals = approvalsQuery.data?.approvals.slice(0, APPROVAL_LIMIT) ?? [];
+  // Decided approvals stay as history in the approvals queue; here they would
+  // only invite a decision that can no longer be recorded.
+  const approvals =
+    approvalsQuery.data?.approvals
+      .filter((approval) => approval.status !== "decided")
+      .slice(0, APPROVAL_LIMIT) ?? [];
   const blockedWorkflows = overview.data?.workflows.filter(isBlockedWorkflow) ?? [];
   const stalledRuns = stalledActionRuns(actionRunsQuery.data);
   const riskSignals = overview.data ? pendingRiskSignals(overview.data) : [];
@@ -346,6 +361,7 @@ export function NeedsAttention({
           <ApprovalAttentionRow
             approval={approval}
             actor={actor}
+            identitySession={identitySession}
             key={approval.approval_id}
             tenantId={tenantId}
           />

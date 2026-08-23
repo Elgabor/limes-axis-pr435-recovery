@@ -33,6 +33,7 @@ import {
 import { formatNumber, formatTimestamp } from "@/lib/format";
 import {
   enumUrlField,
+  opaqueStringUrlField,
   stringUrlField,
   useConsoleUrlState,
 } from "@/lib/console-url-state";
@@ -54,6 +55,10 @@ type PolicyDetailTab = (typeof policyDetailTabs)[number];
 const policyDetailUrlSchema = {
   tab: enumUrlField("tab", policyDetailTabs, "conditions"),
   compareRevisionNumber: stringUrlField("compare_revision"),
+  // Revision confirmation marker: the durable feedback is derived from the
+  // refetched detail record through this marker, surviving the query refresh
+  // that recording a revision triggers.
+  revisedRevisionNumber: opaqueStringUrlField("revised"),
 };
 
 type DetailResult = {
@@ -423,6 +428,26 @@ export function PolicyDetail({ policyId }: { policyId: string }) {
         </TabsContent>
 
         <TabsContent className="grid min-w-0 gap-4" value="revisions">
+          {urlState.revisedRevisionNumber ? (
+            <div
+              aria-label="Policy revision result"
+              className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-2xl border border-signal/30 bg-tint-50 px-4 py-3 dark:border-signal/40 dark:bg-signal/10"
+              data-policy-revised
+              role="status"
+            >
+              <p className="m-0 min-w-0 text-sm leading-snug break-words text-ink">
+                Revision recorded: r{urlState.revisedRevisionNumber}. The active revision is
+                r{current.revision_number} / {current.policy_version}.
+              </p>
+              <button
+                className="inline-flex min-h-6 cursor-pointer items-center font-mono text-xs text-muted transition-colors hover:text-signal"
+                onClick={() => setUrlState({ revisedRevisionNumber: "" })}
+                type="button"
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
           <PolicyReviseForm
             current={current}
             key={`revise-${current.revision_number}`}

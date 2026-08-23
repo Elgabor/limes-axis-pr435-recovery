@@ -119,6 +119,7 @@ function mockIdentity(
         limitations: [],
         mode: "test",
         notes: [],
+        unauthenticated_reason: null,
         readiness_status: "ready",
         scopes: [],
         session_boundary: "test",

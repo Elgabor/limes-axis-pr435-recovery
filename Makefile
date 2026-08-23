@@ -1,4 +1,4 @@
-.PHONY: install lint test typecheck build-web openapi openapi-check test-sdk security-check deployment-check deployment-profile-render-check deployment-rollout-rehearsal-plan deployment-rollout-rehearsal deployment-ha-rehearsal-plan deployment-ha-rehearsal deployment-load-rehearsal-plan deployment-load-rehearsal deployment-tls-readiness-plan deployment-tls-readiness deployment-backup-rehearsal-plan deployment-backup-rehearsal deployment-restore-rehearsal-plan deployment-restore-rehearsal deployment-typedb-recovery-rehearsal-plan deployment-typedb-recovery-rehearsal deployment-object-storage-recovery-rehearsal-plan deployment-object-storage-recovery-rehearsal deployment-temporal-recovery-rehearsal-plan deployment-temporal-recovery-rehearsal deployment-secret-rotation-rehearsal-plan deployment-secret-rotation-rehearsal container-check container-release-check container-security-check vulnerability-management-check container-build-api container-build-web container-build-worker container-build container-scan-local worker test-api test-worker test-web test-integration dev-stack-up dev-stack-down demo-stack-up demo-stack-down demo-db-upgrade demo-api demo-api-sso demo-web demo-keycloak-check demo-check demo-check-live demo-verify demo-backup-plan demo-backup-local demo-restore-local
+.PHONY: install lint test typecheck build-web openapi openapi-check test-sdk security-check deployment-check deployment-profile-render-check deployment-rollout-rehearsal-plan deployment-rollout-rehearsal deployment-ha-rehearsal-plan deployment-ha-rehearsal deployment-load-rehearsal-plan deployment-load-rehearsal deployment-tls-readiness-plan deployment-tls-readiness deployment-backup-rehearsal-plan deployment-backup-rehearsal deployment-restore-rehearsal-plan deployment-restore-rehearsal deployment-typedb-recovery-rehearsal-plan deployment-typedb-recovery-rehearsal deployment-object-storage-recovery-rehearsal-plan deployment-object-storage-recovery-rehearsal deployment-temporal-recovery-rehearsal-plan deployment-temporal-recovery-rehearsal deployment-secret-rotation-rehearsal-plan deployment-secret-rotation-rehearsal container-check container-release-check container-security-check vulnerability-management-check container-build-api container-build-web container-build-worker container-build container-scan-local worker test-api test-worker test-web test-integration test-e2e-connectors-source dev-stack-up dev-stack-down demo-stack-up demo-stack-down demo-db-upgrade demo-api demo-api-sso demo-web demo-keycloak-check demo-keycloak-bootstrap-check demo-check demo-check-live demo-verify demo-backup-plan demo-backup-local demo-restore-local
 
 install:
 	pnpm install
@@ -38,6 +38,14 @@ build-web:
 
 openapi:
 	cd services/api && uv run python scripts/export_openapi.py ../../docs/openapi.json
+
+# Repository-local connector source lane: builds the web bundle against the
+# lane API on 127.0.0.1:8001 (never the user-owned :8000 process), then runs
+# the discovery, activation, and ingestion Playwright lanes on Chromium and
+# mobile.
+test-e2e-connectors-source:
+	cd apps/web && NEXT_PUBLIC_AXIS_API_BASE_URL=http://127.0.0.1:8001 AXIS_E2E_LIVE_API=1 pnpm exec next build
+	cd apps/web && AXIS_E2E_LIVE_API=1 AXIS_E2E_API_BASE_URL=http://127.0.0.1:8001 pnpm exec playwright test e2e/connectors-source-discovery.spec.ts e2e/connectors-source-activation.spec.ts e2e/connectors-source-ingestion.spec.ts --project=chromium --project=mobile
 
 openapi-check:
 	cd services/api && uv run python scripts/export_openapi.py /tmp/limes-axis-openapi.json
@@ -183,6 +191,25 @@ demo-web:
 
 demo-keycloak-check:
 	cd services/api && uv run python scripts/check_demo_environment.py --keycloak-url http://127.0.0.1:8080
+
+# Read-only verification of the LOCAL DEMO realm against the canonical
+# bootstrap boundary. Local demo values only; enterprise realms use
+# services/api/scripts/bootstrap_keycloak_realm.py with their own values.
+demo-keycloak-bootstrap-check:
+	cd services/api && \
+	AXIS_IDP_ADMIN_USERNAME=$${AXIS_IDP_ADMIN_USERNAME:-axis} \
+	AXIS_IDP_ADMIN_PASSWORD=$${AXIS_IDP_ADMIN_PASSWORD:-axis-axis} \
+	uv run python scripts/bootstrap_keycloak_realm.py \
+		--base-url http://127.0.0.1:8080 \
+		--realm axis \
+		--client-id limes-axis-web \
+		--redirect-uri http://127.0.0.1:8000/identity/oidc/callback \
+		--redirect-uri http://localhost:8000/identity/oidc/callback \
+		--web-origin 'http://127.0.0.1:3000/*' \
+		--web-origin 'http://localhost:3000/*' \
+		--post-logout-uri 'http://127.0.0.1:3000/*' \
+		--post-logout-uri 'http://localhost:3000/*' \
+		--mode check
 
 demo-check:
 	cd services/api && uv run python scripts/check_demo_environment.py

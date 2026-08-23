@@ -20,6 +20,10 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+vi.mock("@/lib/use-identity-session", () => ({
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 vi.mock("@/lib/use-oidc-session", () => ({
   useOidcConsoleSession: () => ({ session: null }),
 }));
@@ -63,6 +67,7 @@ const identitySession: IdentitySessionReadModel = {
   capabilities: [],
   limitations: [],
   notes: [],
+  unauthenticated_reason: null,
 };
 
 function queryResult(data: unknown, source: "loading" | "api" | "unavailable" = "api") {

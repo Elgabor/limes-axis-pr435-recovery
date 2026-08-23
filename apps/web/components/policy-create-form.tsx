@@ -11,11 +11,13 @@ import { InlineOperatorError } from "@/components/ui/inline-operator-error";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { toAxisOperatorError, type AxisOperatorError } from "@/lib/axis-api";
+import { deriveGovernedActor } from "@/lib/governed-action";
 import {
   buildPolicyConditionsPayload,
   buildPolicyCreatePayload,
   createPlatformPolicy,
   emptyPolicyDraft,
+  platformPolicyAuthorActorId,
   platformPolicyAuthorScope,
   platformPolicyEffects,
   platformPolicyIdPattern,
@@ -30,8 +32,10 @@ import {
   type PolicyDraftFieldErrors,
   type PolicyDraftFormState,
 } from "@/lib/platform-policies";
+import { opaqueStringUrlField, useConsoleUrlState } from "@/lib/console-url-state";
 import { strings } from "@/lib/strings";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
+import { useIdentitySession } from "@/lib/use-identity-session";
 import { useConsole } from "@/providers/console-provider";
 
 type SubmissionState =
@@ -42,10 +46,22 @@ type SubmissionState =
 
 export function PolicyCreateForm({ tenantId }: { tenantId: string }) {
   const { session } = useOidcConsoleSession();
+  const identity = useIdentitySession();
+  // The API rebinds created_by to the verified OIDC principal and rejects
+  // impersonation, so submissions carry the session-derived actor id.
+  const { actorId, ssoBlocked } = deriveGovernedActor(
+    identity.data ?? null,
+    platformPolicyAuthorActorId,
+  );
   const { triggerRefresh } = useConsole();
   const [draft, setDraft] = useState<PolicyDraftFormState>(emptyPolicyDraft);
   const [fieldErrors, setFieldErrors] = useState<PolicyDraftFieldErrors>({});
   const [submission, setSubmission] = useState<SubmissionState>({ phase: "idle" });
+  // The durable authoring confirmation lives in the registry banner (server
+  // truth via ?authored=); this form also carries the marker write.
+  const [, setAuthoredMarker] = useConsoleUrlState({
+    authored: opaqueStringUrlField("authored"),
+  });
 
   function updateDraft(patch: Partial<PolicyDraftFormState>) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -57,6 +73,10 @@ export function PolicyCreateForm({ tenantId }: { tenantId: string }) {
 
   async function submitPolicy(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (ssoBlocked) {
+      return;
+    }
 
     const validationErrors = validatePolicyDraft(draft);
     setFieldErrors(validationErrors);
@@ -75,7 +95,7 @@ export function PolicyCreateForm({ tenantId }: { tenantId: string }) {
     setSubmission({ phase: "saving" });
 
     try {
-      const result = await createPlatformPolicy(buildPolicyCreatePayload(tenantId, draft), {
+      const result = await createPlatformPolicy(buildPolicyCreatePayload(tenantId, draft, actorId), {
         session,
       });
 
@@ -83,6 +103,7 @@ export function PolicyCreateForm({ tenantId }: { tenantId: string }) {
         setDraft(emptyPolicyDraft());
         setFieldErrors({});
         setSubmission({ phase: "created", record: result.record });
+        setAuthoredMarker({ authored: result.record.policy_id });
         triggerRefresh();
         return;
       }
@@ -255,14 +276,21 @@ export function PolicyCreateForm({ tenantId }: { tenantId: string }) {
             value={draft.notesText}
           />
         </Field>
-        <button
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-navy px-4 py-2 text-sm font-medium text-white transition-all duration-300 select-none hover:bg-signal hover:shadow-[0_8px_24px_rgb(47_100_255/0.35)] disabled:cursor-not-allowed disabled:opacity-55 dark:bg-signal dark:hover:bg-white dark:hover:text-navy dark:hover:shadow-none"
-          disabled={submission.phase === "saving"}
-          type="submit"
-        >
-          <FilePlus2 size={15} />
-          {submission.phase === "saving" ? "Authoring" : "Author policy"}
-        </button>
+        {ssoBlocked ? (
+          <p className="m-0 flex items-center gap-2 text-sm text-muted" role="status">
+            <FilePlus2 aria-hidden="true" className="shrink-0 text-signal" size={15} />
+            {strings.policyDetail.authorAccess.ssoGate}
+          </p>
+        ) : (
+          <button
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-navy px-4 py-2 text-sm font-medium text-white transition-all duration-300 select-none hover:bg-signal hover:shadow-[0_8px_24px_rgb(47_100_255/0.35)] disabled:cursor-not-allowed disabled:opacity-55 dark:bg-signal dark:hover:bg-white dark:hover:text-navy dark:hover:shadow-none"
+            disabled={submission.phase === "saving"}
+            type="submit"
+          >
+            <FilePlus2 size={15} />
+            {submission.phase === "saving" ? "Authoring" : "Author policy"}
+          </button>
+        )}
       </form>
 
       {submission.phase === "failed" ? (

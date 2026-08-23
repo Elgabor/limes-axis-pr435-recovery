@@ -156,6 +156,7 @@ export const manifestDetailFixture = {
     },
     manifestRegistryFixture.manifests[0],
   ],
+  transitions: [],
 };
 
 export const credentialHandleRegistryFixture: ManufacturingConnectorCredentialHandleRegistry = {

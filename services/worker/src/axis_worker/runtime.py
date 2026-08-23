@@ -24,7 +24,13 @@ from typing import Protocol
 
 from axis_api.approval_outbox import ApprovalDecisionOutboxDispatcher
 from axis_api.config import Settings
+from axis_api.connector_source_extraction import SelfHostedPostgresExtractionRuntime
+from axis_api.connector_source_ingestion import (
+    ObservationFreshnessIngestionRuntime,
+    SourceIngestionOutboxDispatcher,
+)
 from axis_api.db import create_session_factory
+from axis_api.object_storage import build_connector_export_object_store
 from axis_api.telemetry import shutdown_providers
 from axis_api.workflow_runtime import (
     TemporalWorkflowSignalConfig,
@@ -34,13 +40,18 @@ from temporalio.client import Client
 from temporalio.worker import Worker
 
 from axis_worker.approval_outbox_loop import (
-    ApprovalDecisionDispatcher,
+    Dispatcher,
+    DispatchResult,
     run_approval_decision_outbox_loop,
+    run_source_ingestion_loop,
 )
 from axis_worker.connector_live_sync_activities import ConnectorLiveSyncActivities
 from axis_worker.maintenance_activities import MaintenanceActivities
 from axis_worker.schedules import register_maintenance_schedules
-from axis_worker.telemetry import configure_worker_telemetry
+from axis_worker.telemetry import (
+    WorkerTelemetryRuntime,
+    configure_worker_telemetry,
+)
 from axis_worker.temporal_adapter import TemporalAdapterConfig
 from axis_worker.workflows.approval_workflow import ApprovalWorkflow
 from axis_worker.workflows.connector_live_sync_workflows import (
@@ -103,37 +114,111 @@ def optional_approval_decision_outbox_dispatcher(
     return build_approval_decision_outbox_dispatcher(settings)
 
 
+class _InstrumentedIngestionDispatcher:
+    """Emit metadata-only counters for one governed ingestion dispatch pass."""
+
+    def __init__(
+        self,
+        inner: Dispatcher,
+        telemetry: WorkerTelemetryRuntime,
+    ) -> None:
+        self._inner = inner
+        self._telemetry = telemetry
+
+    async def run_once(self) -> DispatchResult:
+        result = await self._inner.run_once()
+        for outcome in ("completed", "retried", "dead_lettered", "fenced"):
+            count = getattr(result, outcome, 0)
+            if count:
+                self._telemetry.source_ingestion_stage_counter.add(
+                    count,
+                    {"outcome": outcome},
+                )
+        return result
+
+
+def optional_source_ingestion_dispatcher(
+    settings: Settings,
+    telemetry: WorkerTelemetryRuntime | None = None,
+) -> Dispatcher | None:
+    """Return the governed source ingestion dispatcher when enabled.
+
+    The validation-stage runtime never dials a source; it re-checks pinned
+    fingerprints against Axis' own observations and records that no extraction
+    happened.  A future extraction runtime implements the same port.  When a
+    telemetry runtime is supplied, dispatch passes emit outcome counters.
+    """
+
+    if not settings.source_ingestion_dispatch_enabled:
+        return None
+    extraction_runtime = None
+    if settings.source_ingestion_extraction_enabled:
+        # Real bounded extraction through the canonical object-store seam;
+        # never constructed when either gate is off.
+        extraction_runtime = SelfHostedPostgresExtractionRuntime(
+            settings=settings,
+            object_store=build_connector_export_object_store(settings),
+        )
+    dispatcher = SourceIngestionOutboxDispatcher(
+        settings=settings,
+        session_factory=create_session_factory(settings),
+        runtime=ObservationFreshnessIngestionRuntime(),
+        extraction_runtime=extraction_runtime,
+    )
+    if telemetry is not None:
+        return _InstrumentedIngestionDispatcher(dispatcher, telemetry)
+    return dispatcher
+
+
 async def run_worker_with_optional_outbox(
     worker: RunnableWorker,
     *,
-    dispatcher: ApprovalDecisionDispatcher | None,
+    dispatcher: Dispatcher | None,
     dispatch_interval_seconds: float,
+    ingestion_dispatcher: Dispatcher | None = None,
+    ingestion_dispatch_interval_seconds: float = 15.0,
 ) -> None:
-    """Run Temporal polling while supervising the optional sibling loop.
+    """Run Temporal polling while supervising the optional sibling loops.
 
-    The outbox loop catches and retries operational exceptions internally.  The
+    Each outbox loop catches and retries operational exceptions internally.  The
     Temporal worker remains the lifetime owner: when it returns, fails, or is
-    cancelled, the sibling loop is cancelled and awaited before control leaves
+    cancelled, the sibling loops are cancelled and awaited before control leaves
     this function.
     """
 
-    if dispatcher is None:
+    tasks = []
+    if dispatcher is not None:
+        tasks.append(
+            asyncio.create_task(
+                run_approval_decision_outbox_loop(
+                    dispatcher,
+                    interval_seconds=dispatch_interval_seconds,
+                ),
+                name="approval-decision-outbox-dispatcher",
+            )
+        )
+    if ingestion_dispatcher is not None:
+        tasks.append(
+            asyncio.create_task(
+                run_source_ingestion_loop(
+                    ingestion_dispatcher,
+                    interval_seconds=ingestion_dispatch_interval_seconds,
+                ),
+                name="source-ingestion-dispatcher",
+            )
+        )
+    if not tasks:
         await worker.run()
         return
 
-    dispatch_task = asyncio.create_task(
-        run_approval_decision_outbox_loop(
-            dispatcher,
-            interval_seconds=dispatch_interval_seconds,
-        ),
-        name="approval-decision-outbox-dispatcher",
-    )
     try:
         await worker.run()
     finally:
-        dispatch_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await dispatch_task
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 async def run_worker(settings: Settings | None = None) -> None:
@@ -176,12 +261,26 @@ async def run_worker(settings: Settings | None = None) -> None:
         )
     else:
         logger.info("approval-decision outbox dispatcher disabled")
+    ingestion_dispatcher = optional_source_ingestion_dispatcher(
+        settings, telemetry=telemetry
+    )
+    if ingestion_dispatcher is not None:
+        logger.info(
+            "source-ingestion dispatcher enabled interval_seconds=%s",
+            settings.source_ingestion_dispatch_interval_seconds,
+        )
+    else:
+        logger.info("source-ingestion dispatcher disabled")
     logger.info("axis-worker started task_queue=%s", config.task_queue)
     try:
         await run_worker_with_optional_outbox(
             worker,
             dispatcher=dispatcher,
             dispatch_interval_seconds=settings.approval_decision_outbox_dispatch_interval_seconds,
+            ingestion_dispatcher=ingestion_dispatcher,
+            ingestion_dispatch_interval_seconds=(
+                settings.source_ingestion_dispatch_interval_seconds
+            ),
         )
     finally:
         if telemetry.enabled:

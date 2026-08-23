@@ -305,7 +305,10 @@ export function ConnectorConsole() {
         </div>
       </div>
 
-      <MetricStrip metrics={buildMetrics(registries, connectors)} />
+      <MetricStrip
+        metrics={buildMetrics(registries, connectors)}
+        label={strings.connectors.metrics.stripLabel}
+      />
 
       <ManifestImportPanel
         identitySession={identitySession}

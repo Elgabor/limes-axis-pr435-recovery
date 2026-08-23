@@ -516,6 +516,7 @@ export function buildPolicyConditionsPayload(
 export function buildPolicyCreatePayload(
   tenantId: string,
   draft: PolicyDraftFormState,
+  actorId: string = platformPolicyAuthorActorId,
 ): PlatformPolicyCreateRequestPayload {
   return {
     tenant_id: tenantId,
@@ -526,7 +527,9 @@ export function buildPolicyCreatePayload(
     scope: draft.scope,
     effect: draft.effect,
     conditions: buildPolicyConditionsPayload(draft.conditions),
-    created_by: platformPolicyAuthorActorId,
+    // The verified principal's id under SSO; the API rebinds and rejects any
+    // other actor, so this must come from /identity/session, never a constant.
+    created_by: actorId,
     actor_scopes: [platformPolicyAuthorScope],
     notes: parsePolicyNotes(draft.notesText),
   };
@@ -537,6 +540,7 @@ export function buildPolicyRevisePayload(
   policyId: string,
   draft: PolicyDraftFormState,
   idempotencyKey: string,
+  actorId: string = platformPolicyAuthorActorId,
 ): PlatformPolicyReviseRequestPayload {
   return {
     tenant_id: tenantId,
@@ -546,7 +550,8 @@ export function buildPolicyRevisePayload(
     description: draft.description.trim(),
     effect: draft.effect,
     conditions: buildPolicyConditionsPayload(draft.conditions),
-    updated_by: platformPolicyAuthorActorId,
+    // Same contract as authoring: the verified principal's id under SSO.
+    updated_by: actorId,
     actor_scopes: [platformPolicyReviseScope],
     idempotency_key: idempotencyKey,
     notes: parsePolicyNotes(draft.notesText),
@@ -709,6 +714,7 @@ export function policyWriteOperatorError(
 ): AxisOperatorError {
   return {
     code: null,
+    reason: result.kind === "conflict" ? result.reason : null,
     message,
     requestId: result.requestId ?? null,
     status: result.kind === "failed" ? result.status : null,

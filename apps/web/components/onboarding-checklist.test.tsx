@@ -29,12 +29,18 @@ function queryResult(data: unknown, source: Source) {
 
 /**
  * Registry payloads carrying only the count-bearing fields the checklist
- * reads; per-endpoint counts choose the done-state of each step.
+ * reads; per-endpoint counts choose the done-state of each step. Connector
+ * fixtures are activated manifests by default; pass a status to vary it.
  */
 function registryFixture(endpoint: string, count: number): unknown {
   switch (endpoint) {
     case ONBOARDING_ENDPOINTS.connectors:
-      return { connectors: Array.from({ length: count }, (_, i) => ({ connector_id: `c${i}` })) };
+      return {
+        connectors: Array.from({ length: count }, (_, i) => ({
+          connector_id: `c${i}`,
+          persisted_manifest: { status: "active_preview" },
+        })),
+      };
     case ONBOARDING_ENDPOINTS.ontology:
       return { nodes: Array.from({ length: count }, (_, i) => ({ node_id: `n${i}` })) };
     case ONBOARDING_ENDPOINTS.policies:
@@ -53,6 +59,7 @@ function registryFixture(endpoint: string, count: number): unknown {
 function mockRegistries(
   counts: Partial<Record<keyof typeof ONBOARDING_ENDPOINTS, number>>,
   unavailable: string[] = [],
+  connectorStatuses: string[] = [],
 ) {
   mocks.useAxisQuery.mockImplementation((path: string) => {
     const endpointPath = path.split("?", 1)[0];
@@ -66,7 +73,19 @@ function mockRegistries(
       return queryResult(null, "unavailable");
     }
     const count = counts[entry[0] as keyof typeof ONBOARDING_ENDPOINTS] ?? 0;
-    return queryResult(registryFixture(endpointPath, count), "api");
+    const payload = registryFixture(endpointPath, count) as {
+      connectors: Array<{ persisted_manifest: { status: string } }>;
+    };
+    if (
+      endpointPath === ONBOARDING_ENDPOINTS.connectors
+      && connectorStatuses.length > 0
+    ) {
+      payload.connectors.forEach((connector, index) => {
+        connector.persisted_manifest.status =
+          connectorStatuses[index % connectorStatuses.length];
+      });
+    }
+    return queryResult(payload, "api");
   });
 }
 
@@ -137,6 +156,7 @@ describe("OnboardingChecklist (full)", () => {
         demoAvailable
         demoError={{
           code: "forbidden",
+          reason: null,
           message: "Axis API request failed with 403",
           requestId: "req-demo-403",
           status: 403,
@@ -169,6 +189,18 @@ describe("OnboardingChecklist (full)", () => {
     // Completed steps drop their CTA link.
     expect(screen.queryByRole("link", { name: "Open connectors" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open agents" })).toBeInTheDocument();
+  });
+
+  it("keeps the connectors step open while registered connectors are not activated yet", () => {
+    mockRegistries(
+      { connectors: 2, policies: 1 },
+      [],
+      ["registered_preview_only", "deprecated"],
+    );
+    render(<OnboardingChecklist variant="full" />);
+
+    expect(screen.getByText("1 of 5 setup steps complete")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open connectors" })).toBeInTheDocument();
   });
 
   it("scopes every registry query to the supplied tenant", () => {

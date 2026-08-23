@@ -61,6 +61,7 @@ const identitySession: IdentitySessionReadModel = {
   limitations: [],
   mode: "test",
   notes: [],
+  unauthenticated_reason: null,
   readiness_status: "ready",
   scopes: [],
   session_boundary: "test",
@@ -122,6 +123,7 @@ function manifestDetail(connectorId: string, revisionNumber = 3) {
     connector_id: connectorId,
     current_revision: currentRevision,
     revisions: [currentRevision],
+    transitions: [],
   };
 }
 

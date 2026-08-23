@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, CircleX, MessageSquare } from "lucide-react";
+import { CheckCircle2, CircleX, MessageSquare, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +31,8 @@ import {
   type ApprovalInboxItem,
 } from "@/lib/approval-demo";
 import { cn } from "@/lib/cn";
+import { deriveGovernedActor } from "@/lib/governed-action";
+import type { IdentitySessionReadModel } from "@/lib/platform-overview";
 import { strings } from "@/lib/strings";
 import { parseApprovalDecisionPersistenceResult } from "@/lib/runtime-contracts/approvals";
 import { buildTenantScopedPath, DEMO_TENANT_ID, OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
@@ -42,7 +44,9 @@ import { useTenantVocabulary } from "@/providers/tenant-vocabulary-provider";
  * consequence always visible, a confirm dialog that restates the consequence
  * and takes an optional rationale, and the persisted result with a deep link
  * to the created audit event. Exported standalone so the overview's
- * needs-attention strip can reuse the exact same confirm flow.
+ * needs-attention strip can reuse the exact same confirm flow. Like every
+ * governed write surface, submissions are blocked before they can fail
+ * server-side when the deployment enforces SSO and no session exists.
  */
 
 const DECISION_NOTE_MAX_LENGTH = 600;
@@ -66,6 +70,8 @@ export interface ApprovalDecisionCardProps {
   decision?: ApprovalDecisionRecord;
   /** Last persistence error for this approval. */
   error?: AxisOperatorError;
+  /** Verified identity session from the host's `/identity/session` read. */
+  identitySession: IdentitySessionReadModel | null;
   tenantId?: string;
   actor?: { actorId: string; scopes: string[] };
   onDecisionChange: (approvalId: string, record: ApprovalDecisionRecord | null) => void;
@@ -134,6 +140,7 @@ export function ApprovalDecisionCard({
   actor,
   decision,
   error,
+  identitySession,
   onDecisionChange,
   onErrorChange,
   tenantId = DEMO_TENANT_ID,
@@ -144,15 +151,25 @@ export function ApprovalDecisionCard({
   const { push } = useToast();
   const { labelDomain } = useTenantVocabulary();
   const copy = strings.approvals.decision;
+  // The API re-stamps the actor onto the verified OIDC principal, so the
+  // derived id only labels the optimistic "persisting" state; when SSO is
+  // enforced and no session exists, decisions are blocked before submit.
+  const { actorId, ssoBlocked } = deriveGovernedActor(
+    identitySession,
+    approvalDecisionActorId(approval),
+  );
 
   function openConfirm(option: ApprovalDecisionOption) {
+    if (ssoBlocked) {
+      return;
+    }
     setNote("");
     setPendingOption(option);
   }
 
   async function confirmDecision() {
     const option = pendingOption;
-    if (!option) {
+    if (!option || ssoBlocked) {
       return;
     }
     setPendingOption(null);
@@ -168,7 +185,7 @@ export function ApprovalDecisionCard({
       label: option.label,
       decidedAt,
       storage: "persisting",
-      actorId: approvalDecisionActorId(approval),
+      actorId,
     });
     onErrorChange?.(approvalId, null);
 
@@ -221,6 +238,9 @@ export function ApprovalDecisionCard({
     }
   }
 
+  // The API reconciles the queue with persisted decision records; an item
+  // whose terminal decision already exists must not offer options again.
+  const alreadyDecided = approval.status === "decided";
   return (
     <section
       aria-label="Decision"
@@ -255,6 +275,16 @@ export function ApprovalDecisionCard({
             </Link>
           ) : null}
         </div>
+      ) : ssoBlocked ? (
+        <p className="m-0 flex items-center gap-2 text-sm text-muted" role="status">
+          <ShieldCheck aria-hidden="true" className="shrink-0 text-signal" size={15} />
+          {copy.ssoGate}
+        </p>
+      ) : alreadyDecided ? (
+        <p className="m-0 flex items-center gap-2 text-sm text-muted" role="status">
+          <ShieldCheck aria-hidden="true" className="shrink-0 text-signal" size={15} />
+          {copy.alreadyRecorded}
+        </p>
       ) : (
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {approval.decision_options.map((option) => (

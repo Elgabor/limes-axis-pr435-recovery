@@ -31,6 +31,7 @@ function identitySession(
     capabilities: [],
     limitations: [],
     notes: [],
+    unauthenticated_reason: null,
     ...overrides,
   };
 }

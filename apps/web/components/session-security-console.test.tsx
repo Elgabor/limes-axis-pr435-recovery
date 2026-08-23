@@ -14,6 +14,10 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+vi.mock("@/lib/use-identity-session", () => ({
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 vi.mock("@/lib/identity-sessions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/identity-sessions")>()),
   revokeIdentitySession: mocks.revokeIdentitySession,
@@ -69,6 +73,7 @@ const identitySession: IdentitySessionReadModel = {
   capabilities: [],
   limitations: [],
   notes: [],
+  unauthenticated_reason: null,
 };
 
 function sessionRecord(

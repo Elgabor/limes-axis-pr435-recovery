@@ -9,12 +9,10 @@ import {
   type AxisOperatorError,
 } from "@/lib/axis-api";
 import { formatContextPath } from "@/lib/format";
-import type { IdentitySessionReadModel } from "@/lib/platform-overview";
 import { strings } from "@/lib/strings";
 import { parseDemoBootstrapResult } from "@/lib/runtime-contracts/bootstrap";
-import { parseIdentitySessionReadModel } from "@/lib/runtime-contracts/overview";
 import { DEMO_TENANT_ID } from "@/lib/tenant-scope";
-import { useAxisQuery } from "@/lib/use-axis-query";
+import { useIdentitySession } from "@/lib/use-identity-session";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
 
@@ -70,9 +68,7 @@ export function useDemoBootstrap() {
   const { triggerRefresh } = useConsole();
   const { push } = useToast();
   const { session } = useOidcConsoleSession();
-  const { data: identitySession } = useAxisQuery<IdentitySessionReadModel>("/identity/session", {
-    parse: parseIdentitySessionReadModel,
-  });
+  const identity = useIdentitySession();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<AxisOperatorError | null>(null);
 
@@ -90,7 +86,7 @@ export function useDemoBootstrap() {
         {
           method: "POST",
           session,
-          body: buildDemoBootstrapPayload(identitySession?.actor_id ?? DEMO_CONSOLE_ACTOR),
+          body: buildDemoBootstrapPayload(identity.data?.actor_id ?? DEMO_CONSOLE_ACTOR),
         },
       );
       push({

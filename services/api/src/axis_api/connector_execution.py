@@ -69,8 +69,7 @@ class ConnectorExecutionResult(BaseModel):
 
 
 class ConnectorExecutionRuntime(Protocol):
-    def execute(self, request: ConnectorExecutionRequest) -> ConnectorExecutionResult:
-        ...
+    def execute(self, request: ConnectorExecutionRequest) -> ConnectorExecutionResult: ...
 
 
 class ConnectorSyncScheduleRequest(BaseModel):
@@ -100,8 +99,7 @@ class ConnectorSyncScheduleResult(BaseModel):
 
 
 class ConnectorSyncSchedulerRuntime(Protocol):
-    def schedule(self, request: ConnectorSyncScheduleRequest) -> ConnectorSyncScheduleResult:
-        ...
+    def schedule(self, request: ConnectorSyncScheduleRequest) -> ConnectorSyncScheduleResult: ...
 
 
 class ConnectorSyncDispatchRequest(BaseModel):
@@ -129,8 +127,7 @@ class ConnectorSyncDispatchResult(BaseModel):
 
 
 class ConnectorSyncDispatchRuntime(Protocol):
-    def dispatch(self, request: ConnectorSyncDispatchRequest) -> ConnectorSyncDispatchResult:
-        ...
+    def dispatch(self, request: ConnectorSyncDispatchRequest) -> ConnectorSyncDispatchResult: ...
 
 
 class ConnectorSyncExecutionRequest(BaseModel):
@@ -167,8 +164,7 @@ class ConnectorSyncExecutionResult(BaseModel):
 
 
 class ConnectorSyncExecutionRuntime(Protocol):
-    def execute(self, request: ConnectorSyncExecutionRequest) -> ConnectorSyncExecutionResult:
-        ...
+    def execute(self, request: ConnectorSyncExecutionRequest) -> ConnectorSyncExecutionResult: ...
 
 
 class ExternalPostgresLiveQueryProfile(BaseModel):
@@ -280,14 +276,12 @@ class ConnectorLiveSyncBatchResult(BaseModel):
 
 
 class ConnectorLiveSyncRuntime(Protocol):
-    def plan(self, request: ConnectorLiveSyncPlanRequest) -> ConnectorLiveSyncPlan:
-        ...
+    def plan(self, request: ConnectorLiveSyncPlanRequest) -> ConnectorLiveSyncPlan: ...
 
     def read_batch(
         self,
         request: ConnectorLiveSyncBatchRequest,
-    ) -> ConnectorLiveSyncBatchResult:
-        ...
+    ) -> ConnectorLiveSyncBatchResult: ...
 
 
 class DeferredConnectorExecutionRuntime:
@@ -322,8 +316,7 @@ class DeferredConnectorSyncSchedulerRuntime:
             schedule_ref=f"deferred-sync://{request.tenant_id}/{request.schedule_id}",
             external_sync_started=False,
             idempotency_key=(
-                f"{request.tenant_id}:{request.run_id}:{request.schedule_id}:"
-                "sync-schedule"
+                f"{request.tenant_id}:{request.run_id}:{request.schedule_id}:sync-schedule"
             ),
             result_summary={
                 "runtime_status": "schedule_deferred",
@@ -412,9 +405,7 @@ class SelfHostedConnectorSyncExecutionRuntime:
     ) -> None:
         self.external_db_sync_enabled = external_db_sync_enabled
         self.external_db_live_query_preflight_enabled = external_db_live_query_preflight_enabled
-        self.external_db_live_query_execution_enabled = (
-            external_db_live_query_execution_enabled
-        )
+        self.external_db_live_query_execution_enabled = external_db_live_query_execution_enabled
         self.external_postgres_live_query_profile = external_postgres_live_query_profile
         self.lease_scoped_secret_resolution_enabled = lease_scoped_secret_resolution_enabled
         self.runtime_egress_enforcement_enabled = runtime_egress_enforcement_enabled
@@ -530,10 +521,8 @@ class SelfHostedConnectorSyncExecutionRuntime:
         )
         egress_policy_evidence_valid = (
             egress_policy_evidence["egress_policy_evidence_status"] == "validated"
-            and egress_policy_evidence["egress_policy_result_status"]
-            == "egress_policy_approved"
-            and egress_policy_evidence["egress_policy_mode"]
-            == "approved_private_endpoint"
+            and egress_policy_evidence["egress_policy_result_status"] == "egress_policy_approved"
+            and egress_policy_evidence["egress_policy_mode"] == "approved_private_endpoint"
             and egress_boundary == "approved_private_endpoint"
         )
         lease_result_status = str(request.credential_lease_result.get("status", "unknown"))
@@ -562,8 +551,7 @@ class SelfHostedConnectorSyncExecutionRuntime:
             policy_preflight_passed=policy_preflight_passed,
         )
         secret_reference_evidence_valid = (
-            secret_reference_evidence["secret_reference_evidence_status"]
-            == "validated"
+            secret_reference_evidence["secret_reference_evidence_status"] == "validated"
         )
         preflight_passed = (
             policy_preflight_passed
@@ -600,9 +588,7 @@ class SelfHostedConnectorSyncExecutionRuntime:
             "egress_policy_decision": _egress_policy_decision(
                 preflight_enabled=self.external_db_live_query_preflight_enabled,
                 policy_evidence_valid=egress_policy_evidence_valid,
-                policy_evidence_status=egress_policy_evidence[
-                    "egress_policy_evidence_status"
-                ],
+                policy_evidence_status=egress_policy_evidence["egress_policy_evidence_status"],
             ),
             "secret_retrieval_decision": (
                 _secret_retrieval_decision(
@@ -623,9 +609,7 @@ class SelfHostedConnectorSyncExecutionRuntime:
         )
         if live_query_execute_requested:
             result_summary["live_query_execute_requested"] = "true"
-            result_summary["live_query_execution_status"] = (
-                "blocked_preflight_not_passed"
-            )
+            result_summary["live_query_execution_status"] = "blocked_preflight_not_passed"
         if preflight_passed:
             result_summary["egress_policy_id"] = egress_policy_id
             result_summary["egress_boundary"] = egress_boundary
@@ -705,9 +689,7 @@ class SelfHostedConnectorSyncExecutionRuntime:
                     resolver=self.secret_resolver,
                     connector_id=request.connector_id,
                     connection_profile_id=connection_profile_id,
-                    credential_access_mode=request.input_summary.get(
-                        "credential_access_mode", ""
-                    ),
+                    credential_access_mode=request.input_summary.get("credential_access_mode", ""),
                     secret_provider=request.credential_secret_provider,
                     secret_ref=request.credential_secret_ref,
                     lease_result=request.credential_lease_result,
@@ -1072,12 +1054,8 @@ class SelfHostedConnectorLiveSyncRuntime:
                 resolved_secret = _resolve_lease_scoped_secret(
                     resolver=self.secret_resolver,
                     connector_id=request.connector_id,
-                    connection_profile_id=request.input_summary.get(
-                        "connection_profile_id", ""
-                    ),
-                    credential_access_mode=request.input_summary.get(
-                        "credential_access_mode", ""
-                    ),
+                    connection_profile_id=request.input_summary.get("connection_profile_id", ""),
+                    credential_access_mode=request.input_summary.get("credential_access_mode", ""),
                     secret_provider=request.credential_secret_provider,
                     secret_ref=request.credential_secret_ref,
                     lease_result=request.credential_lease_result,
@@ -1102,9 +1080,7 @@ class SelfHostedConnectorLiveSyncRuntime:
                     status=LIVE_SYNC_BATCH_FAILED_STATUS,
                     error_code=f"blocked_{egress_block_reason}",
                 )
-            evidence_summary["runtime_egress_enforcement"] = (
-                RUNTIME_EGRESS_ENFORCED_TARGET_MATCH
-            )
+            evidence_summary["runtime_egress_enforcement"] = RUNTIME_EGRESS_ENFORCED_TARGET_MATCH
         batch_size = min(request.batch_size, profile.row_limit - request.offset)
         try:
             rows = _read_external_postgres_batch_rows(
@@ -1169,9 +1145,7 @@ def _external_db_live_sync_policy_block_reason(
     lease_result = request.credential_lease_result
     lease_status = str(lease_result.get("status", "unknown"))
     lease_ref = str(lease_result.get("provider_lease_ref", ""))
-    secret_material_returned = _bool_as_text(
-        lease_result.get("secret_material_returned", True)
-    )
+    secret_material_returned = _bool_as_text(lease_result.get("secret_material_returned", True))
     if (
         lease_status not in {"lease_executed", "lease_renewed"}
         or not lease_ref
@@ -1230,11 +1204,7 @@ def _read_file_csv_window(
                 continue
             if index < window_end:
                 batch_rows.append(
-                    {
-                        key: (value or "").strip()
-                        for key, value in row.items()
-                        if key is not None
-                    }
+                    {key: (value or "").strip() for key, value in row.items() if key is not None}
                 )
                 continue
             has_more = True
@@ -1307,11 +1277,14 @@ def _read_external_postgres_batch_rows(
         limit=sql.Literal(batch_size),
         offset=sql.Literal(offset),
     )
-    with psycopg.connect(
-        _psycopg_dsn(profile.dsn),
-        connect_timeout=profile.connect_timeout_seconds,
-        **_session_hardening_connect_kwargs(profile, session_hardening_enabled),
-    ) as connection, connection.cursor() as cursor:
+    with (
+        psycopg.connect(
+            _psycopg_dsn(profile.dsn),
+            connect_timeout=profile.connect_timeout_seconds,
+            **_session_hardening_connect_kwargs(profile, session_hardening_enabled),
+        ) as connection,
+        connection.cursor() as cursor,
+    ):
         cursor.execute("SET TRANSACTION READ ONLY")
         cursor.execute(query)
         rows = cursor.fetchall()
@@ -1423,11 +1396,7 @@ def _requested_or_default_columns(
     selected_columns: str,
     allowed_columns: list[str],
 ) -> list[str]:
-    requested = [
-        column.strip()
-        for column in selected_columns.split(",")
-        if column.strip()
-    ]
+    requested = [column.strip() for column in selected_columns.split(",") if column.strip()]
     return requested or list(allowed_columns)
 
 
@@ -1437,9 +1406,7 @@ def _read_external_postgres_rows(
     selected_columns: list[str],
     session_hardening_enabled: bool = False,
 ) -> int:
-    bounded_read = sql.SQL(
-        "SELECT {columns} FROM {schema}.{table} LIMIT {limit}"
-    ).format(
+    bounded_read = sql.SQL("SELECT {columns} FROM {schema}.{table} LIMIT {limit}").format(
         columns=sql.SQL(", ").join(sql.Identifier(column) for column in selected_columns),
         schema=sql.Identifier(profile.schema_name),
         table=sql.Identifier(profile.table_name),
@@ -1448,36 +1415,50 @@ def _read_external_postgres_rows(
     query = sql.SQL("SELECT count(*) FROM ({bounded_read}) AS axis_live_read_probe").format(
         bounded_read=bounded_read,
     )
-    with psycopg.connect(
-        _psycopg_dsn(profile.dsn),
-        connect_timeout=profile.connect_timeout_seconds,
-        **_session_hardening_connect_kwargs(profile, session_hardening_enabled),
-    ) as connection, connection.cursor() as cursor:
+    with (
+        psycopg.connect(
+            _psycopg_dsn(profile.dsn),
+            connect_timeout=profile.connect_timeout_seconds,
+            **_session_hardening_connect_kwargs(profile, session_hardening_enabled),
+        ) as connection,
+        connection.cursor() as cursor,
+    ):
         cursor.execute("SET TRANSACTION READ ONLY")
         cursor.execute(query)
         row = cursor.fetchone()
     return int(row[0]) if row is not None else 0
 
 
-def _session_hardening_connect_kwargs(
-    profile: ExternalPostgresLiveQueryProfile,
+def read_only_session_connect_kwargs(
+    *,
+    statement_timeout_seconds: int,
     session_hardening_enabled: bool,
 ) -> dict[str, str]:
     """Session-level read-only + statement timeout startup options.
 
-    Applied only when runtime egress enforcement is enabled so flag-off
-    behavior stays byte-identical: the existing per-transaction
-    ``SET TRANSACTION READ ONLY`` remains in both modes.
+    Shared by every adapter that dials an external Postgres source (live
+    read, schema discovery). Applied only when runtime egress enforcement
+    is enabled so flag-off behavior stays byte-identical: the existing
+    per-transaction ``SET TRANSACTION READ ONLY`` remains in both modes.
     """
     if not session_hardening_enabled:
         return {}
-    statement_timeout_ms = profile.statement_timeout_seconds * 1000
+    statement_timeout_ms = statement_timeout_seconds * 1000
     return {
         "options": (
-            "-c default_transaction_read_only=on "
-            f"-c statement_timeout={statement_timeout_ms}"
+            f"-c default_transaction_read_only=on -c statement_timeout={statement_timeout_ms}"
         ),
     }
+
+
+def _session_hardening_connect_kwargs(
+    profile: ExternalPostgresLiveQueryProfile,
+    session_hardening_enabled: bool,
+) -> dict[str, str]:
+    return read_only_session_connect_kwargs(
+        statement_timeout_seconds=profile.statement_timeout_seconds,
+        session_hardening_enabled=session_hardening_enabled,
+    )
 
 
 def runtime_egress_target_block_reason(
@@ -1547,7 +1528,7 @@ def _resolve_lease_scoped_secret(
 
 def _psycopg_dsn(dsn: str) -> str:
     if dsn.startswith(POSTGRESQL_SQLALCHEMY_SCHEME):
-        return f"{POSTGRESQL_PSYCOPG_SCHEME}{dsn[len(POSTGRESQL_SQLALCHEMY_SCHEME):]}"
+        return f"{POSTGRESQL_PSYCOPG_SCHEME}{dsn[len(POSTGRESQL_SQLALCHEMY_SCHEME) :]}"
     return dsn
 
 
@@ -1588,8 +1569,7 @@ def _egress_policy_evidence_from_request(
             ),
             "egress_policy_ref": evidence.get(
                 "egress_policy_ref",
-                f"self-hosted-egress-policy://{tenant_id}/"
-                f"{egress_policy_id or 'missing'}",
+                f"self-hosted-egress-policy://{tenant_id}/{egress_policy_id or 'missing'}",
             ),
             "egress_policy_scope": evidence.get("egress_policy_scope", requested_scope),
             "egress_policy_mode": evidence.get("egress_policy_mode", "unknown"),
@@ -1607,8 +1587,7 @@ def _egress_policy_evidence_from_request(
         "egress_policy_runtime_boundary": "axis-egress-policy-enforcer",
         "egress_policy_result_status": "egress_policy_not_found",
         "egress_policy_ref": (
-            f"self-hosted-egress-policy://{tenant_id}/"
-            f"{egress_policy_id or 'missing'}"
+            f"self-hosted-egress-policy://{tenant_id}/{egress_policy_id or 'missing'}"
         ),
         "egress_policy_scope": requested_scope,
         "egress_policy_mode": "unknown",
@@ -1801,8 +1780,7 @@ def connector_live_sync_runtime_from_settings(
     settings: "Settings",
 ) -> ConnectorLiveSyncRuntime:
     if not (
-        settings.connector_sync_execution_enabled
-        and settings.connector_live_sync_execution_enabled
+        settings.connector_sync_execution_enabled and settings.connector_live_sync_execution_enabled
     ):
         return DeferredConnectorLiveSyncRuntime()
     return SelfHostedConnectorLiveSyncRuntime(
@@ -1812,9 +1790,7 @@ def connector_live_sync_runtime_from_settings(
             and settings.external_db_live_query_preflight_enabled
             and settings.external_db_live_query_execution_enabled
         ),
-        external_postgres_profile=(
-            external_postgres_live_query_profile_from_settings(settings)
-        ),
+        external_postgres_profile=(external_postgres_live_query_profile_from_settings(settings)),
         external_db_batch_size=settings.external_db_live_sync_batch_size,
         lease_scoped_secret_resolution_enabled=(
             settings.external_db_lease_scoped_secret_resolution_enabled

@@ -2,9 +2,12 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { IdentitySessionReadModel } from "@/lib/platform-overview";
+
 const mocks = vi.hoisted(() => ({
   provisionTenant: vi.fn(),
   triggerRefresh: vi.fn(),
+  useAxisQuery: vi.fn(),
 }));
 
 vi.mock("@/lib/platform-tenants", async (importOriginal) => ({
@@ -20,15 +23,49 @@ vi.mock("@/lib/use-oidc-session", () => ({
   useOidcConsoleSession: () => ({ session: null }),
 }));
 
+vi.mock("@/lib/use-axis-query", () => ({
+  useAxisQuery: mocks.useAxisQuery,
+}));
+
+vi.mock("@/lib/use-identity-session", () => ({
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 vi.mock("@/providers/console-provider", () => ({
   useConsole: () => ({ triggerRefresh: mocks.triggerRefresh }),
 }));
 
 import { TenantProvisionForm } from "./tenant-provision-form";
 
+const publicDemoIdentity: IdentitySessionReadModel = {
+  authenticated: false,
+  mode: "public_demo",
+  actor_id: null,
+  tenant_id: null,
+  scopes: [],
+  expires_at: null,
+  api_auth_required: false,
+  enterprise_sso_ready: false,
+  readiness_status: "ready",
+  issuer: "",
+  audience: "",
+  jwks_source: "disabled",
+  session_boundary: "public_demo",
+  capabilities: [],
+  limitations: [],
+  notes: [],
+  unauthenticated_reason: null,
+};
+
 beforeEach(() => {
   mocks.provisionTenant.mockReset();
   mocks.triggerRefresh.mockReset();
+  mocks.useAxisQuery.mockReset();
+  mocks.useAxisQuery.mockImplementation(() => ({
+    data: publicDemoIdentity,
+    source: "api",
+    errorRequestId: null,
+  }));
 });
 
 describe("TenantProvisionForm failure references", () => {
@@ -64,5 +101,29 @@ describe("TenantProvisionForm failure references", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/Request reference:/)).not.toBeInTheDocument();
     expect(mocks.provisionTenant).not.toHaveBeenCalled();
+  });
+
+  it("replaces provisioning with an SSO gate when sign-in is enforced", () => {
+    mocks.useAxisQuery.mockImplementation(() => ({
+      data: {
+        ...publicDemoIdentity,
+        mode: "sso",
+        api_auth_required: true,
+        enterprise_sso_ready: true,
+        session_boundary: "cookie",
+        jwks_source: "remote",
+      },
+      source: "api",
+      errorRequestId: null,
+    }));
+
+    render(<TenantProvisionForm />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Sign in with SSO to provision tenants.",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Provision tenant" }),
+    ).not.toBeInTheDocument();
   });
 });

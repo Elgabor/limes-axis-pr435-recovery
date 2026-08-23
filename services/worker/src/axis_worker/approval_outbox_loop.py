@@ -30,16 +30,17 @@ class DispatchResult(Protocol):
     claimed: int
 
 
-class ApprovalDecisionDispatcher(Protocol):
-    """Structural contract implemented by the API-owned dispatcher."""
+class Dispatcher(Protocol):
+    """Structural contract shared by the supervised dispatch loops."""
 
     async def run_once(self) -> DispatchResult: ...
 
 
-async def run_approval_decision_outbox_loop(
-    dispatcher: ApprovalDecisionDispatcher,
+async def run_dispatch_loop(
+    dispatcher: Dispatcher,
     *,
     interval_seconds: float,
+    logger: logging.Logger,
 ) -> None:
     """Continuously run ``dispatcher`` until the surrounding worker cancels it.
 
@@ -48,6 +49,9 @@ async def run_approval_decision_outbox_loop(
     batch.  ``sleep(0)`` still yields to the Temporal worker.  Empty batches and
     failures wait for the configured interval, preventing a hot loop when the
     database or Temporal is unavailable.
+
+    Shared by every outbox-style sibling loop; the caller supplies the logger so
+    operational logs name the boundary that actually failed.
     """
 
     if interval_seconds <= 0:
@@ -62,11 +66,11 @@ async def run_approval_decision_outbox_loop(
                     "dispatcher result must expose a non-negative integer claimed count"
                 )
         except asyncio.CancelledError:
-            logger.info("approval-decision outbox dispatcher stopping")
+            logger.info("dispatcher stopping")
             raise
         except Exception:
             logger.exception(
-                "approval-decision outbox dispatch failed; retrying in %.3fs",
+                "dispatch failed; retrying in %.3fs",
                 interval_seconds,
             )
             await asyncio.sleep(interval_seconds)
@@ -74,8 +78,37 @@ async def run_approval_decision_outbox_loop(
 
         if claimed:
             logger.info(
-                "approval-decision outbox batch processed claimed=%s",
+                "batch processed claimed=%s",
                 claimed,
             )
 
         await asyncio.sleep(0 if claimed else interval_seconds)
+
+
+async def run_approval_decision_outbox_loop(
+    dispatcher: Dispatcher,
+    *,
+    interval_seconds: float,
+) -> None:
+    await run_dispatch_loop(
+        dispatcher,
+        interval_seconds=interval_seconds,
+        logger=logger,
+    )
+
+
+_source_ingestion_logger = logging.getLogger("axis_worker.source_ingestion_loop")
+
+
+async def run_source_ingestion_loop(
+    dispatcher: Dispatcher,
+    *,
+    interval_seconds: float,
+) -> None:
+    """Process-lifecycle loop for governed source ingestion dispatch."""
+
+    await run_dispatch_loop(
+        dispatcher,
+        interval_seconds=interval_seconds,
+        logger=_source_ingestion_logger,
+    )

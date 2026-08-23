@@ -423,6 +423,16 @@ describe("Axis API fetch layer", () => {
       body: { detail: { code: "PERMISSION_DENIED", message: "Tenant access denied." } },
       requestId: "request-api-123",
     });
+    const scopedDenial = new AxisApiError("/protected", 403, {
+      body: {
+        detail: {
+          code: "PERMISSION_DENIED",
+          message: "Tenant access denied.",
+          reason: "missing_manifest_live_scope",
+        },
+      },
+      requestId: "request-api-124",
+    });
     const decodeError = new AxisApiDecodeError("/protected", "Response contract invalid.", {
       cause: new Error("decoder internals must stay hidden"),
       requestId: "request-decode-456",
@@ -430,12 +440,19 @@ describe("Axis API fetch layer", () => {
 
     expect(toAxisOperatorError(apiError, "Fallback")).toEqual({
       code: "PERMISSION_DENIED",
+      reason: null,
       message: "Tenant access denied.",
       requestId: "request-api-123",
       status: 403,
     });
+    expect(toAxisOperatorError(scopedDenial, "Fallback")).toMatchObject({
+      code: "PERMISSION_DENIED",
+      reason: "missing_manifest_live_scope",
+      status: 403,
+    });
     expect(toAxisOperatorError(decodeError, "Fallback")).toEqual({
       code: null,
+      reason: null,
       message: "Response contract invalid.",
       requestId: "request-decode-456",
       status: null,
@@ -462,12 +479,14 @@ describe("Axis API fetch layer", () => {
 
     expect(arbitraryError).toEqual({
       code: null,
+      reason: null,
       message: "Axis request failed.",
       requestId: null,
       status: null,
     });
     expect(typedError).toEqual({
       code: null,
+      reason: null,
       message: "Axis request unavailable.",
       requestId: "request-safe-503",
       status: 503,

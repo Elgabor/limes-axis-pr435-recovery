@@ -36,6 +36,7 @@ const verifiedSession: IdentitySessionReadModel = {
   capabilities: ["API-verified actor and tenant binding."],
   limitations: [],
   notes: [],
+  unauthenticated_reason: null,
 };
 
 const operationsSnapshot: ManufacturingOperationsSnapshot = {

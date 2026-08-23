@@ -85,9 +85,13 @@ const persistenceResultFixture = {
 function Harness({
   approval = approvalFixture,
   actor,
+  identitySession = null,
 }: {
   approval?: ApprovalInboxItem;
   actor?: { actorId: string; scopes: string[] };
+  identitySession?: NonNullable<
+    Parameters<typeof ApprovalDecisionCard>[0]["identitySession"]
+  > | null;
 }) {
   const { decisions, errors, setDecision, setError } = useApprovalDecisionState();
 
@@ -98,6 +102,7 @@ function Harness({
         approval={approval}
         decision={decisions[approval.approval_id]}
         error={errors[approval.approval_id]}
+        identitySession={identitySession}
         onDecisionChange={setDecision}
         onErrorChange={setError}
       />
@@ -217,6 +222,59 @@ describe("ApprovalDecisionCard", () => {
 
     // Option buttons are replaced by the recorded state.
     expect(screen.queryByRole("button", { name: /Approve & execute/ })).not.toBeInTheDocument();
+  });
+
+  it("replaces decisions with the SSO gate when the deployment enforces sign-in", () => {
+    render(
+      <Harness
+        identitySession={
+          {
+            authenticated: false,
+            actor_id: null,
+            tenant_id: "tenant_demo_manufacturing",
+            scopes: [],
+            mode: "sso",
+            api_auth_required: true,
+            expires_at: null,
+            enterprise_sso_ready: true,
+            readiness_status: "ready",
+            issuer: "https://issuer.example",
+            audience: "limes-axis-api",
+            jwks_source: "remote",
+            session_boundary: "cookie",
+            capabilities: [],
+            limitations: [],
+            notes: [],
+            unauthenticated_reason: null,
+          } as NonNullable<Parameters<typeof ApprovalDecisionCard>[0]["identitySession"]>
+        }
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Sign in with SSO to record approval decisions.",
+    );
+    // No doomed request is fired and no decision option remains clickable.
+    expect(
+      screen.queryByRole("button", { name: /Approve & execute/ }),
+    ).not.toBeInTheDocument();
+    expect(mocks.axisFetchParsedJson).not.toHaveBeenCalled();
+  });
+
+  it("hides options for an approval whose terminal decision was already recorded", () => {
+    render(
+      <Harness
+        approval={{ ...approvalFixture, status: "decided" }}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "A terminal decision was already recorded for this approval.",
+    );
+    expect(
+      screen.queryByRole("button", { name: /Approve & execute/ }),
+    ).not.toBeInTheDocument();
+    expect(mocks.axisFetchParsedJson).not.toHaveBeenCalled();
   });
 
   it("surfaces persistence failures and keeps the options available", async () => {

@@ -593,4 +593,5 @@ export const identitySessionFixture: IdentitySessionReadModel = {
   capabilities: [],
   limitations: [],
   notes: [],
+  unauthenticated_reason: null,
 };

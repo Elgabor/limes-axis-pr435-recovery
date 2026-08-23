@@ -1,12 +1,13 @@
 """Resource-level discovery observations for data assets.
 
 An observation records that Axis actually saw a source resource through a
-governed boundary (today: successful CSV previews). Observations are
-metadata-only: resource names and header fingerprints, never row values.
-Drift states are strictly evidence-derived — ``added``, ``changed`` and
-``unchanged`` come from comparing fingerprints; there is no ``missing``
-state because absence cannot be proven without a complete scan, and no
-complete scanner exists yet.
+governed boundary (today: successful CSV previews and bounded Postgres
+schema discovery). Observations are metadata-only: resource names and
+header/column fingerprints, never row values. Drift states are strictly
+evidence-derived — ``added``, ``changed`` and ``unchanged`` come from
+comparing fingerprints; there is no ``missing`` state because absence
+cannot be proven without a complete scan, and no complete scanner exists
+yet.
 """
 
 from datetime import datetime
@@ -19,6 +20,7 @@ from axis_api.persistence import (
     AuditEventCreate,
     AxisPersistenceRepository,
     DataResourceObservationCreate,
+    ObservationSourceKind,
 )
 
 DRIFT_ADDED = "added"
@@ -31,6 +33,7 @@ class DataAssetResourceObservationView(BaseModel):
     schema_fingerprint: str | None
     previous_fingerprint: str | None
     drift_state: str = Field(pattern="^(added|changed|unchanged)$")
+    last_source_kind: str = Field(min_length=1)
     first_seen_at: datetime
     last_seen_at: datetime
     observation_count: int = Field(ge=1)
@@ -50,6 +53,7 @@ def _observation_view(record) -> DataAssetResourceObservationView:
         schema_fingerprint=record.schema_fingerprint,
         previous_fingerprint=record.previous_fingerprint,
         drift_state=record.drift_state,
+        last_source_kind=record.last_source_kind,
         first_seen_at=record.first_seen_at,
         last_seen_at=record.last_seen_at,
         observation_count=record.observation_count,
@@ -65,12 +69,15 @@ def record_data_resource_observation(
     file_name: str,
     columns: list[str],
     observed_by: str,
+    source_kind: ObservationSourceKind = "csv_preview",
 ) -> tuple[DataAssetResourceObservationView, str]:
-    """Upsert one observation for an observed CSV file.
+    """Upsert one observation for an observed source resource.
 
     Returns the current view and the derived drift state. The advisory lock
     covers the first-observation race where the row does not exist yet; every
-    accepted observation appends audit evidence.
+    accepted observation appends audit evidence. ``file_name`` is the source
+    resource's stable name (a CSV file name or a qualified table name); the
+    fingerprint is computed from its observed column names.
     """
     repository.acquire_data_resource_observation_lock(
         tenant_id=tenant_id,
@@ -94,6 +101,7 @@ def record_data_resource_observation(
                 schema_fingerprint=fingerprint,
                 drift_state=DRIFT_ADDED,
                 observed_by=observed_by,
+                source_kind=source_kind,
             )
         )
         drift_state = DRIFT_ADDED
@@ -118,6 +126,7 @@ def record_data_resource_observation(
                 "asset_id": record.asset_id,
                 "connector_id": connector_id,
                 "resource_name": file_name,
+                "source_kind": source_kind,
                 "drift_state": drift_state,
                 "observation_count": record.observation_count,
             },

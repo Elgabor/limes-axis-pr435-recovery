@@ -8,9 +8,11 @@ import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 
 export type AxisQuerySource = "loading" | "api" | "tenant_not_found" | "unavailable";
 
-type AxisQueryFailureDetails = {
+export type AxisQueryFailureDetails = {
   code: string | null;
   reason: string | null;
+  /** Permission named by a 403 `missing_required_scope` denial, when sent. */
+  requiredPermission: string | null;
   requestId: string | null;
   validationIssues: readonly unknown[];
 };
@@ -18,6 +20,7 @@ type AxisQueryFailureDetails = {
 const EMPTY_FAILURE_DETAILS: AxisQueryFailureDetails = {
   code: null,
   reason: null,
+  requiredPermission: null,
   requestId: null,
   validationIssues: [],
 };
@@ -143,6 +146,8 @@ export function useAxisQuery<T>(path: string, options: UseAxisQueryOptions<T>) {
           setErrorDetails({
             code: caught instanceof AxisApiError ? caught.code : null,
             reason: caught instanceof AxisApiError ? caught.reason : null,
+            requiredPermission:
+              caught instanceof AxisApiError ? caught.requiredPermission : null,
             requestId:
               caught instanceof AxisApiError || caught instanceof AxisApiDecodeError
                 ? caught.requestId
@@ -183,6 +188,9 @@ export function useAxisQuery<T>(path: string, options: UseAxisQueryOptions<T>) {
     errorStatus: isCurrentQuery ? errorStatus : null,
     errorCode: isCurrentQuery ? errorDetails.code : null,
     errorReason: isCurrentQuery ? errorDetails.reason : null,
+    errorRequiredPermission: isCurrentQuery
+      ? errorDetails.requiredPermission
+      : null,
     errorRequestId: isCurrentQuery ? errorDetails.requestId : null,
     validationIssues: isCurrentQuery ? errorDetails.validationIssues : [],
     isRefreshing: isCurrentQuery ? isRefreshing : false,

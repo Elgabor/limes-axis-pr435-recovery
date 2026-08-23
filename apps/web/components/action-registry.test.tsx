@@ -14,6 +14,10 @@ vi.mock("@/lib/use-axis-query", () => ({
   useAxisQuery: mocks.useAxisQuery,
 }));
 
+vi.mock("@/lib/use-identity-session", () => ({
+  useIdentitySession: () => mocks.useAxisQuery("/identity/session"),
+}));
+
 vi.mock("@/lib/use-oidc-session", () => ({
   useOidcConsoleSession: () => ({ session: null }),
 }));
@@ -37,6 +41,7 @@ const publicIdentity: IdentitySessionReadModel = {
   capabilities: [],
   limitations: [],
   notes: [],
+  unauthenticated_reason: null,
 };
 
 const actionRegistryFixture: ManufacturingActionRegistry = {
@@ -207,6 +212,37 @@ describe("ActionRegistry selection", () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "Expedite fixture batch" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("ActionRegistry governed-write gate", () => {
+  it("replaces the run request with an SSO gate when sign-in is enforced", () => {
+    const enforcedIdentity: IdentitySessionReadModel = {
+      ...publicIdentity,
+      mode: "sso",
+      api_auth_required: true,
+      enterprise_sso_ready: true,
+      session_boundary: "cookie",
+      jwks_source: "remote",
+    };
+    mocks.useAxisQuery.mockImplementation((path: string) => {
+      if (path === "/identity/session") {
+        return queryResult(enforcedIdentity);
+      }
+      if (path === `${OPERATIONS_API_PREFIX}/actions?tenant_id=${DEMO_TENANT_ID}`) {
+        return queryResult(actionRegistryFixture);
+      }
+      return queryResult(null, "loading");
+    });
+
+    render(<ActionRegistry />);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Sign in with SSO to request governed action runs.",
+    );
+    expect(
+      screen.queryByRole("button", { name: /Request dry-run/ }),
     ).not.toBeInTheDocument();
   });
 });

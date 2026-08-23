@@ -39,6 +39,21 @@ export type ApprovalInboxItem = {
   decision_options: ApprovalDecisionOption[];
 };
 
+export type ApprovalDecisionHistoryEntry = {
+  approval_id: string;
+  action: string;
+  risk_level: string;
+  status: string;
+  decision: string;
+  domain: string | null;
+  workflow_id: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  rationale: string | null;
+  audit_event_id: string | null;
+  follow_through_status: string | null;
+};
+
 export type ManufacturingApprovalInbox = {
   tenant_id: string;
   plant_name: string | null;
@@ -48,6 +63,8 @@ export type ManufacturingApprovalInbox = {
   queue_status: PlatformStatus;
   policy_notes: string[];
   approvals: ApprovalInboxItem[];
+  /** Server-derived terminal decisions; absent on older API deployments. */
+  decision_history?: ApprovalDecisionHistoryEntry[];
 };
 
 export type ApprovalDecisionPersistenceResult = {
