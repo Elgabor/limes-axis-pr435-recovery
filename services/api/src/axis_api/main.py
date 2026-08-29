@@ -3272,7 +3272,7 @@ def create_app(
             cursor_created_at, cursor_row_id = decode_session_cursor(cursor)
         except IdentitySessionCursorError as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": AxisErrorCode.VALIDATION_FAILED.value,
                     "message": "The session listing cursor is invalid.",
@@ -3463,7 +3463,7 @@ def create_app(
             ) from exc
         except DemoReferenceRecordInvalid as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": AxisErrorCode.VALIDATION_FAILED.value,
                     "message": "Manufacturing overview reference payload is invalid.",
@@ -3515,7 +3515,7 @@ def create_app(
             ) from exc
         except DemoBootstrapValidationError as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": AxisErrorCode.VALIDATION_FAILED.value,
                     "message": exc.message,
@@ -4345,7 +4345,7 @@ def create_app(
             cursor_created_at, cursor_row_id = decode_agent_run_cursor(cursor)
         except AgentRunCursorError as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": AxisErrorCode.VALIDATION_FAILED.value,
                     "message": "The agent run listing cursor is invalid.",
@@ -8534,7 +8534,7 @@ def create_app(
             cursor_tenant_id = decode_tenant_cursor(cursor)
         except TenantListCursorError as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": AxisErrorCode.VALIDATION_FAILED.value,
                     "message": "The tenant listing cursor is invalid.",
@@ -8714,7 +8714,7 @@ def create_app(
         )
         if window_start >= window_end:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": AxisErrorCode.VALIDATION_FAILED.value,
                     "message": "The usage window start must be before the window end.",
@@ -9870,7 +9870,7 @@ def create_app(
             cursor_created_at, cursor_row_id = decode_model_invocation_cursor(cursor)
         except ModelInvocationCursorError as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": AxisErrorCode.VALIDATION_FAILED.value,
                     "message": "The model invocation listing cursor is invalid.",
@@ -10033,7 +10033,7 @@ def create_app(
             ) from exc
         except OntologyReferenceRecordInvalid as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": AxisErrorCode.VALIDATION_FAILED.value,
                     "message": "Manufacturing ontology reference payload is invalid.",
@@ -10093,7 +10093,7 @@ def create_app(
             ) from exc
         except OntologyReferenceRecordInvalid as exc:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail={
                     "code": AxisErrorCode.VALIDATION_FAILED.value,
                     "message": "Manufacturing ontology reference payload is invalid.",

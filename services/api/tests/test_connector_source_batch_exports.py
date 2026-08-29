@@ -1166,22 +1166,23 @@ def test_concurrent_different_materializations_leave_no_orphan_object(
     maker = fresh_factory()
     seed_ingestion_request(maker)
     seed_batches(maker, 1)
+    primary_client = build_client(maker, fresh_settings())
+    created = primary_client.post(REQUESTS_URL, json=export_body())
+    assert created.status_code == 201, created.text
+    decided = primary_client.post(
+        f"{REQUESTS_URL}/batchexport_b13_001/decision",
+        json=decision_body(),
+    )
+    assert decided.status_code == 200, decided.text
+    clients = [primary_client, TestClient(primary_client.app)]
 
     outcomes: list[tuple[int, str]] = []
     errors: list[Exception] = []
     barrier = threading.Barrier(2)
 
-    def hit(materialization_id: str, idempotency_key: str):
+    def hit(client: TestClient, materialization_id: str, idempotency_key: str) -> None:
         try:
-            client = build_client(fresh_factory(), fresh_settings())
             barrier.wait()
-            created = client.post(REQUESTS_URL, json=export_body())
-            assert created.status_code in (200, 201), created.text
-            decided = client.post(
-                f"{REQUESTS_URL}/batchexport_b13_001/decision",
-                json=decision_body(),
-            )
-            assert decided.status_code == 200, decided.text
             response = client.post(
                 f"{REQUESTS_URL}/batchexport_b13_001/materializations",
                 json=materialize_body(
@@ -1198,13 +1199,21 @@ def test_concurrent_different_materializations_leave_no_orphan_object(
             errors.append(exc)
 
     threads = [
-        threading.Thread(target=hit, args=("matorpha01", "orphan-key-0001")),
-        threading.Thread(target=hit, args=("matorpha02", "orphan-key-0002")),
+        threading.Thread(
+            target=hit,
+            args=(clients[0], "matorpha01", "orphan-key-0001"),
+        ),
+        threading.Thread(
+            target=hit,
+            args=(clients[1], "matorpha02", "orphan-key-0002"),
+        ),
     ]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
+    for client in clients:
+        client.close()
 
     assert errors == [], errors
     successes = [pair for pair in outcomes if pair[0] == 201]
@@ -1312,22 +1321,23 @@ def test_concurrent_materializations_yield_one_winner_and_one_event(store_root) 
     maker = fresh_factory()
     seed_ingestion_request(maker)
     seed_batches(maker, 1)
+    primary_client = build_client(maker, fresh_settings())
+    created = primary_client.post(REQUESTS_URL, json=export_body())
+    assert created.status_code == 201, created.text
+    decided = primary_client.post(
+        f"{REQUESTS_URL}/batchexport_b13_001/decision",
+        json=decision_body(),
+    )
+    assert decided.status_code == 200, decided.text
+    clients = [primary_client, TestClient(primary_client.app)]
 
     outcomes: list[tuple[int, str]] = []
     errors: list[Exception] = []
     barrier = threading.Barrier(2)
 
-    def hit():
+    def hit(client: TestClient) -> None:
         try:
-            client = build_client(fresh_factory(), fresh_settings())
             barrier.wait()
-            created = client.post(REQUESTS_URL, json=export_body())
-            assert created.status_code in (200, 201), created.text
-            decided = client.post(
-                f"{REQUESTS_URL}/batchexport_b13_001/decision",
-                json=decision_body(),
-            )
-            assert decided.status_code == 200, decided.text
             response = client.post(
                 f"{REQUESTS_URL}/batchexport_b13_001/materializations",
                 json=materialize_body(),
@@ -1342,7 +1352,7 @@ def test_concurrent_materializations_yield_one_winner_and_one_event(store_root) 
         except Exception as exc:
             errors.append(exc)
 
-    threads = [threading.Thread(target=hit) for _ in range(2)]
+    threads = [threading.Thread(target=hit, args=(client,)) for client in clients]
     for thread in threads:
         thread.start()
     for thread in threads:
@@ -1358,13 +1368,14 @@ def test_concurrent_materializations_yield_one_winner_and_one_event(store_root) 
     assert replays[0][1] == ""
 
     # A materially different follow-up ask must conflict explicitly.
-    client_after = build_client(fresh_factory(), fresh_settings())
-    conflict = client_after.post(
+    conflict = primary_client.post(
         f"{REQUESTS_URL}/batchexport_b13_001/materializations",
         json=materialize_body(materialization_id="matb13009"),
     )
     assert conflict.status_code == 409
     assert conflict.json()["detail"]["reason"] == "materialization_idempotency_conflict"
+    for client in clients:
+        client.close()
 
     verify = fresh_factory()
     with session_scope(verify) as session:

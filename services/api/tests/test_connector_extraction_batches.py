@@ -1198,10 +1198,18 @@ def test_concurrent_redispatch_yields_exactly_one_mutation_and_event(
     outcomes: list[tuple[int, str]] = []
     errors: list[Exception] = []
     barrier = threading.Barrier(2)
+    primary_client = build_client(fresh_factory(), settings)
+    clients = [primary_client, TestClient(primary_client.app)]
 
-    def hit():
+    # Compile the shared response model before the threads contend on the file DB.
+    warmup = primary_client.get(
+        "/operations/connectors/external-db/source-ingestion-requests/ingreq_dead",
+        params={"tenant_id": TENANT_A, "actor_scopes": [READ_SCOPE]},
+    )
+    assert warmup.status_code == 200
+
+    def hit(client: TestClient) -> None:
         try:
-            client = build_client(fresh_factory(), settings)
             barrier.wait()
             response = requeue_via_route(client)
             body = response.json()
@@ -1209,11 +1217,13 @@ def test_concurrent_redispatch_yields_exactly_one_mutation_and_event(
         except Exception as exc:
             errors.append(exc)
 
-    threads = [threading.Thread(target=hit) for _ in range(2)]
+    threads = [threading.Thread(target=hit, args=(client,)) for client in clients]
     for thread in threads:
         thread.start()
     for thread in threads:
         thread.join()
+    for client in clients:
+        client.close()
 
     assert errors == [], errors
     conflicts = [code for code, _ in outcomes if code == 409]

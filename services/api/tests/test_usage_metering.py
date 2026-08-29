@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -50,6 +51,10 @@ TENANT_ID = "tenant_acme_manufacturing"
 OTHER_TENANT_ID = "tenant_globex_manufacturing"
 OPERATOR_ACTOR = "axis-platform-operator-role"
 USAGE_SCOPES = ["platform:tenant:operator", "platform:tenant:usage"]
+
+
+def _adapt_sqlite_datetime(value: datetime) -> str:
+    return value.isoformat(" ")
 
 
 def _factory() -> sessionmaker[Session]:
@@ -1189,6 +1194,9 @@ def test_migration_0053_backfills_legacy_events_and_guards_downgrade(tmp_path) -
     from alembic.config import Config
     from sqlalchemy import text
 
+    # Raw SQL text has no SQLAlchemy type processor, so make the Python 3.12
+    # DB-API conversion explicit instead of relying on sqlite3's deprecated default.
+    sqlite3.register_adapter(datetime, _adapt_sqlite_datetime)
     database_path = tmp_path / "usage-projection.sqlite"
     database_url = f"sqlite+pysqlite:///{database_path}"
     engine = create_engine(database_url)

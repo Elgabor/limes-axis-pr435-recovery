@@ -607,6 +607,26 @@ def test_replay_simulation_endpoint_keeps_expired_outputs_under_legal_hold(
     assert body["retention_window"]["legal_hold"] is True
 
 
+def test_replay_simulation_endpoint_rejects_invalid_legal_hold(
+    session_factory: sessionmaker[Session],
+) -> None:
+    app = create_app(Settings(postgres_dsn="sqlite+pysqlite://"))
+    app.state.session_factory = session_factory
+    client = TestClient(app)
+
+    response = client.get(
+        "/demo/manufacturing/simulation/replay",
+        params={
+            "tenant_id": "tenant_demo_manufacturing",
+            "legal_hold": "not-a-boolean",
+        },
+    )
+
+    client.close()
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == ["query", "legal_hold"]
+
+
 def test_build_replay_simulation_filters_by_workflow_id(
     session_factory: sessionmaker[Session],
 ) -> None:
