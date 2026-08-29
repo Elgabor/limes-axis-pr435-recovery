@@ -1,12 +1,13 @@
 # Contributing to Limes Axis
 
-Limes Axis is early. The first public work is design, architecture and platform
-foundation. Contributions should improve clarity, architecture, tests,
-documentation or implementation without weakening the core principles.
+Limes Axis is early. Contributions by authorized collaborators should improve
+clarity, architecture, tests, documentation or implementation without weakening
+the core principles.
 
 ## Principles
 
-- Keep the open core self-hostable.
+- Keep the commercial product self-hostable; future OSS disposition is decided
+  separately by the edition matrix.
 - Avoid required managed-service dependencies.
 - Treat security, tenant isolation, permissions and audit as product features.
 - Prefer typed schemas and explicit interfaces over implicit coupling.

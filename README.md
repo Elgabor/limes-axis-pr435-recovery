@@ -3,8 +3,12 @@
 **The sovereign AI control plane for European operations.**
 
 [![CI](https://github.com/Limes-Labs/limes-axis/actions/workflows/ci.yml/badge.svg)](https://github.com/Limes-Labs/limes-axis/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![Self-hostable](https://img.shields.io/badge/runtime-self--hostable-17c3b2.svg)](./docs/deployment.md)
+
+This private repository is the complete commercial source of truth for Axis. A
+future OSS edition will be a deliberate, fresh-history export; it does not exist
+in this repository today. See the
+[repository-topology decision](./docs/adr/0002-commercial-source-and-oss-export-boundary.md).
 
 Limes Axis connects operational data, humans, workflows and AI agents through
 one governed control plane. Every meaningful read, proposal, approval and
@@ -46,9 +50,10 @@ flowchart LR
     F --> G
 ```
 
-The open core is built with Next.js and React, FastAPI, Postgres, TypeDB and
-Temporal OSS. OIDC identity, relationship-aware authorization, OpenTelemetry
-and object-storage boundaries are first-class parts of the architecture.
+The current commercial codebase is built with Next.js and React, FastAPI,
+Postgres, TypeDB and Temporal OSS. OIDC identity, relationship-aware
+authorization, OpenTelemetry and object-storage boundaries are first-class
+parts of the architecture.
 
 ## Product surfaces
 
@@ -174,6 +179,7 @@ expiring vulnerability exceptions.
 - [Architecture changelog](./docs/architecture-changelog.md)
 - [Repository governance](./docs/repository-governance.md)
 - [Architecture decision records](./docs/adr/README.md)
+- [Commercial/OSS repository topology](./docs/adr/0002-commercial-source-and-oss-export-boundary.md)
 - [Changelog](./CHANGELOG.md)
 - [Support](./SUPPORT.md)
 - [Demo readiness](./docs/demo-readiness.md)
@@ -212,4 +218,8 @@ honest capability claims. Read [CONTRIBUTING.md](./CONTRIBUTING.md) and
 
 ## License
 
-Apache License 2.0. See [LICENSE](./LICENSE).
+The repository retains [Apache-2.0 licence text](./LICENSE) and historical
+[contribution terms](./CLA.md). Making the repository private does not itself
+relicense existing material. Distribution, contribution terms and the licence
+for any future OSS export require the legal and provenance review recorded in
+the [repository-topology ADR](./docs/adr/0002-commercial-source-and-oss-export-boundary.md).

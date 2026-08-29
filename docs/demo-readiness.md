@@ -396,8 +396,8 @@ Show:
 - Tenant-scoped persisted reference records.
 - Append-only audit events, export manifests and signature evidence.
 - Deferred runtime boundaries for risky or external operations.
-- The expansion path from one public repository into cloud, enterprise, SDK,
-  connector, deployment and docs repositories when thresholds are reached.
+- The private commercial source-of-truth topology and the blocked-by-default
+  path to a future, fresh-history OSS export.
 
 Confirm before the session:
 

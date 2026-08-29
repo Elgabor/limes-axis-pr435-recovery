@@ -18,7 +18,7 @@ In scope:
   severity response targets, escalation channel classes and customer runbook
   presence checks.
 - Triage of API, web console, persistence, workflow and connector-boundary
-  issues in the open-source repository.
+  issues in the private commercial repository.
 
 Out of scope:
 
@@ -28,7 +28,7 @@ Out of scope:
 - Managed Cloud, Enterprise private deployment support and customer-specific
   connector execution.
 - Handling customer credentials, production datasets or private infrastructure
-  access in the public repository.
+  access in repository issues or committed files.
 
 ## Public-Safe Diagnostic Bundle
 

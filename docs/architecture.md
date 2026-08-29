@@ -5,6 +5,11 @@ It is intentionally about current component ownership, data flow and trust
 boundaries. Delivery sequence and superseded intermediate designs belong in the
 [architecture changelog](./architecture-changelog.md).
 
+This private repository is the complete commercial source of truth. The
+[repository-topology ADR](./adr/0002-commercial-source-and-oss-export-boundary.md)
+owns the separate, future OSS publication boundary; no OSS repository or export
+path is part of the current runtime.
+
 ## Current Component and Data Flow
 
 ```mermaid
@@ -123,8 +128,9 @@ the nearest contract evidence; they are not an exhaustive test inventory.
   default deployment posture.
 - The TypeDB runtime is an adapter boundary and may be disabled independently of
   the persisted public reference graph.
-- The repository is still unified. A component should be extracted only when
-  ownership, release cadence, secrets, deployment or versioning genuinely diverge.
+- The commercial repository is still a unified monorepo. A future OSS edition
+  is a files-only, fresh-history export governed by the topology ADR and a
+  capability allowlist; it is not a runtime module split or an automatic sync.
 
 ## Detailed Current Contracts
 

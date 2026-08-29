@@ -15,8 +15,9 @@ instead of weeks — all inside the governance, audit, tenancy and sovereignty
 boundaries the platform already enforces.
 
 Operate also closes every remaining open item from the Platform and Enterprise
-milestones, and establishes the boundary between the open-source core and the
-commercial hosted edition, so both can grow without undermining each other.
+milestones, and establishes the boundary between the private commercial source
+of truth and a future OSS edition, so both can grow without undermining each
+other.
 
 Everything in this plan follows the existing product principles: no external
 data egress by default, self-hosted models only, fail-closed permissions,
@@ -316,20 +317,16 @@ points; the security review depends on everything else stabilizing.
 
 ### WS-I — Editions: repository restructuring, boundary and prospect sandbox
 
-**Goal.** Establish a clear, honest boundary between the open-source core and
-the commercial hosted edition, restructure the repositories to support it,
-and design the hosted prospect sandbox. This is the first workstream to
-execute.
+**Goal.** Establish a clear, honest boundary between the private commercial
+source of truth and a future OSS edition, define the publication gate, and
+design the hosted prospect sandbox. This is the first workstream to execute.
 
 **Deliverables.**
 
-- [ ] Restructuring decision record and execution: rename this repository to
-      `limes-axis-oss` (existing links, issues and stars are preserved by
-      the platform's redirects) and create a private downstream repository
-      for the hosted edition. Core development remains public-upstream: the
-      private repository regularly merges from the public one and adds
-      hosted-edition modules on top — composition, not divergence, and no
-      extraction pipeline.
+- [x] Repository-topology decision: keep `Limes-Labs/limes-axis` private as the
+      complete commercial source of truth. Any future `limes-axis-oss` is a
+      files-only, allowlisted export into a new repository with fresh history;
+      it is not a fork, upstream or automatic synchronization target.
 - [ ] Editions audit: a feature-by-feature disposition against a written
       boundary rule — *single-tenant self-hosting stays fully usable in the
       open-source edition; operating many tenants, compliance-as-a-service
@@ -337,7 +334,7 @@ execute.
       edition.* Candidate areas for commercial-edition ownership: the SaaS
       operator machinery, compliance-grade audit internals and
       enterprise deployment profiles. Where moving a capability would break
-      self-hosting usability, the open-source edition keeps a simplified,
+      self-hosting usability, the future OSS edition keeps a simplified,
       always-usable baseline. Nothing already shipped is erased; this is a
       forward-shipping boundary, stated transparently.
 - [ ] `docs/editions.md`: the public editions statement — what the
@@ -354,7 +351,7 @@ execute.
       explicitly deferred until billing and abuse prevention exist.
 
 **Dependencies.** None inbound — this executes first. The sandbox build
-happens in the private repository once WS-F's vertical pack exists.
+happens in the commercial repository once WS-F's vertical pack exists.
 
 ## Phase ordering
 

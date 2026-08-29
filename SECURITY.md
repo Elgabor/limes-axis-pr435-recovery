@@ -1,12 +1,12 @@
 # Security Policy
 
-Limes Axis is early open-source infrastructure. Please report suspected security
-issues privately and avoid opening public issues with exploit details, secrets,
-personal data, customer data or proprietary logs.
+Limes Axis is early commercial infrastructure in a private repository. Please
+report suspected security issues privately and avoid opening public issues with
+exploit details, secrets, personal data, customer data or proprietary logs.
 
 ## Supported Versions
 
-The public repository currently supports the `main` branch only.
+The private repository currently supports the `main` branch only.
 
 ## Reporting A Vulnerability
 
@@ -19,7 +19,7 @@ or sensitive information.
 
 ## Security Baseline
 
-Axis open core should preserve these defaults:
+The Axis commercial source should preserve these defaults:
 
 - no required managed services;
 - no external model or data egress by default;

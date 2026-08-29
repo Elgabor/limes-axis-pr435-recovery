@@ -6,9 +6,10 @@ Last updated: 2026-07-11
 
 Limes Axis is the sovereign AI control plane for European operations.
 
-It starts as an open-source core that can run locally or in controlled
-infrastructure, then expands into managed cloud, dedicated enterprise and
-on-prem deployment paths.
+The private commercial source can run locally or in controlled infrastructure
+and supports managed cloud, dedicated enterprise and on-prem deployment paths.
+A future OSS edition may be released through a deliberate, capability-limited,
+fresh-history export.
 
 Axis is designed to integrate first and replace gradually: existing systems stay
 in place while Axis becomes the governed layer where data, workflows, people,
@@ -16,12 +17,14 @@ permissions and AI agents operate together.
 
 ## Product Principles
 
-- Sovereignty must be practical: the open core must not require managed services.
+- Sovereignty must be practical: self-hosted deployments must not require
+  managed services.
 - AI agents must be governed, permissioned, observable and auditable.
 - Human approval remains central for risky actions.
 - Operational ontology is the core context layer.
 - Workflow execution must be durable and inspectable.
-- Public open-source core and commercial operations should reinforce each other.
+- A future OSS edition and commercial operations should reinforce each other
+  through explicit shared contracts, not automatic repository synchronization.
 - The initial repository is unified, but future extraction into modules/repos is
   expected when parts grow large enough.
 
@@ -1260,13 +1263,11 @@ existing governance, audit, tenancy and sovereignty boundaries. The detailed
 plan is
 [`docs/plans/2026-07-11-operate-milestone.md`](./docs/plans/2026-07-11-operate-milestone.md).
 
-- [ ] Execute the editions restructuring: rename the public repository to the
-  open-source edition, create the private downstream hosted-edition
-  repository with core development remaining public-upstream, and record the
-  decision.
-- [ ] Run the editions audit against the written boundary rule (single-tenant
-  self-hosting stays fully usable open source) and publish the public
-  editions statement in `docs/editions.md`.
+- [x] Record this private repository as the complete commercial source of truth
+  and define a one-way, fresh-history OSS export boundary in an ADR.
+- [ ] Run the editions audit against the written boundary rule, block export
+  while any capability is undecided and publish the editions statement in
+  `docs/editions.md`.
 - [ ] Design the invite-based hosted prospect sandbox with automatic reset and
   time-boxed access as the first hosted-edition deliverable.
 - [ ] Complete the governance console redesign (phases 2-6): action-first
@@ -1338,14 +1339,14 @@ Extraction should happen when a module has at least two of these traits:
 - customer-specific integrations;
 - independent SDK versioning;
 - large connector surface;
-- cloud operations that differ materially from the open-source core;
+- cloud operations that differ materially from a future OSS edition;
 - documentation needs that outgrow the product repo.
 
 ## Contribution Policy
 
-The project uses Apache-2.0 for the open-source core and plans to require a
-Contributor License Agreement before accepting substantial external
-contributions.
+The repository retains Apache-2.0 licence text and a Contributor License
+Agreement from its earlier public topology. Qualified legal review must decide
+their treatment before external contribution intake or an OSS export.
 
 The CLA text in this repository is an initial project baseline and should be
 reviewed legally before broad external contribution intake.
@@ -1356,4 +1357,5 @@ reviewed legally before broad external contribution intake.
 - No completed ERP/MES/CRM integrations.
 - No uncontrolled autonomous agents.
 - No dependency on a proprietary hosted model provider.
-- No promise that commercial Cloud or Enterprise code will live in this repo.
+- No promise that commercial capabilities will be included in a future OSS
+  export.

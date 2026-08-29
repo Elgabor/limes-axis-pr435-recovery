@@ -1,8 +1,8 @@
 # Support
 
-Limes Axis is an early open-source project. Repository support is community and
-maintainer best-effort; it is not a production support agreement or response-time
-commitment.
+Limes Axis is an early commercial product in a private repository. Repository
+support for authorized collaborators is maintainer best-effort; it is not a
+production support agreement or response-time commitment.
 
 ## Where to Ask
 
@@ -26,8 +26,8 @@ personal or sensitive evidence in an issue.
 
 ## Support Boundary
 
-Maintainers may ask for a minimal reproduction before investigating. Public
-support covers the checked-in open-source runtime and documentation. Customer-
+Maintainers may ask for a minimal reproduction before investigating. Repository
+support covers the checked-in evaluation runtime and documentation. Customer-
 specific deployment, operational SLA, private integrations and incident response
 are outside the repository support commitment unless a separate agreement says
 otherwise.

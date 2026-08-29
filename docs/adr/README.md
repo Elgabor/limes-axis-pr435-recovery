@@ -18,3 +18,4 @@ sequence remains in [the architecture changelog](../architecture-changelog.md).
 ## Records
 
 - [`0001-repository-governance-baseline.md`](./0001-repository-governance-baseline.md) — Accepted
+- [`0002-commercial-source-and-oss-export-boundary.md`](./0002-commercial-source-and-oss-export-boundary.md) — Accepted

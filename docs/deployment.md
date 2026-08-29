@@ -1,13 +1,14 @@
 # Deployment Baseline
 
 This page defines the first Kubernetes and Helm deployment baseline for the
-Limes Axis open core. It is a self-hostable package for enterprise evaluation,
-cluster planning and future hardening. It is not a production certification.
+Limes Axis commercial product. It is a self-hostable package for enterprise
+evaluation, cluster planning and future hardening. It is not a production
+certification.
 
 The chart lives in `infra/helm/limes-axis` and currently deploys only the Axis
 API and web console. The repository includes local API and web image builds,
 while production operators must still supply signed, published images and the
-external services that the open core depends on.
+external services that the deployment depends on.
 
 ## Shared request admission control
 

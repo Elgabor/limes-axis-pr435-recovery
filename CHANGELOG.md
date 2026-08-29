@@ -7,6 +7,9 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- A repository-topology ADR makes the private repository the commercial source
+  of truth and defines the fail-closed, fresh-history boundary for any future
+  OSS edition ([#319](https://github.com/Limes-Labs/limes-axis/issues/319)).
 - Repository governance baseline with code ownership, support and conduct
   policies, architecture decision records, bounded dependency updates and an
   automated documentation-path check ([#323](https://github.com/Limes-Labs/limes-axis/issues/323)).

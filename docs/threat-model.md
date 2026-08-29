@@ -1,9 +1,10 @@
 # Limes Axis Threat Model
 
-This is the initial repository-grounded threat model for the public Limes Axis
-open core. It is not a production certification, penetration test, compliance
-attestation or third-party security review. It is a maintained AppSec baseline
-for engineering review, enterprise evaluation and future hardening work.
+This is the initial repository-grounded threat model for the private Limes Axis
+commercial source of truth. It is not a production certification, penetration
+test, compliance attestation or third-party security review. It is a maintained
+AppSec baseline for engineering review, enterprise evaluation and future
+hardening work.
 
 ## Executive Summary
 
@@ -43,7 +44,9 @@ In scope:
 
 Out of scope for this initial model:
 
-- Managed Cloud and Enterprise code that may later move to separate repos.
+- A future OSS export and its publication pipeline. Repository-disclosure risks
+  and required release proof are specified in the
+  [repository-topology ADR](./adr/0002-commercial-source-and-oss-export-boundary.md).
 - Customer production environments, customer-specific connectors and private
   deployment secrets.
 - Third-party managed model providers, unless explicitly enabled by future
@@ -53,8 +56,8 @@ Out of scope for this initial model:
 
 Assumptions:
 
-- The public repo is used for local demos, design-partner walkthroughs and
-  open-core development.
+- Authorized users use the private commercial repository for local demos,
+  design-partner walkthroughs and product development.
 - Production customer deployment will require additional hardening beyond the
   local Docker Compose stack.
 - Current demo records are persisted tenant-scoped bootstrap/reference records,
