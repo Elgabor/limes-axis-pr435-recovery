@@ -14,6 +14,10 @@ release-bound behavior, not the complete commit history.
   to OSS, shared SDK, Hosted or Enterprise/private-cloud editions and blocks
   export on undecided entries
   ([#320](https://github.com/Limes-Labs/limes-axis/issues/320)).
+- A compliance-readiness matrix records deployment-specific applicability,
+  roles, control/evidence ownership and unresolved ISO/IEC 27001, GDPR, EU AI
+  Act and NIS2 review boundaries
+  ([#372](https://github.com/Limes-Labs/limes-axis/issues/372)).
 - Repository governance baseline with code ownership, support and conduct
   policies, architecture decision records, bounded dependency updates and an
   automated documentation-path check ([#323](https://github.com/Limes-Labs/limes-axis/issues/323)).

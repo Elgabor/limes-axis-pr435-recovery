@@ -148,6 +148,7 @@ the nearest contract evidence; they are not an exhaustive test inventory.
 - [Model routing](./platform-model-routing.md)
 - [Deployment](./deployment.md)
 - [Threat model](./threat-model.md)
+- [Compliance applicability and evidence](./compliance-applicability-and-evidence.md)
 
 ## Keeping This Document Current
 

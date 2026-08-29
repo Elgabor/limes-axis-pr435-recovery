@@ -181,6 +181,7 @@ expiring vulnerability exceptions.
 - [Architecture decision records](./docs/adr/README.md)
 - [Commercial/OSS repository topology](./docs/adr/0002-commercial-source-and-oss-export-boundary.md)
 - [Editions and capability matrix](./docs/editions.md)
+- [Compliance applicability and evidence](./docs/compliance-applicability-and-evidence.md)
 - [Changelog](./CHANGELOG.md)
 - [Support](./SUPPORT.md)
 - [Demo readiness](./docs/demo-readiness.md)
