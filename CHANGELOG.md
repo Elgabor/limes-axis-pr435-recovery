@@ -10,6 +10,10 @@ release-bound behavior, not the complete commit history.
 - A repository-topology ADR makes the private repository the commercial source
   of truth and defines the fail-closed, fresh-history boundary for any future
   OSS edition ([#319](https://github.com/Limes-Labs/limes-axis/issues/319)).
+- A machine-checked capability matrix assigns current and planned product scope
+  to OSS, shared SDK, Hosted or Enterprise/private-cloud editions and blocks
+  export on undecided entries
+  ([#320](https://github.com/Limes-Labs/limes-axis/issues/320)).
 - Repository governance baseline with code ownership, support and conduct
   policies, architecture decision records, bounded dependency updates and an
   automated documentation-path check ([#323](https://github.com/Limes-Labs/limes-axis/issues/323)).

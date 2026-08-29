@@ -1,0 +1,373 @@
+schema_version = 1
+last_reviewed = "2026-08-29"
+decision_owner = "@metaforismo"
+topology_adr = "docs/adr/0002-commercial-source-and-oss-export-boundary.md"
+
+[[capabilities]]
+id = "CORE-CONSOLE"
+name = "Single-tenant governance console"
+lifecycle = "current"
+disposition = "oss"
+areas = ["apps/web"]
+evidence = ["README.md", "docs/platform-overview.md"]
+rationale = "A usable local control surface is core evaluation value and does not require managed operations."
+
+[[capabilities]]
+id = "CORE-API"
+name = "Single-tenant control API and identity boundary"
+lifecycle = "current"
+disposition = "oss"
+areas = ["services/api"]
+evidence = ["docs/architecture.md", "docs/platform-tenants.md"]
+rationale = "The self-hosted API, OIDC boundary and fail-closed authorization are the usable product baseline."
+
+[[capabilities]]
+id = "CORE-ONTOLOGY"
+name = "Operational ontology and permission-aware graph baseline"
+lifecycle = "current"
+disposition = "oss"
+areas = ["services/api", "apps/web"]
+evidence = ["docs/platform-ontology.md"]
+rationale = "Typed operational context is core user value; advanced managed tooling is classified separately."
+
+[[capabilities]]
+id = "CORE-GOVERNANCE"
+name = "Policies, approvals, typed actions and append-only audit baseline"
+lifecycle = "current"
+disposition = "oss"
+areas = ["services/api", "apps/web"]
+evidence = ["docs/platform-policies.md", "docs/platform-approvals.md", "docs/platform-audit.md"]
+rationale = "A genuinely useful OSS workflow must retain the same safety boundaries rather than a bypass path."
+
+[[capabilities]]
+id = "CORE-WORKFLOW-SIMULATION"
+name = "Durable workflows, replay and deterministic simulation baseline"
+lifecycle = "current"
+disposition = "oss"
+areas = ["services/api", "services/worker", "apps/web"]
+evidence = ["docs/platform-workflows.md", "docs/platform-simulation.md"]
+rationale = "Local durable execution and inspectable replay complete simple self-hosted workflows."
+
+[[capabilities]]
+id = "CORE-AGENT-BASE"
+name = "Local agent registry and propose-only governed runs"
+lifecycle = "current"
+disposition = "oss"
+areas = ["services/api", "apps/web"]
+evidence = ["docs/platform-agents.md", "docs/platform-actions.md"]
+rationale = "Evaluation needs safe proposal flows; managed fleets and advanced autonomy remain commercial."
+
+[[capabilities]]
+id = "CORE-MODEL-SELFHOSTED"
+name = "Self-hosted model endpoint registry and fail-closed routing"
+lifecycle = "current"
+disposition = "oss"
+areas = ["services/api", "apps/web"]
+evidence = ["docs/platform-model-routing.md"]
+rationale = "Provider-agnostic local routing preserves sovereignty without a required Limes-managed endpoint."
+
+[[capabilities]]
+id = "CONNECTOR-CSV"
+name = "CSV and manual-import connector baseline"
+lifecycle = "current"
+disposition = "oss"
+areas = ["services/api", "services/worker", "apps/web"]
+evidence = ["docs/platform-connectors.md"]
+rationale = "A bounded file path enables a complete local ingestion flow without premium operations."
+
+[[capabilities]]
+id = "CONNECTOR-POSTGRES"
+name = "Generic self-hosted Postgres discovery and read-only extraction"
+lifecycle = "current"
+disposition = "oss"
+areas = ["services/api", "services/worker", "apps/web"]
+evidence = ["docs/platform-connectors.md"]
+rationale = "A generic database adapter is ecosystem infrastructure; credential, lease and egress gates remain intact."
+
+[[capabilities]]
+id = "REFERENCE-MANUFACTURING"
+name = "Manufacturing evaluation scenario and sample data"
+lifecycle = "current"
+disposition = "oss"
+areas = ["services/api", "apps/web", "examples/manufacturing-plant"]
+evidence = ["docs/platform-manufacturing-operations.md", "examples/manufacturing-plant/README.md"]
+rationale = "One complete reference scenario makes the OSS candidate useful for learning without promising supported vertical operations."
+
+[[capabilities]]
+id = "SDK-SCHEMAS"
+name = "Versioned JSON Schemas"
+lifecycle = "current"
+disposition = "shared-sdk"
+areas = ["packages/schemas"]
+evidence = ["packages/schemas/package.json"]
+rationale = "Stable action, audit, agent, connector, model and tenant contracts improve interoperability across editions."
+
+[[capabilities]]
+id = "SDK-PYTHON"
+name = "Typed Python SDK"
+lifecycle = "current"
+disposition = "shared-sdk"
+areas = ["packages/sdk-python"]
+evidence = ["docs/sdk-python.md", "packages/sdk-python/README.md"]
+rationale = "The client is a narrow public contract and carries no managed-service implementation."
+
+[[capabilities]]
+id = "SDK-OPENAPI"
+name = "Versioned REST and OpenAPI contract"
+lifecycle = "current"
+disposition = "shared-sdk"
+areas = ["services/api", "docs"]
+evidence = ["docs/openapi.json"]
+rationale = "A shared HTTP contract is the explicit cross-edition compatibility surface."
+
+[[capabilities]]
+id = "DEPLOY-LOCAL"
+name = "Local Docker Compose evaluation topology"
+lifecycle = "current"
+disposition = "oss"
+areas = ["infra/docker"]
+evidence = ["infra/docker/docker-compose.yml", "docs/demo-readiness.md"]
+rationale = "A future OSS edition must run locally without a required managed service."
+
+[[capabilities]]
+id = "DEPLOY-K8S-BASE"
+name = "Generic Kubernetes and Helm evaluation baseline"
+lifecycle = "current"
+disposition = "oss"
+areas = ["infra/helm/limes-axis"]
+evidence = ["infra/helm/limes-axis/Chart.yaml", "docs/deployment.md"]
+rationale = "Generic self-hosting assets belong with the usable baseline; supported commercial profiles are separate rows."
+
+[[capabilities]]
+id = "HOSTED-MULTITENANT"
+name = "Managed multi-tenancy, fleet admission and organization lifecycle"
+lifecycle = "current"
+disposition = "hosted"
+areas = ["services/api", "apps/web"]
+evidence = ["docs/platform-tenants.md"]
+rationale = "Operating many customer tenants is a fleet responsibility with isolation, abuse and lifecycle burden."
+
+[[capabilities]]
+id = "HOSTED-USAGE"
+name = "Tenant quotas and durable usage metering"
+lifecycle = "current"
+disposition = "hosted"
+areas = ["services/api", "apps/web"]
+evidence = ["docs/platform-usage-metering.md"]
+rationale = "Fleet quotas and operator-grade metering primarily support managed capacity and commercial operations."
+
+[[capabilities]]
+id = "HOSTED-MANAGED-EXECUTION"
+name = "Managed connector and model execution operations"
+lifecycle = "current"
+disposition = "hosted"
+areas = ["services/api", "services/worker"]
+evidence = ["docs/platform-connectors.md", "docs/platform-model-routing.md"]
+rationale = "Limes-operated credentials, egress, workers and provider capacity create continuous service responsibility."
+
+[[capabilities]]
+id = "HOSTED-AGENT-FLEET"
+name = "Advanced governed-agent fleet and autonomy operations"
+lifecycle = "current"
+disposition = "hosted"
+areas = ["services/api", "services/worker", "apps/web"]
+evidence = ["docs/platform-agents.md", "docs/platform-actions.md"]
+rationale = "Fleet policy, autonomy ceilings and ongoing execution assurance are defensible managed operations."
+
+[[capabilities]]
+id = "ENTERPRISE-IDENTITY"
+name = "Enterprise identity profiles, SSO operations and federation evidence"
+lifecycle = "current"
+disposition = "enterprise-private-cloud"
+areas = ["services/api", "infra/docker", "infra/helm/limes-axis"]
+evidence = ["docs/deployment.md", "docs/runbooks/keycloak-realm-bootstrap.md"]
+rationale = "Customer IdP integration, access review and federation operations are deployment-specific assurance work."
+
+[[capabilities]]
+id = "ENTERPRISE-COMPLIANCE"
+name = "Managed audit signing, WORM retention, legal holds and evidence reports"
+lifecycle = "current"
+disposition = "enterprise-private-cloud"
+areas = ["services/api", "services/worker", "infra/helm/limes-axis"]
+evidence = ["docs/platform-audit.md", "docs/deployment.md"]
+rationale = "These controls require customer policy, KMS/storage operations and review evidence that code alone cannot provide."
+
+[[capabilities]]
+id = "HOSTED-DEPLOYMENT-PROFILE"
+name = "Supported single-tenant managed deployment profile"
+lifecycle = "current"
+disposition = "hosted"
+areas = ["infra/helm/limes-axis"]
+evidence = ["infra/helm/limes-axis/profiles/single-tenant-managed.yaml"]
+rationale = "The profile is valuable with Limes-owned provisioning, upgrades, monitoring and support."
+
+[[capabilities]]
+id = "ENTERPRISE-DEPLOYMENT-PROFILES"
+name = "Private-cloud and offline/on-prem deployment profiles"
+lifecycle = "current"
+disposition = "enterprise-private-cloud"
+areas = ["infra/helm/limes-axis"]
+evidence = ["infra/helm/limes-axis/profiles/private-cloud.yaml", "infra/helm/limes-axis/profiles/on-prem-offline.yaml"]
+rationale = "Dedicated infrastructure, customer controls and offline constraints require supported deployment engineering."
+
+[[capabilities]]
+id = "ENTERPRISE-OPERATIONS"
+name = "HA, DR, TLS, backup, restore, vulnerability and support evidence operations"
+lifecycle = "current"
+disposition = "enterprise-private-cloud"
+areas = ["services/api", "services/worker", "infra/helm/limes-axis", "docs/runbooks"]
+evidence = ["docs/deployment.md", "docs/support-operations.md"]
+rationale = "Production evidence depends on customer infrastructure, drills, staffing and contractual service objectives."
+
+[[capabilities]]
+id = "CONNECTOR-GENERIC-NEXT"
+name = "Generic object-storage drop and REST-pull connectors"
+lifecycle = "planned"
+disposition = "oss"
+areas = ["services/api", "services/worker"]
+evidence = ["plan.md"]
+rationale = "Generic, self-hosted adapters expand ecosystem value without bundling vendor-specific managed operations."
+
+[[capabilities]]
+id = "SDK-CONNECTOR-KIT"
+name = "Connector authoring contracts and validation kit"
+lifecycle = "planned"
+disposition = "shared-sdk"
+areas = ["packages/schemas", "packages/sdk-python"]
+evidence = ["plan.md"]
+rationale = "A narrow authoring contract increases interoperability while execution policy remains edition-specific."
+
+[[capabilities]]
+id = "ENTERPRISE-PREMIUM-CONNECTORS"
+name = "Maintained ERP, MES, CRM and customer-specific connector packs"
+lifecycle = "planned"
+disposition = "enterprise-private-cloud"
+areas = ["services/api", "services/worker"]
+evidence = ["plan.md"]
+rationale = "Vendor certification, upgrades, customer mapping and support are ongoing enterprise integration work."
+
+[[capabilities]]
+id = "OSS-SEARCH"
+name = "Permission-aware local full-text and hybrid search baseline"
+lifecycle = "planned"
+disposition = "oss"
+areas = ["services/api", "apps/web"]
+evidence = ["plan.md"]
+rationale = "A local search flow makes connected data useful without requiring a managed index service."
+
+[[capabilities]]
+id = "OSS-DOCUMENTS"
+name = "Local document upload, extraction and citation provenance"
+lifecycle = "planned"
+disposition = "oss"
+areas = ["services/api", "services/worker", "apps/web"]
+evidence = ["plan.md"]
+rationale = "Bounded local documents complete search and grounded-answer evaluation."
+
+[[capabilities]]
+id = "OSS-EMBEDDINGS"
+name = "Self-hosted embedding adapter"
+lifecycle = "planned"
+disposition = "oss"
+areas = ["services/api", "services/worker"]
+evidence = ["plan.md"]
+rationale = "A self-hosted adapter preserves sovereignty and avoids a required managed model endpoint."
+
+[[capabilities]]
+id = "OSS-ASSISTANT"
+name = "Local grounded Assistant with propose-only actions"
+lifecycle = "planned"
+disposition = "oss"
+areas = ["services/api", "services/worker", "apps/web"]
+evidence = ["plan.md"]
+rationale = "A cited, permission-filtered local flow is useful while retaining human approval for effects."
+
+[[capabilities]]
+id = "HOSTED-AI-OPERATIONS"
+name = "Managed model endpoints, embedding capacity and retrieval operations"
+lifecycle = "planned"
+disposition = "hosted"
+areas = ["services/api", "services/worker"]
+evidence = ["plan.md"]
+rationale = "Provider capacity, cost, egress, scaling and service reliability are managed operator responsibilities."
+
+[[capabilities]]
+id = "OSS-SCENARIOS"
+name = "Generic deterministic scenario engine and authoring baseline"
+lifecycle = "planned"
+disposition = "oss"
+areas = ["services/api", "services/worker", "apps/web"]
+evidence = ["plan.md"]
+rationale = "A generic local what-if engine extends the existing replay foundation without a proprietary vertical pack."
+
+[[capabilities]]
+id = "SDK-VERTICAL-KIT"
+name = "Vertical authoring template and shared contracts"
+lifecycle = "planned"
+disposition = "shared-sdk"
+areas = ["packages/schemas", "packages/sdk-python", "examples/manufacturing-plant"]
+evidence = ["plan.md"]
+rationale = "Open authoring contracts improve ecosystem adoption while supported content packs remain commercial."
+
+[[capabilities]]
+id = "ENTERPRISE-VERTICAL-PACKS"
+name = "Maintained industry vertical packs and operating playbooks"
+lifecycle = "planned"
+disposition = "enterprise-private-cloud"
+areas = ["services/api", "services/worker", "apps/web"]
+evidence = ["plan.md"]
+rationale = "Curated ontology, workflow, connector and assurance content is maintained domain expertise."
+
+[[capabilities]]
+id = "OSS-ENABLEMENT"
+name = "Guided local onboarding, single-node profile and localization"
+lifecycle = "planned"
+disposition = "oss"
+areas = ["apps/web", "services/api", "infra/docker", "infra/helm/limes-axis"]
+evidence = ["plan.md"]
+rationale = "A usable OSS candidate must be installable and understandable without commercial onboarding."
+
+[[capabilities]]
+id = "HOSTED-PROSPECT-SANDBOX"
+name = "Time-boxed hosted prospect sandbox and reset lifecycle"
+lifecycle = "planned"
+disposition = "hosted"
+areas = ["services/api", "services/worker", "apps/web", "infra/helm/limes-axis"]
+evidence = ["plan.md"]
+rationale = "Invites, isolation, reset, abuse prevention and capacity are hosted fleet operations."
+
+[[capabilities]]
+id = "HOSTED-ORG-ADMIN"
+name = "Multi-organization administration and user provisioning"
+lifecycle = "planned"
+disposition = "hosted"
+areas = ["services/api", "apps/web"]
+evidence = ["plan.md"]
+rationale = "Cross-organization lifecycle and provisioning are managed control-plane responsibilities."
+
+[[capabilities]]
+id = "ENTERPRISE-SSO-NEXT"
+name = "Advanced SSO federation and customer access operations"
+lifecycle = "planned"
+disposition = "enterprise-private-cloud"
+areas = ["services/api", "apps/web", "infra/helm/limes-axis"]
+evidence = ["plan.md"]
+rationale = "Federation, customer policy and access review depend on each enterprise environment."
+
+[[capabilities]]
+id = "HOSTED-MANAGED-UPGRADES"
+name = "Managed upgrades, fleet observability and service operations"
+lifecycle = "planned"
+disposition = "hosted"
+areas = ["services/api", "services/worker", "infra/helm/limes-axis"]
+evidence = ["plan.md"]
+rationale = "Continuous rollout, telemetry and support burden is the value of a managed service."
+
+[[capabilities]]
+id = "HOSTED-USAGE-BILLING"
+name = "Billing-ready metering and signed tenant usage statements"
+lifecycle = "planned"
+disposition = "hosted"
+areas = ["services/api", "services/worker", "apps/web"]
+evidence = ["plan.md"]
+rationale = "Commercial metering, statements and billing integration belong to the hosted operator boundary."

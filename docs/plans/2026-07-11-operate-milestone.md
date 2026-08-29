@@ -327,7 +327,7 @@ design the hosted prospect sandbox. This is the first workstream to execute.
       complete commercial source of truth. Any future `limes-axis-oss` is a
       files-only, allowlisted export into a new repository with fresh history;
       it is not a fork, upstream or automatic synchronization target.
-- [ ] Editions audit: a feature-by-feature disposition against a written
+- [x] Editions audit: a feature-by-feature disposition against a written
       boundary rule — *single-tenant self-hosting stays fully usable in the
       open-source edition; operating many tenants, compliance-as-a-service
       and bespoke enterprise deployment engineering belong to the commercial
@@ -337,7 +337,7 @@ design the hosted prospect sandbox. This is the first workstream to execute.
       self-hosting usability, the future OSS edition keeps a simplified,
       always-usable baseline. Nothing already shipped is erased; this is a
       forward-shipping boundary, stated transparently.
-- [ ] `docs/editions.md`: the public editions statement — what the
+- [x] `docs/editions.md`: the public editions statement — what the
       open-source edition includes, and the commercial edition's value by
       category: managed European model endpoints, a maintained premium
       connector pack for major enterprise systems, a compliance pack

@@ -8,7 +8,9 @@ boundaries. Delivery sequence and superseded intermediate designs belong in the
 This private repository is the complete commercial source of truth. The
 [repository-topology ADR](./adr/0002-commercial-source-and-oss-export-boundary.md)
 owns the separate, future OSS publication boundary; no OSS repository or export
-path is part of the current runtime.
+path is part of the current runtime. The
+[edition capability matrix](./editions.md) classifies product scope without
+treating mixed top-level directories as release units.
 
 ## Current Component and Data Flow
 

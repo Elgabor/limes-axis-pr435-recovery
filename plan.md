@@ -1265,7 +1265,7 @@ plan is
 
 - [x] Record this private repository as the complete commercial source of truth
   and define a one-way, fresh-history OSS export boundary in an ADR.
-- [ ] Run the editions audit against the written boundary rule, block export
+- [x] Run the editions audit against the written boundary rule, block export
   while any capability is undecided and publish the editions statement in
   `docs/editions.md`.
 - [ ] Design the invite-based hosted prospect sandbox with automatic reset and
