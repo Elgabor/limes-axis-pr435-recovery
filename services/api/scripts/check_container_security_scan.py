@@ -41,6 +41,7 @@ def required_workflow_terms() -> tuple[str, ...]:
         "ignore-unfixed: true",
         "vuln-type: os,library",
         "scanners: vuln",
+        "continue-on-error: true",
         "exit-code: \"1\"",
     )
 

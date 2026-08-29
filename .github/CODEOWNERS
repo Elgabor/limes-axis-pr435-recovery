@@ -1,0 +1,19 @@
+# Default responsibility until additional write-enabled teams are established.
+* @metaforismo
+
+# Governance and security controls own themselves explicitly.
+/.github/ @metaforismo
+/SECURITY.md @metaforismo
+/CODE_OF_CONDUCT.md @metaforismo
+/SUPPORT.md @metaforismo
+/CHANGELOG.md @metaforismo
+/CONTRIBUTING.md @metaforismo
+
+# Product and runtime boundaries.
+/apps/web/ @metaforismo
+/services/api/ @metaforismo
+/services/worker/ @metaforismo
+/packages/ @metaforismo
+/infra/ @metaforismo
+/docs/ @metaforismo
+/scripts/ @metaforismo

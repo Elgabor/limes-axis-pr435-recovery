@@ -172,6 +172,10 @@ expiring vulnerability exceptions.
 
 - [Architecture](./docs/architecture.md)
 - [Architecture changelog](./docs/architecture-changelog.md)
+- [Repository governance](./docs/repository-governance.md)
+- [Architecture decision records](./docs/adr/README.md)
+- [Changelog](./CHANGELOG.md)
+- [Support](./SUPPORT.md)
 - [Demo readiness](./docs/demo-readiness.md)
 - [Deployment](./docs/deployment.md)
 - [Approval delivery outbox](./docs/approval-decision-outbox.md)

@@ -182,6 +182,9 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Check documentation paths
+        run: make docs-check
+
       - name: Install API dependencies
         working-directory: services/api
         run: uv sync --locked

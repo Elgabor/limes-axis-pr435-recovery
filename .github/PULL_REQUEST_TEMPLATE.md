@@ -8,6 +8,12 @@
 - [ ] `make test`
 - [ ] `make typecheck`
 - [ ] `make build-web`
+- [ ] `make docs-check`
+
+## Change records
+
+- [ ] Updated `CHANGELOG.md`, or explained why this change is exempt.
+- [ ] Added/updated an ADR when ownership, data flow, trust boundaries, runtime dependencies or repository-wide policy changed.
 
 ## Architecture drift
 
@@ -21,3 +27,5 @@
 - [ ] Security, tenant, permission, audit and egress boundaries are preserved.
 
 ## Notes
+
+- NOT RUN:

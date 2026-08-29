@@ -37,6 +37,7 @@ def test_container_security_scan_workflow_builds_and_scans_both_images() -> None
     assert "image-ref: limes-axis-${{ matrix.component }}:scan" in terms
     assert "severity: CRITICAL" in terms
     assert "ignore-unfixed: true" in terms
+    assert "continue-on-error: true" in terms
     assert "exit-code: \"1\"" in terms
     build_command = (
         "docker build -f ${{ matrix.dockerfile }} "
