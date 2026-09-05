@@ -828,12 +828,8 @@ def test_manufacturing_overview_endpoint_rejects_invalid_reference_payload(
     assert response.json()["detail"]["code"] == "VALIDATION_FAILED"
 
 
-def test_openapi_exposes_manufacturing_overview_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/overview" in response.json()["paths"]
+def test_openapi_exposes_manufacturing_overview_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/overview" in openapi_schema["paths"]
 
 
 def test_manufacturing_workflow_console_bootstrap_seed_is_inspectable() -> None:
@@ -972,12 +968,8 @@ def test_manufacturing_workflow_console_endpoint_rejects_invalid_reference_paylo
     assert response.json()["detail"]["code"] == "VALIDATION_FAILED"
 
 
-def test_openapi_exposes_manufacturing_workflow_console_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/workflows" in response.json()["paths"]
+def test_openapi_exposes_manufacturing_workflow_console_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/workflows" in openapi_schema["paths"]
 
 
 def test_manufacturing_agent_registry_bootstrap_seed_is_governed() -> None:
@@ -1148,12 +1140,8 @@ def test_manufacturing_agent_registry_endpoint_returns_bootstrap_public_data(
     assert "password" not in str(body).lower()
 
 
-def test_openapi_exposes_manufacturing_agent_registry_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/agents" in response.json()["paths"]
+def test_openapi_exposes_manufacturing_agent_registry_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/agents" in openapi_schema["paths"]
 
 
 def test_manufacturing_action_registry_bootstrap_seed_is_policy_gated() -> None:
@@ -1333,12 +1321,8 @@ def test_manufacturing_action_registry_endpoint_returns_bootstrap_public_data(
     assert "password" not in str(body).lower()
 
 
-def test_openapi_exposes_manufacturing_action_registry_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/actions" in response.json()["paths"]
+def test_openapi_exposes_manufacturing_action_registry_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/actions" in openapi_schema["paths"]
 
 
 def test_manufacturing_approval_inbox_bootstrap_seed_is_governed() -> None:
@@ -1486,12 +1470,8 @@ def test_manufacturing_approval_inbox_endpoint_rejects_invalid_reference_payload
     assert response.json()["detail"]["code"] == "VALIDATION_FAILED"
 
 
-def test_openapi_exposes_manufacturing_approval_inbox_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/approvals" in response.json()["paths"]
+def test_openapi_exposes_manufacturing_approval_inbox_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/approvals" in openapi_schema["paths"]
 
 
 def test_manufacturing_audit_explorer_bootstrap_seed_is_filterable() -> None:
@@ -1630,12 +1610,8 @@ def test_manufacturing_audit_explorer_endpoint_rejects_invalid_reference_payload
     assert response.json()["detail"]["code"] == "VALIDATION_FAILED"
 
 
-def test_openapi_exposes_manufacturing_audit_explorer_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/audit" in response.json()["paths"]
+def test_openapi_exposes_manufacturing_audit_explorer_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/audit" in openapi_schema["paths"]
 
 
 def test_manufacturing_model_routing_bootstrap_seed_is_observable() -> None:
@@ -1791,12 +1767,8 @@ def test_manufacturing_model_routing_endpoint_rejects_invalid_reference_payload(
     assert response.json()["detail"]["code"] == "VALIDATION_FAILED"
 
 
-def test_openapi_exposes_manufacturing_model_routing_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/model-routing" in response.json()["paths"]
+def test_openapi_exposes_manufacturing_model_routing_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/model-routing" in openapi_schema["paths"]
 
 
 def test_manufacturing_ontology_bootstrap_seed_has_valid_relationships() -> None:
@@ -1954,12 +1926,8 @@ def test_manufacturing_ontology_endpoint_rejects_invalid_reference_payload(
     assert response.json()["detail"]["code"] == "VALIDATION_FAILED"
 
 
-def test_openapi_exposes_manufacturing_ontology_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/ontology" in response.json()["paths"]
+def test_openapi_exposes_manufacturing_ontology_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/ontology" in openapi_schema["paths"]
 
 
 def test_manufacturing_ontology_entity_detail_bootstrap_seed_is_connected() -> None:
@@ -2150,16 +2118,14 @@ def test_manufacturing_ontology_entity_detail_endpoint_allows_relationship_scope
     assert response.json()["node"]["node_id"] == "asset_persisted_line"
 
 
-def test_openapi_exposes_manufacturing_ontology_entity_detail_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
+def test_openapi_exposes_manufacturing_ontology_entity_detail_endpoint(
+    openapi_schema: dict,
+) -> None:
     for path in (
         "/operations/ontology/entities/{node_id}",
         "/demo/manufacturing/ontology/entities/{node_id}",
     ):
-        operation = response.json()["paths"][path]["get"]
+        operation = openapi_schema["paths"][path]["get"]
         node_id_parameter = next(
             parameter for parameter in operation["parameters"] if parameter["name"] == "node_id"
         )

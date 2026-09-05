@@ -1036,12 +1036,8 @@ def test_manufacturing_demo_readiness_endpoint_reports_demo_ready_evidence(
     assert "secret" not in str(body).lower()
 
 
-def test_openapi_exposes_manufacturing_operations_snapshot_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+def test_openapi_exposes_manufacturing_operations_snapshot_endpoint(openapi_schema: dict) -> None:
+    paths = openapi_schema["paths"]
     assert "/demo/manufacturing/operations/snapshot" in paths
     assert "/demo/manufacturing/notifications" in paths
     assert "/demo/manufacturing/demo-readiness" in paths

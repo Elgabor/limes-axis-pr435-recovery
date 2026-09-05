@@ -1420,13 +1420,9 @@ def test_action_run_list_endpoint_reports_outcome_and_derived_waiting_duration(
     assert pending_record["updated_at"]
 
 
-def test_openapi_exposes_action_run_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/actions/{action_id}/runs" in response.json()["paths"]
-    assert "/demo/manufacturing/actions/runs/{action_run_id}/outcome" in response.json()[
+def test_openapi_exposes_action_run_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/actions/{action_id}/runs" in openapi_schema["paths"]
+    assert "/demo/manufacturing/actions/runs/{action_run_id}/outcome" in openapi_schema[
         "paths"
     ]
-    assert "/operations/actions/runs" in response.json()["paths"]
+    assert "/operations/actions/runs" in openapi_schema["paths"]

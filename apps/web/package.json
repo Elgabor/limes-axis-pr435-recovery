@@ -12,7 +12,7 @@
     "test": "vitest run",
     "test:e2e": "export NEXT_PUBLIC_AXIS_API_BASE_URL=http://127.0.0.1:65534; next build && pnpm run test:e2e:smoke",
     "test:e2e:smoke": "playwright test e2e/smoke.spec.ts",
-    "test:e2e:live": "export NEXT_PUBLIC_AXIS_API_BASE_URL=http://127.0.0.1:8000 AXIS_E2E_LIVE_API=1; next build && pnpm run test:e2e:live:read && pnpm run test:e2e:live:stateful",
+    "test:e2e:live": "export AXIS_E2E_API_BASE_URL=${AXIS_E2E_API_BASE_URL:-http://127.0.0.1:8000}; export NEXT_PUBLIC_AXIS_API_BASE_URL=$AXIS_E2E_API_BASE_URL AXIS_E2E_LIVE_API=1; next build && pnpm run test:e2e:live:read && pnpm run test:e2e:live:stateful",
     "test:e2e:live:read": "export AXIS_E2E_LIVE_API=1; playwright test e2e/live-overview.spec.ts e2e/control-room.spec.ts e2e/connectors-flow.spec.ts e2e/onboarding.spec.ts --grep-invert @stateful",
     "test:e2e:live:stateful": "export AXIS_E2E_LIVE_API=1; playwright test e2e/live-overview.spec.ts e2e/onboarding.spec.ts --grep @stateful --project=chromium --workers=1",
     "typecheck": "tsc --noEmit"

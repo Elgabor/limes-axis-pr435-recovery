@@ -24,6 +24,13 @@ release-bound behavior, not the complete commit history.
 
 ### Changed
 
+- Data-asset lineage batches promotion history reads while retaining tenant
+  isolation, chronological output and the latest-50 limit per proposal.
+- CSV preview detects duplicate headers in one pass with unchanged validation
+  messages and ordering.
+- Local development targets load the repository-root environment file; setup
+  uses committed lockfiles and verification includes the public schema package.
+
 - The architecture overview now describes current runtime truth while delivery
   history lives in a separate changelog ([#359](https://github.com/Limes-Labs/limes-axis/issues/359)).
 - The API compatibility suite is warning-clean and fails on new warnings

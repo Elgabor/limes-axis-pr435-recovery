@@ -56,29 +56,37 @@ def build_data_asset_lineage_view(
         ),
         key=lambda proposal: (proposal.created_at, proposal.proposal_id),
     )
+    promotions_by_proposal: dict[str, list[DataAssetLineagePromotion]] = {}
+    for proposal_id, promotion_id, status, mode, requested_by, created_at in (
+        repository.iter_connector_ontology_lineage_promotions(
+            tenant_id, [proposal.proposal_id for proposal in proposals],
+        )
+    ):
+        promotions_by_proposal.setdefault(proposal_id, []).append(DataAssetLineagePromotion(
+            promotion_id=promotion_id,
+            status=status,
+            promotion_mode=mode,
+            requested_by=requested_by,
+            created_at=created_at,
+        ))
+    # Preserve Python's string ordering regardless of the database collation.
+    for promotions in promotions_by_proposal.values():
+        promotions.sort(key=lambda promotion: (promotion.created_at, promotion.promotion_id))
+
     return DataAssetLineageView(
         tenant_id=tenant_id,
         asset_id=asset_id,
         proposals=[
-            _lineage_proposal_view(repository, tenant_id, proposal)
+            _lineage_proposal_view(proposal, promotions_by_proposal.get(proposal.proposal_id, []))
             for proposal in proposals
         ],
     )
 
 
 def _lineage_proposal_view(
-    repository: AxisPersistenceRepository,
-    tenant_id: str,
     proposal: ConnectorOntologyProposal,
+    promotions: list[DataAssetLineagePromotion],
 ) -> DataAssetLineageProposal:
-    promotions = sorted(
-        repository.list_connector_ontology_promotions(
-            tenant_id,
-            proposal_id=proposal.proposal_id,
-            limit=50,
-        ),
-        key=lambda promotion: (promotion.created_at, promotion.promotion_id),
-    )
     return DataAssetLineageProposal(
         proposal_id=proposal.proposal_id,
         status=proposal.status,
@@ -88,14 +96,5 @@ def _lineage_proposal_view(
         proposed_by=proposal.proposed_by,
         created_at=proposal.created_at,
         promoted_at=proposal.promoted_at,
-        promotions=[
-            DataAssetLineagePromotion(
-                promotion_id=promotion.promotion_id,
-                status=promotion.status,
-                promotion_mode=promotion.promotion_mode,
-                requested_by=promotion.requested_by,
-                created_at=promotion.created_at,
-            )
-            for promotion in promotions
-        ],
+        promotions=promotions,
     )

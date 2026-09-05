@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import json
+from collections import Counter
 from datetime import datetime
 from enum import StrEnum
 from io import StringIO
@@ -285,7 +286,7 @@ def _validation_issues(
         for column in _required_columns(manifest)
         if column not in headers
     ]
-    duplicate_headers = sorted({header for header in headers if headers.count(header) > 1})
+    duplicate_headers = sorted(header for header, count in Counter(headers).items() if count > 1)
     issues.extend(f"Duplicate CSV header: {header}" for header in duplicate_headers)
     if not rows:
         issues.append("CSV file must contain at least one data row.")

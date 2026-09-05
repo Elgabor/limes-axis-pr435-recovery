@@ -511,10 +511,6 @@ def test_create_connector_ontology_proposals_rejects_graph_write_mode(
     assert response.json()["detail"]["reason"] == "unsupported_write_mode"
 
 
-def test_openapi_exposes_connector_ontology_proposal_endpoints() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+def test_openapi_exposes_connector_ontology_proposal_endpoints(openapi_schema: dict) -> None:
+    paths = openapi_schema["paths"]
     assert "/demo/manufacturing/connectors/ontology-proposals" in paths

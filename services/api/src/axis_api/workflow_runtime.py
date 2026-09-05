@@ -433,49 +433,12 @@ class DeferredWorkflowSignalRuntime:
 
 
 def workflow_signal_failure_result(
-    request: WorkflowSignalRequest,
-    reason: str,
-    adapter: str = TemporalWorkflowSignalRuntime.adapter_name,
-) -> WorkflowSignalResult:
-    return WorkflowSignalResult(
-        workflow_id=request.workflow_id,
-        status="runtime_signal_unavailable",
-        adapter=adapter,
-        signal_name=request.signal_name,
-        payload={**request.audit_payload, "reason": reason},
-    )
-
-
-def workflow_action_signal_failure_result(
-    request: WorkflowActionSignalRequest,
-    reason: str,
-    adapter: str = TemporalWorkflowSignalRuntime.adapter_name,
-) -> WorkflowSignalResult:
-    return WorkflowSignalResult(
-        workflow_id=request.workflow_id,
-        status="runtime_signal_unavailable",
-        adapter=adapter,
-        signal_name=request.signal_name,
-        payload={**request.audit_payload, "reason": reason},
-    )
-
-
-def workflow_connector_manual_import_signal_failure_result(
-    request: WorkflowConnectorManualImportSignalRequest,
-    reason: str,
-    adapter: str = TemporalWorkflowSignalRuntime.adapter_name,
-) -> WorkflowSignalResult:
-    return WorkflowSignalResult(
-        workflow_id=request.workflow_id,
-        status="runtime_signal_unavailable",
-        adapter=adapter,
-        signal_name=request.signal_name,
-        payload={**request.audit_payload, "reason": reason},
-    )
-
-
-def workflow_connector_evidence_snapshot_export_signal_failure_result(
-    request: WorkflowConnectorEvidenceSnapshotExportSignalRequest,
+    request: (
+        WorkflowSignalRequest
+        | WorkflowActionSignalRequest
+        | WorkflowConnectorManualImportSignalRequest
+        | WorkflowConnectorEvidenceSnapshotExportSignalRequest
+    ),
     reason: str,
     adapter: str = TemporalWorkflowSignalRuntime.adapter_name,
 ) -> WorkflowSignalResult:

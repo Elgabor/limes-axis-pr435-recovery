@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
@@ -4775,6 +4775,42 @@ class AxisPersistenceRepository:
             ConnectorOntologyPromotion.id.desc(),
         ).limit(limit)
         return list(self.session.scalars(statement))
+
+    def iter_connector_ontology_lineage_promotions(
+        self,
+        tenant_id: str,
+        proposal_ids: list[str],
+    ) -> Iterator[tuple[str, str, str, str, str, datetime]]:
+        if not proposal_ids:
+            return
+
+        # Rank within each proposal before limiting: a global LIMIT would let
+        # a busy proposal hide another proposal's promotion history.
+        promotion = ConnectorOntologyPromotion
+        ranked = select(
+            promotion.id,
+            func.row_number().over(
+                partition_by=promotion.proposal_id,
+                order_by=(promotion.created_at.desc(), promotion.id.desc()),
+            ).label("position"),
+        ).where(
+            promotion.tenant_id == tenant_id,
+            promotion.proposal_id.in_(proposal_ids),
+        ).subquery()
+        # Lineage needs neither the mutation payload nor policy/audit JSON.
+        # Stream the projection so a full history does not retain 10,000 ORM objects.
+        statement = select(
+            promotion.proposal_id,
+            promotion.promotion_id,
+            promotion.status,
+            promotion.promotion_mode,
+            promotion.requested_by,
+            promotion.created_at,
+        ).join(ranked, promotion.id == ranked.c.id).where(
+            promotion.tenant_id == tenant_id,
+            ranked.c.position <= 50,
+        )
+        yield from self.session.execute(statement.execution_options(yield_per=100)).tuples()
 
     def record_connector_ontology_proposal_promotion(
         self,

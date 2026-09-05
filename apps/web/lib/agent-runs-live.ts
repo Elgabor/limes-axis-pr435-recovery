@@ -11,8 +11,6 @@ import { OPERATIONS_API_PREFIX } from "./tenant-scope";
  * AgentRunsLiveParseError instead of degrading into fabricated defaults.
  */
 
-export const AGENT_RUN_EXECUTION_FLAG = "AXIS_AGENT_RUN_EXECUTION_ENABLED";
-
 export const agentRunStepOrder = ["context_read", "model_invocation", "proposal"] as const;
 
 export type AgentRunStepType = (typeof agentRunStepOrder)[number];

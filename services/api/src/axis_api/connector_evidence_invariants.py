@@ -52,7 +52,7 @@ from axis_api.workflow_runtime import (
     WorkflowSignalError,
     WorkflowSignalResult,
     WorkflowSignalRuntime,
-    workflow_connector_evidence_snapshot_export_signal_failure_result,
+    workflow_signal_failure_result,
 )
 
 READ_AUDIT_EVENT_TYPE = "connector.evidence_invariants_read"
@@ -1484,7 +1484,7 @@ async def _signal_snapshot_export_workflow(
     try:
         return await workflow_runtime.signal_connector_evidence_snapshot_export(signal_request)
     except WorkflowSignalError as exc:
-        return workflow_connector_evidence_snapshot_export_signal_failure_result(
+        return workflow_signal_failure_result(
             signal_request,
             reason=str(exc),
         )

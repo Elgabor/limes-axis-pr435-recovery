@@ -165,12 +165,9 @@ def test_playwright_console_origin_is_allowed_for_cors_preflight() -> None:
     assert "cache-control" in response.headers["access-control-allow-headers"].lower()
 
 
-def test_openapi_metadata_names_axis() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-    assert response.status_code == 200
-    assert response.json()["info"]["title"] == "Limes Axis API"
-    assert "/ready" in response.json()["paths"]
+def test_openapi_metadata_names_axis(openapi_schema: dict) -> None:
+    assert openapi_schema["info"]["title"] == "Limes Axis API"
+    assert "/ready" in openapi_schema["paths"]
 
 
 def test_production_disables_public_api_documentation() -> None:

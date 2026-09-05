@@ -427,10 +427,6 @@ def test_create_connector_configuration_endpoint_reports_missing_connector_regis
     }
 
 
-def test_openapi_exposes_connector_configuration_endpoints() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+def test_openapi_exposes_connector_configuration_endpoints(openapi_schema: dict) -> None:
+    paths = openapi_schema["paths"]
     assert "/demo/manufacturing/connectors/configurations" in paths

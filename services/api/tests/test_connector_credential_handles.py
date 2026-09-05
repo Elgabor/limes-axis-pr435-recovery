@@ -457,11 +457,7 @@ def test_rotate_connector_credential_handle_records_rotation_history(
     assert body["next_rotation_due_at"] == "2026-07-22T00:00:00Z"
 
 
-def test_openapi_exposes_connector_credential_handle_endpoints() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+def test_openapi_exposes_connector_credential_handle_endpoints(openapi_schema: dict) -> None:
+    paths = openapi_schema["paths"]
     assert "/demo/manufacturing/connectors/credential-handles" in paths
     assert "/demo/manufacturing/connectors/credential-handles/{handle_id}/rotations" in paths

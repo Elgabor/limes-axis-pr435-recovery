@@ -1,5 +1,3 @@
-from typing import Protocol
-
 from pydantic import BaseModel, Field
 
 
@@ -14,14 +12,3 @@ class WorkflowState(BaseModel):
     workflow_id: str
     status: str
     payload: dict
-
-
-class WorkflowRuntimePort(Protocol):
-    async def start_workflow(self, request: WorkflowStartRequest) -> WorkflowState:
-        ...
-
-    async def signal_approval(self, workflow_id: str, approved: bool) -> WorkflowState:
-        ...
-
-    async def cancel_workflow(self, workflow_id: str, reason: str) -> WorkflowState:
-        ...

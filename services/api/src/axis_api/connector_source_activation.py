@@ -34,7 +34,7 @@ from axis_api.persistence import (
 )
 
 if TYPE_CHECKING:
-    from axis_api.config import Settings
+    pass
 
 SOURCE_ACTIVATION_SCOPE = "connectors:source:activate"
 ACTIVATION_AUDIT_EVENT_TYPE = "connector.source.bindings.activated"
@@ -143,10 +143,6 @@ class ConnectorSourceBindingsView(BaseModel):
     tenant_id: str = Field(min_length=1)
     connector_id: str = Field(min_length=1)
     bindings: list[SourceBindingView]
-
-
-def max_source_activation_selections(settings: "Settings") -> int:
-    return settings.connector_source_activation_max_selections
 
 
 def _qualified_resource_name_is_safe(resource_name: str) -> bool:

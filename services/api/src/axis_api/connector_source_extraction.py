@@ -20,7 +20,7 @@ import hashlib
 import json
 import time
 from collections.abc import Callable
-from typing import Any, Protocol
+from typing import Any
 from urllib.parse import urlparse
 
 import psycopg
@@ -147,29 +147,6 @@ class SourceExtractionOutcome(BaseModel):
     # returned over HTTP, or persisted in Postgres.
     payload_envelope: dict | None = None
     stored: dict | None = None
-
-
-class SourceExtractionRuntimePort(Protocol):
-    """The seam a real extraction runtime implements.
-
-    Implementations must stay truthful: flags ``source_dial_performed`` and
-    ``extraction_performed`` are true only when a source was dialed and rows
-    were read, and payloads travel only through ``payload_envelope``.
-    """
-
-    def extract_selection(
-        self,
-        *,
-        repository: AxisPersistenceRepository,
-        tenant_id: str,
-        connector_id: str,
-        request_id: str,
-        batch_key: str,
-        binding_id: str,
-        resource_name: str,
-        pinned_schema_fingerprint: str,
-        executed_by: str,
-    ) -> SourceExtractionOutcome: ...
 
 
 def _qualified_name_is_safe(resource_name: str) -> bool:

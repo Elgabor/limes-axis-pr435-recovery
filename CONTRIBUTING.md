@@ -30,6 +30,10 @@ Axis is under active development. Use the repository `Makefile` and package-loca
 commands documented in the README; do not infer readiness from one component's
 tests alone.
 
+The [development guide](docs/development.md) lists targeted checks, local CI
+parity, worktree setup and runtime/browser debugging. Repository-local agent
+instructions are in [AGENTS.md](AGENTS.md).
+
 ## Pull Request Expectations
 
 - open a pull request against `main`;

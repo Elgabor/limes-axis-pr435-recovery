@@ -25,7 +25,7 @@ from axis_api.workflow_runtime import (
     WorkflowSignalError,
     WorkflowSignalResult,
     WorkflowSignalRuntime,
-    workflow_connector_manual_import_signal_failure_result,
+    workflow_signal_failure_result,
 )
 
 
@@ -500,7 +500,7 @@ async def _signal_manual_import_workflow(
     try:
         return await workflow_runtime.signal_connector_manual_import(signal_request)
     except WorkflowSignalError as exc:
-        return workflow_connector_manual_import_signal_failure_result(
+        return workflow_signal_failure_result(
             signal_request,
             reason=str(exc),
         )

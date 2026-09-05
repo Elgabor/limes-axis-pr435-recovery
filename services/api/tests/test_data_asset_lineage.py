@@ -1,8 +1,8 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -185,12 +185,13 @@ def seed_promotion(
     status: str,
     promotion_mode: str = "approved_manual_import",
     graph_mutation_status: str = "type_db_mutation_applied",
+    tenant_id: str = TENANT_A,
 ) -> None:
     with session_scope(factory) as session:
         repository = AxisPersistenceRepository(session)
         promotion = repository.create_connector_ontology_promotion(
             ConnectorOntologyPromotionCreate(
-                tenant_id=TENANT_A,
+                tenant_id=tenant_id,
                 connector_id=CONNECTOR_ID,
                 promotion_id=promotion_id,
                 idempotency_key=f"idempotency-{promotion_id}",
@@ -217,6 +218,66 @@ def build_view(
             tenant_id=tenant_id,
             asset_id=asset_id,
         )
+
+
+def test_lineage_preserves_recent_limits_and_tenant_isolation_with_bounded_queries(
+    session_factory: sessionmaker,
+) -> None:
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    for index in range(201):
+        seed_proposal(
+            session_factory, proposal_id=f"proposal-{index:03}", node_id=f"asset-{index}",
+            created_at=timestamp + timedelta(seconds=index),
+        )
+    # Equal timestamps exercise the existing UUID tie-breaker at the limit.
+    for index in range(55):
+        seed_promotion(
+            session_factory, proposal_id="proposal-200", promotion_id=f"promotion-{index:03}",
+            created_at=timestamp, status="promotion_deferred",
+        )
+    seed_promotion(
+        session_factory, proposal_id="proposal-199", promotion_id="independent-history",
+        created_at=timestamp, status="promotion_deferred",
+    )
+    seed_proposal(
+        session_factory, proposal_id="proposal-200", node_id="other-tenant-asset",
+        tenant_id=TENANT_B, created_at=timestamp,
+    )
+    seed_promotion(
+        session_factory, proposal_id="proposal-200", promotion_id="other-tenant-promotion",
+        tenant_id=TENANT_B, created_at=timestamp, status="promotion_deferred",
+    )
+
+    with session_scope(session_factory) as session:
+        expected_promotions = sorted(
+            AxisPersistenceRepository(session).list_connector_ontology_promotions(
+                TENANT_A, proposal_id="proposal-200", limit=50,
+            ),
+            key=lambda promotion: (promotion.created_at, promotion.promotion_id),
+        )
+
+    statements = []
+
+    def record_statement(_connection, _cursor, statement, *_args):
+        statements.append(statement)
+
+    engine = session_factory.kw["bind"]
+    event.listen(engine, "before_cursor_execute", record_statement)
+    try:
+        view = build_view(session_factory)
+    finally:
+        event.remove(engine, "before_cursor_execute", record_statement)
+
+    assert [proposal.proposal_id for proposal in view.proposals] == [
+        f"proposal-{index:03}" for index in range(1, 201)
+    ]
+    assert [promotion.promotion_id for promotion in view.proposals[-1].promotions] == [
+        promotion.promotion_id for promotion in expected_promotions
+    ]
+    assert len(view.proposals[-1].promotions) == 50
+    assert [p.promotion_id for p in view.proposals[-2].promotions] == ["independent-history"]
+    assert all(not proposal.promotions for proposal in view.proposals[:-2])
+    assert len(statements) <= 8, "Lineage query count must not grow with the 200 proposals"
 
 
 def test_asset_without_proposals_has_empty_lineage(

@@ -2190,23 +2190,6 @@ def _authorize_connector_sync_checkpoint_claim_read(
         raise _scope_denial_http_exception(exc) from exc
 
 
-def _authorize_connector_tenant_read(
-    tenant_id: str,
-    principal: OidcPrincipal | None,
-) -> None:
-    """Reject a connector read whose query ``tenant_id`` differs from the principal.
-
-    Connector list/read routes historically trusted the caller-supplied
-    ``tenant_id`` query parameter. Binding the read to the verified OIDC
-    principal (same pattern as ``_authorize_connector_sync_checkpoint_read``)
-    keeps one tenant's connector records -- credential handles, configurations,
-    manifests and friends -- out of another tenant's reach. Unauthenticated demo
-    traffic (no principal) is unaffected, preserving the
-    ``AXIS_OIDC_AUTH_REQUIRED`` demo-mode convention.
-    """
-    _authorize_tenant_read(tenant_id, principal)
-
-
 def _authorize_source_ingestion_read(
     principal: OidcPrincipal | None,
     actor_scopes: list[str],
@@ -2245,21 +2228,6 @@ def _authorize_tenant_read(
                 "reason": TENANT_MISMATCH_REASON,
             },
         )
-
-
-def _authorize_agent_run_tenant_read(
-    tenant_id: str,
-    principal: OidcPrincipal | None,
-) -> None:
-    """Reject an agent run read whose query ``tenant_id`` differs from the principal.
-
-    Agent run records carry governance evidence (permission decisions, context
-    references, proposal payloads), so reads bind the verified OIDC principal
-    the same way ``_authorize_connector_tenant_read`` does. Unauthenticated demo
-    traffic (no principal) is unaffected, preserving the
-    ``AXIS_OIDC_AUTH_REQUIRED`` demo-mode convention.
-    """
-    _authorize_tenant_read(tenant_id, principal)
 
 
 def _bind_connector_run_actor(
@@ -2963,22 +2931,6 @@ def create_app(
         )
         return response
 
-    def session_refresh_error(
-        *,
-        status_code: int,
-        reason: str,
-        message: str,
-        error_code: AxisErrorCode = AxisErrorCode.AUTH_REQUIRED,
-    ) -> HTTPException:
-        return HTTPException(
-            status_code=status_code,
-            detail={
-                "code": error_code.value,
-                "message": message,
-                "reason": reason,
-            },
-        )
-
     @app.post(
         "/identity/session/refresh",
         status_code=status.HTTP_204_NO_CONTENT,
@@ -2987,7 +2939,7 @@ def create_app(
     def identity_session_refresh(request: Request) -> Response:
         session_cookie = request.cookies.get(session_cookie_name(resolved_settings))
         if not session_cookie:
-            raise session_refresh_error(
+            raise _refresh_precondition_error(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 reason="missing_session_cookie",
                 message="An Axis browser session cookie is required to refresh.",
@@ -3005,7 +2957,7 @@ def create_app(
                 },
             ) from exc
         except OidcCookieValidationError as exc:
-            raise session_refresh_error(
+            raise _refresh_precondition_error(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 reason="invalid_session_cookie",
                 message="The OIDC session cookie could not be verified.",
@@ -3612,7 +3564,7 @@ def create_app(
             value is not None
             for value in (baseline_policy_set_id, candidate_policy_set_id, connector_id)
         ):
-            _authorize_connector_tenant_read(tenant_id, principal)
+            _authorize_tenant_read(tenant_id, principal)
         try:
             return build_replay_simulation(
                 repository,
@@ -4340,7 +4292,7 @@ def create_app(
         page_size: int = Query(default=20, ge=1, le=100),
         cursor: str | None = Query(default=None, min_length=1, max_length=600),
     ) -> AgentRunList:
-        _authorize_agent_run_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         try:
             cursor_created_at, cursor_row_id = decode_agent_run_cursor(cursor)
         except AgentRunCursorError as exc:
@@ -4394,7 +4346,7 @@ def create_app(
         principal: OidcPrincipalDependency,
         tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
     ) -> AgentRunResult:
-        _authorize_agent_run_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         try:
             return get_agent_run_result(repository, tenant_id, agent_id, run_id)
         except AgentRunNotFound as exc:
@@ -4767,7 +4719,7 @@ def create_app(
         status: str | None = Query(default=None, min_length=1),
         limit: int = Query(default=100, ge=1, le=200),
     ) -> ManufacturingConnectorManifestRegistry:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         return build_connector_manifest_registry(
             repository,
             ConnectorManifestQuery(
@@ -4837,7 +4789,7 @@ def create_app(
         principal: OidcPrincipalDependency,
         tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
     ) -> ConnectorManifestDetail:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         try:
             return get_connector_manifest_detail(repository, tenant_id, connector_id)
         except ConnectorManifestNotFound as exc:
@@ -5010,7 +4962,7 @@ def create_app(
         status: str | None = Query(default=None, min_length=1),
         limit: int = Query(default=100, ge=1, le=200),
     ) -> ManufacturingConnectorConfigurationRegistry:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         return build_connector_configuration_registry(
             repository,
             ConnectorConfigurationQuery(
@@ -5086,7 +5038,7 @@ def create_app(
         status: str | None = Query(default=None, min_length=1),
         limit: int = Query(default=100, ge=1, le=200),
     ) -> ManufacturingConnectorCredentialHandleRegistry:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         return build_connector_credential_handle_registry(
             repository,
             ConnectorCredentialHandleQuery(
@@ -5201,7 +5153,7 @@ def create_app(
         limit: int = Query(default=100, ge=1, le=200),
         actor_id: str = Query(default="connector-credential-lease-reader", min_length=1),
     ) -> ManufacturingConnectorCredentialLeaseRegistry:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         return read_connector_credential_lease_registry(
             repository,
             ConnectorCredentialLeaseQuery(
@@ -5405,7 +5357,7 @@ def create_app(
         limit: int = Query(default=100, ge=1, le=200),
         actor_id: str = Query(default="connector-egress-policy-reader", min_length=1),
     ) -> ManufacturingConnectorEgressPolicyRegistry:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         return read_connector_egress_policy_registry(
             repository,
             ConnectorEgressPolicyQuery(
@@ -5463,7 +5415,7 @@ def create_app(
         limit: int = Query(default=100, ge=1, le=200),
         actor_id: str = Query(default="connector-evidence-report-reader", min_length=1),
     ) -> ManufacturingConnectorEvidenceInvariantReport:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         return read_connector_evidence_invariant_report(
             repository,
             ConnectorEvidenceInvariantQuery(
@@ -5754,7 +5706,7 @@ def create_app(
         actor_scopes: list[str] = CheckpointActorScopesQuery,
         limit: int = Query(default=100, ge=1, le=200),
     ) -> ConnectorEvidenceInvariantSnapshotHistory:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         try:
             return read_connector_evidence_invariant_snapshot_history(
                 repository,
@@ -5793,7 +5745,7 @@ def create_app(
         status: str | None = Query(default=None, min_length=1),
         limit: int = Query(default=100, ge=1, le=200),
     ) -> ManufacturingConnectorRunRegistry:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         return build_connector_run_registry(
             repository,
             ConnectorRunQuery(
@@ -6345,7 +6297,7 @@ def create_app(
         status: str | None = Query(default=None, min_length=1),
         limit: int = Query(default=100, ge=1, le=200),
     ) -> ManufacturingConnectorOntologyProposalRegistry:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         return build_connector_ontology_proposal_registry(
             repository,
             ConnectorOntologyProposalQuery(
@@ -6517,7 +6469,7 @@ def create_app(
         status: str | None = Query(default=None, min_length=1),
         limit: int = Query(default=100, ge=1, le=200),
     ) -> ManufacturingConnectorPromotionPolicyRegistry:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         query = ConnectorPromotionPolicyQuery(
             tenant_id=tenant_id,
             connector_id=connector_id,
@@ -6793,7 +6745,7 @@ def create_app(
         status: str | None = Query(default=None, min_length=1),
         limit: int = Query(default=100, ge=1, le=200),
     ) -> ManufacturingConnectorPromotionPolicySetRegistry:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         query = ConnectorPromotionPolicySetQuery(
             tenant_id=tenant_id,
             connector_id=connector_id,
@@ -6896,7 +6848,7 @@ def create_app(
         status: str | None = Query(default=None, min_length=1),
         limit: int = Query(default=100, ge=1, le=200),
     ) -> ManufacturingConnectorManualImportRegistry:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         return build_connector_manual_import_registry(
             repository,
             ConnectorManualImportQuery(
@@ -7037,7 +6989,7 @@ def create_app(
         repository: PersistenceRepository,
         principal: OidcPrincipalDependency,
     ) -> ConnectorCsvPreviewResult:
-        _authorize_connector_tenant_read(preview_request.tenant_id, principal)
+        _authorize_tenant_read(preview_request.tenant_id, principal)
         try:
             registry = require_persisted_manufacturing_connector_registry(
                 repository,
@@ -7099,7 +7051,7 @@ def create_app(
         repository: PersistenceRepository,
         principal: OidcPrincipalDependency,
     ) -> ConnectorExternalDbPreviewResult:
-        _authorize_connector_tenant_read(preview_request.tenant_id, principal)
+        _authorize_tenant_read(preview_request.tenant_id, principal)
         try:
             registry = require_persisted_manufacturing_connector_registry(
                 repository,
@@ -7148,7 +7100,7 @@ def create_app(
         principal: OidcPrincipalDependency,
         discovery_runtime: ConnectorSourceDiscoveryRuntimeDependency,
     ) -> SourceVerificationOutcome:
-        _authorize_connector_tenant_read(verify_request.tenant_id, principal)
+        _authorize_tenant_read(verify_request.tenant_id, principal)
         bound_request = _bind_body_tenant_actor(
             verify_request,
             principal,
@@ -7205,7 +7157,7 @@ def create_app(
         principal: OidcPrincipalDependency,
         discovery_runtime: ConnectorSourceDiscoveryRuntimeDependency,
     ) -> SourceDiscoveryOutcome:
-        _authorize_connector_tenant_read(discovery_request.tenant_id, principal)
+        _authorize_tenant_read(discovery_request.tenant_id, principal)
         bound_request = _bind_body_tenant_actor(
             discovery_request,
             principal,
@@ -7268,7 +7220,7 @@ def create_app(
         principal: OidcPrincipalDependency,
     ) -> ConnectorSourceActivationOutcome:
         settings: Settings = request.app.state.settings
-        _authorize_connector_tenant_read(activation_request.tenant_id, principal)
+        _authorize_tenant_read(activation_request.tenant_id, principal)
         bound_request = _bind_body_tenant_actor(
             activation_request,
             principal,
@@ -7341,7 +7293,7 @@ def create_app(
         tenant_id: str = Query(default="tenant_demo_manufacturing", min_length=1),
         connector_id: str = Query(default="external_db_operational_mirror", min_length=1),
     ) -> ConnectorSourceBindingsView:
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         return list_connector_source_bindings(
             repository,
             tenant_id=tenant_id,
@@ -7366,7 +7318,7 @@ def create_app(
         actor_scopes: list[str] = CheckpointActorScopesQuery,
     ) -> SourceIngestionEligibilityView:
         settings: Settings = request.app.state.settings
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         _authorize_source_ingestion_read(
             principal,
             actor_scopes,
@@ -7409,7 +7361,7 @@ def create_app(
         actor_scopes: list[str] = CheckpointActorScopesQuery,
     ) -> ConnectorSourceIngestionOverview:
         """Cross-request aggregates plus a newest-first page of requests."""
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         _authorize_source_ingestion_read(
             principal,
             actor_scopes,
@@ -7475,7 +7427,7 @@ def create_app(
         principal: OidcPrincipalDependency,
     ) -> SourceIngestionRequestView:
         settings: Settings = request.app.state.settings
-        _authorize_connector_tenant_read(submission.tenant_id, principal)
+        _authorize_tenant_read(submission.tenant_id, principal)
         bound_submission = _bind_body_tenant_actor(
             submission,
             principal,
@@ -7539,7 +7491,7 @@ def create_app(
         actor_scopes: list[str] = CheckpointActorScopesQuery,
     ) -> list[SourceIngestionRequestView]:
         settings: Settings = request.app.state.settings
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         _authorize_source_ingestion_read(
             principal,
             actor_scopes,
@@ -7572,7 +7524,7 @@ def create_app(
         actor_scopes: list[str] = CheckpointActorScopesQuery,
     ) -> SourceIngestionRequestView:
         settings: Settings = request.app.state.settings
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         _authorize_source_ingestion_read(
             principal,
             actor_scopes,
@@ -7614,7 +7566,7 @@ def create_app(
         request_id: str,
     ) -> SourceIngestionRequestView:
         settings: Settings = request.app.state.settings
-        _authorize_connector_tenant_read(cancel_request.tenant_id, principal)
+        _authorize_tenant_read(cancel_request.tenant_id, principal)
         bound_cancel = _bind_body_tenant_actor(
             cancel_request,
             principal,
@@ -7692,7 +7644,7 @@ def create_app(
         principal: OidcPrincipalDependency,
         request_id: str,
     ) -> SourceIngestionRequestView:
-        _authorize_connector_tenant_read(requeue_request.tenant_id, principal)
+        _authorize_tenant_read(requeue_request.tenant_id, principal)
         bound = _bind_body_tenant_actor(
             requeue_request,
             principal,
@@ -7777,7 +7729,7 @@ def create_app(
         actor_scopes: list[str] = CheckpointActorScopesQuery,
     ) -> SourceExtractionBatchesPage:
         """Metadata-only extraction batches; row payloads never appear here."""
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         _authorize_source_ingestion_read(
             principal,
             actor_scopes,
@@ -7844,7 +7796,7 @@ def create_app(
         actor_scopes: list[str] = CheckpointActorScopesQuery,
     ) -> SourceExtractionReconciliationReport:
         """Read-only object-store vs metadata comparison; dry-run only."""
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         _authorize_source_ingestion_read(
             principal,
             actor_scopes,
@@ -7966,7 +7918,7 @@ def create_app(
         principal: OidcPrincipalDependency,
         request_id: str,
     ) -> Response:
-        _authorize_connector_tenant_read(export_request.tenant_id, principal)
+        _authorize_tenant_read(export_request.tenant_id, principal)
         bound = _bind_body_tenant_actor(
             export_request,
             principal,
@@ -8030,7 +7982,7 @@ def create_app(
         request_id: str,
         export_request_id: str,
     ) -> ConnectorSourceBatchExportDecisionResult:
-        _authorize_connector_tenant_read(decision_input.tenant_id, principal)
+        _authorize_tenant_read(decision_input.tenant_id, principal)
         bound = _bind_body_tenant_actor(
             decision_input,
             principal,
@@ -8100,7 +8052,7 @@ def create_app(
                     "reason": "store_adapter_unsupported",
                 },
             )
-        _authorize_connector_tenant_read(
+        _authorize_tenant_read(
             materialization_input.tenant_id, principal
         )
         bound = _bind_body_tenant_actor(
@@ -8168,7 +8120,7 @@ def create_app(
     ) -> Response:
         """Checksum-verified artifact download; LOCAL adapter only."""
         settings: Settings = request.app.state.settings
-        _authorize_connector_tenant_read(tenant_id, principal)
+        _authorize_tenant_read(tenant_id, principal)
         _authorize_source_ingestion_read(
             principal,
             actor_scopes,

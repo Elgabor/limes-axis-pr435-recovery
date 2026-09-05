@@ -674,13 +674,9 @@ def test_replay_simulation_endpoint_returns_artifact(
     assert "tenant_other" not in str(body)
 
 
-def test_openapi_exposes_replay_simulation_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/simulation/replay" in response.json()["paths"]
-    assert "/demo/manufacturing/simulation/replay/outputs" in response.json()["paths"]
+def test_openapi_exposes_replay_simulation_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/simulation/replay" in openapi_schema["paths"]
+    assert "/demo/manufacturing/simulation/replay/outputs" in openapi_schema["paths"]
 
 
 def test_replay_arbitrary_policy_set_diff_reports_changed_outcomes(

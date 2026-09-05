@@ -244,7 +244,7 @@ test.describe("Axis live story: governed source ingestion", () => {
 
     // Real drift at the source AFTER activation, then a concurrent discovery
     // run refreshes Axis' observations — exactly the production sequence.
-    addColumnToSourceTable(token, `quality_checks_${token}`);
+    addColumnToSourceTable(`quality_checks_${token}`);
     await discoverSourceTables(page.request, {
       token,
       discoveryId: `discovery_e2e_ingest_drift_${token}`,

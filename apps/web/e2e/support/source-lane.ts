@@ -87,7 +87,7 @@ export function createSourceTables(token: string): string[] {
 }
 
 /** Real drift at the source: add a column to one of this run's tables. */
-export function addColumnToSourceTable(token: string, tableName: string): void {
+export function addColumnToSourceTable(tableName: string): void {
   const sql =
     `ALTER TABLE ${SOURCE_SCHEMA}.${tableName} `
     + "ADD COLUMN severity text NOT NULL DEFAULT 'low'";

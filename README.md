@@ -143,6 +143,9 @@ a restored demo.
 
 ## Development
 
+See [Development and verification](./docs/development.md) for targeted commands,
+worktree isolation, local CI parity and browser failure diagnostics.
+
 Run the main verification matrix:
 
 ```bash

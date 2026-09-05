@@ -700,8 +700,6 @@ const sourceIngestionAttempt = z.object({
   selections: z.array(sourceIngestionAttemptSelection),
 });
 
-export type SourceIngestionAttemptSelection = z.infer<typeof sourceIngestionAttemptSelection>;
-export type SourceIngestionAttempt = z.infer<typeof sourceIngestionAttempt>;
 
 const sourceIngestionRequestView = z.object({
   tenant_id: z.string(),

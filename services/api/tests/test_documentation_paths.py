@@ -45,3 +45,27 @@ def test_checker_ignores_external_urls_and_local_anchors(tmp_path: Path) -> None
     )
 
     assert checker.broken_references(tmp_path) == []
+
+
+def test_checker_prunes_dependencies_and_local_artifacts(tmp_path: Path, monkeypatch) -> None:
+    checker = load_checker()
+    documentation = tmp_path / "docs" / "nested"
+    documentation.mkdir(parents=True)
+    (documentation / "guide.md").write_text("[home](../../README.md)\n")
+    (tmp_path / "README.md").write_text("[guide](docs/nested/guide.md)\n")
+    for name in ("node_modules", ".venv", ".axis", ".next"):
+        directory = tmp_path / "services" / name
+        directory.mkdir(parents=True)
+        (directory / "broken.md").write_text("[missing](missing.md)\n")
+
+    scandir = checker.os.scandir
+
+    def reject_excluded_directory(path):
+        assert Path(path).name not in checker.EXCLUDED_PARTS, "Excluded tree was traversed"
+        return scandir(path)
+
+    monkeypatch.setattr(checker.os, "scandir", reject_excluded_directory)
+    assert checker.markdown_documents(tmp_path) == [
+        tmp_path / "README.md", documentation / "guide.md",
+    ]
+    assert checker.broken_references(tmp_path) == []

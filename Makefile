@@ -1,10 +1,23 @@
 .PHONY: install lint test typecheck build-web docs-check edition-matrix-check edition-export-readiness openapi openapi-check test-sdk security-check deployment-check deployment-profile-render-check deployment-rollout-rehearsal-plan deployment-rollout-rehearsal deployment-ha-rehearsal-plan deployment-ha-rehearsal deployment-load-rehearsal-plan deployment-load-rehearsal deployment-tls-readiness-plan deployment-tls-readiness deployment-backup-rehearsal-plan deployment-backup-rehearsal deployment-restore-rehearsal-plan deployment-restore-rehearsal deployment-typedb-recovery-rehearsal-plan deployment-typedb-recovery-rehearsal deployment-object-storage-recovery-rehearsal-plan deployment-object-storage-recovery-rehearsal deployment-temporal-recovery-rehearsal-plan deployment-temporal-recovery-rehearsal deployment-secret-rotation-rehearsal-plan deployment-secret-rotation-rehearsal container-check container-release-check container-security-check vulnerability-management-check container-build-api container-build-web container-build-worker container-build container-scan-local worker test-api test-worker test-web test-integration test-e2e-connectors-source dev-stack-up dev-stack-down demo-stack-up demo-stack-down demo-db-upgrade demo-api demo-api-sso demo-web demo-keycloak-check demo-keycloak-bootstrap-check demo-check demo-check-live demo-verify demo-backup-plan demo-backup-local demo-restore-local
 
+.PHONY: verify test-schemas test-e2e-smoke benchmark-lineage
+
+PYTEST_ARGS ?=
+WEB_TEST_ARGS ?=
+BENCHMARK_ARGS ?=
+AXIS_API_PORT ?= 8000
+AXIS_WEB_PORT ?= 3000
+AXIS_SOURCE_API_PORT ?= 8001
+AXIS_ENV_FILE ?= $(CURDIR)/.env
+# python-dotenv preserves unquoted JSON arrays in .env.example; uv's dotenv
+# parser treats their quotes as shell quoting. Keep the application's parser.
+DEV_RUN = uv run python -m dotenv -f "$(AXIS_ENV_FILE)" run --no-override --
+
 install:
-	pnpm install
-	cd services/api && uv sync
-	cd services/worker && uv sync
-	cd packages/sdk-python && uv sync
+	pnpm install --frozen-lockfile
+	cd services/api && uv sync --locked
+	cd services/worker && uv sync --locked
+	cd packages/sdk-python && uv sync --locked
 
 lint:
 	pnpm lint
@@ -15,19 +28,32 @@ lint:
 typecheck:
 	pnpm typecheck
 
-test: test-api test-worker test-sdk test-web
+test: test-api test-worker test-sdk test-web test-schemas
+
+# Local component gates from CI, plus the existing demo/security contracts.
+# Live-service and browser lanes remain explicit; see docs/development.md.
+verify: lint typecheck test build-web openapi-check docs-check demo-check security-check deployment-check deployment-profile-render-check container-check container-release-check container-security-check vulnerability-management-check
 
 test-api:
-	cd services/api && uv run pytest
+	cd services/api && uv run pytest $(PYTEST_ARGS)
 
 test-worker:
-	cd services/worker && uv run pytest
+	cd services/worker && uv run pytest $(PYTEST_ARGS)
 
 test-sdk:
-	cd packages/sdk-python && uv run pytest
+	cd packages/sdk-python && uv run pytest $(PYTEST_ARGS)
 
 test-web:
-	pnpm --filter @limes-axis/web test
+	pnpm --filter @limes-axis/web test $(WEB_TEST_ARGS)
+
+test-schemas:
+	pnpm --filter @limes-axis/schemas test
+
+test-e2e-smoke:
+	pnpm --filter @limes-axis/web test:e2e:smoke
+
+benchmark-lineage:
+	cd services/api && uv run python scripts/benchmark_lineage.py $(BENCHMARK_ARGS)
 
 test-integration:
 	cd services/api && AXIS_RUN_INTEGRATION=1 uv run pytest tests/integration
@@ -49,16 +75,18 @@ openapi:
 	cd services/api && uv run python scripts/export_openapi.py ../../docs/openapi.json
 
 # Repository-local connector source lane: builds the web bundle against the
-# lane API on 127.0.0.1:8001 (never the user-owned :8000 process), then runs
+# lane API on AXIS_SOURCE_API_PORT (never the user-owned :8000 process), then runs
 # the discovery, activation, and ingestion Playwright lanes on Chromium and
 # mobile.
 test-e2e-connectors-source:
-	cd apps/web && NEXT_PUBLIC_AXIS_API_BASE_URL=http://127.0.0.1:8001 AXIS_E2E_LIVE_API=1 pnpm exec next build
-	cd apps/web && AXIS_E2E_LIVE_API=1 AXIS_E2E_API_BASE_URL=http://127.0.0.1:8001 pnpm exec playwright test e2e/connectors-source-discovery.spec.ts e2e/connectors-source-activation.spec.ts e2e/connectors-source-ingestion.spec.ts --project=chromium --project=mobile
+	cd apps/web && NEXT_PUBLIC_AXIS_API_BASE_URL=http://127.0.0.1:$(AXIS_SOURCE_API_PORT) AXIS_E2E_LIVE_API=1 pnpm exec next build
+	cd apps/web && AXIS_E2E_LIVE_API=1 AXIS_E2E_API_BASE_URL=http://127.0.0.1:$(AXIS_SOURCE_API_PORT) pnpm exec playwright test e2e/connectors-source-discovery.spec.ts e2e/connectors-source-activation.spec.ts e2e/connectors-source-ingestion.spec.ts --project=chromium --project=mobile
 
 openapi-check:
-	cd services/api && uv run python scripts/export_openapi.py /tmp/limes-axis-openapi.json
-	diff -u docs/openapi.json /tmp/limes-axis-openapi.json
+	@schema_file=$$(mktemp "$${TMPDIR:-/tmp}/axis-openapi.XXXXXX") || exit 1; \
+	trap 'rm -f "$$schema_file"' EXIT HUP INT TERM; \
+	(cd services/api && uv run python scripts/export_openapi.py "$$schema_file") && \
+	diff -u docs/openapi.json "$$schema_file"
 
 security-check:
 	cd services/api && uv run python scripts/check_security_posture.py
@@ -184,19 +212,19 @@ demo-stack-up: dev-stack-up
 demo-stack-down: dev-stack-down
 
 demo-db-upgrade:
-	cd services/api && uv run alembic upgrade head
+	cd services/api && $(DEV_RUN) alembic upgrade head
 
 demo-api:
-	cd services/api && uv run uvicorn axis_api.main:create_app --factory --host 127.0.0.1 --port 8000
+	cd services/api && $(DEV_RUN) uvicorn axis_api.main:create_app --factory --host 127.0.0.1 --port $(AXIS_API_PORT)
 
 worker:
-	cd services/worker && uv run python -m axis_worker
+	cd services/worker && $(DEV_RUN) python -m axis_worker
 
 demo-api-sso:
 	cd services/api && AXIS_PUBLIC_BASE_URL=http://127.0.0.1:3000 AXIS_API_BASE_URL=http://127.0.0.1:8000 AXIS_OIDC_ISSUER=http://127.0.0.1:8080/realms/axis AXIS_OIDC_JWKS_URL=http://127.0.0.1:8080/realms/axis/protocol/openid-connect/certs AXIS_OIDC_CLIENT_ID=limes-axis-web AXIS_OIDC_CLIENT_SECRET=axis-local-dev-secret AXIS_OIDC_AUTHORIZATION_URL=http://127.0.0.1:8080/realms/axis/protocol/openid-connect/auth AXIS_OIDC_TOKEN_URL=http://127.0.0.1:8080/realms/axis/protocol/openid-connect/token AXIS_OIDC_REDIRECT_URI=http://127.0.0.1:8000/identity/oidc/callback AXIS_OIDC_END_SESSION_URL=http://127.0.0.1:8080/realms/axis/protocol/openid-connect/logout AXIS_OIDC_POST_LOGOUT_REDIRECT_URI=http://127.0.0.1:3000/ AXIS_OIDC_SESSION_COOKIE_SIGNING_SECRET=axis-local-demo-session-signing-key AXIS_OIDC_SESSION_COOKIE_SECURE=false uv run uvicorn axis_api.main:create_app --factory --host 127.0.0.1 --port 8000
 
 demo-web:
-	NEXT_PUBLIC_AXIS_API_BASE_URL=http://127.0.0.1:8000 pnpm --filter @limes-axis/web dev
+	NEXT_PUBLIC_AXIS_API_BASE_URL=http://127.0.0.1:$(AXIS_API_PORT) pnpm --filter @limes-axis/web dev --port $(AXIS_WEB_PORT)
 
 demo-keycloak-check:
 	cd services/api && uv run python scripts/check_demo_environment.py --keycloak-url http://127.0.0.1:8080
@@ -224,7 +252,7 @@ demo-check:
 	cd services/api && uv run python scripts/check_demo_environment.py
 
 demo-check-live:
-	cd services/api && uv run python scripts/check_demo_environment.py --api-url http://127.0.0.1:8000 --web-url http://127.0.0.1:3000
+	cd services/api && uv run python scripts/check_demo_environment.py --api-url http://127.0.0.1:$(AXIS_API_PORT) --web-url http://127.0.0.1:$(AXIS_WEB_PORT)
 
 demo-verify: openapi-check demo-check deployment-profile-render-check
 

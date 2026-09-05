@@ -773,11 +773,7 @@ def test_create_connector_manual_import_rejects_direct_graph_write_mode(
     assert response.json()["detail"]["reason"] == "unsupported_import_mode"
 
 
-def test_openapi_exposes_connector_manual_import_endpoints() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+def test_openapi_exposes_connector_manual_import_endpoints(openapi_schema: dict) -> None:
+    paths = openapi_schema["paths"]
     assert "/demo/manufacturing/connectors/manual-imports" in paths
     assert "/demo/manufacturing/connectors/manual-imports/{import_id}/decision" in paths

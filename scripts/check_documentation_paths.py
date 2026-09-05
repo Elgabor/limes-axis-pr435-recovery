@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 from pathlib import Path
 from typing import NamedTuple
@@ -9,8 +10,11 @@ from urllib.parse import unquote
 INLINE_LINK = re.compile(r"!?\[[^\]]*\]\(([^)\n]+)\)")
 REFERENCE_LINK = re.compile(r"^\s*\[[^\]]+\]:\s*(\S+)", re.MULTILINE)
 EXCLUDED_PARTS = {
+    ".audit",
+    ".axis",
     ".git",
     ".next",
+    ".pnpm-store",
     ".pytest_cache",
     ".venv",
     ".worktrees",
@@ -26,11 +30,11 @@ class BrokenReference(NamedTuple):
 
 
 def markdown_documents(repo_root: Path) -> list[Path]:
-    return sorted(
-        path
-        for path in repo_root.rglob("*.md")
-        if not EXCLUDED_PARTS.intersection(path.relative_to(repo_root).parts)
-    )
+    documents: list[Path] = []
+    for directory, subdirectories, files in os.walk(repo_root):
+        subdirectories[:] = [name for name in subdirectories if name not in EXCLUDED_PARTS]
+        documents.extend(Path(directory) / name for name in files if name.endswith(".md"))
+    return sorted(documents)
 
 
 def normalize_target(raw_target: str) -> str:
@@ -50,9 +54,11 @@ def local_targets(text: str) -> list[tuple[int, str]]:
     ]
 
 
-def broken_references(repo_root: Path) -> list[BrokenReference]:
+def broken_references(
+    repo_root: Path, documents: list[Path] | None = None,
+) -> list[BrokenReference]:
     broken: list[BrokenReference] = []
-    for document in markdown_documents(repo_root):
+    for document in markdown_documents(repo_root) if documents is None else documents:
         text = document.read_text(encoding="utf-8")
         for line, target in local_targets(text):
             lowered = target.lower()
@@ -82,12 +88,13 @@ def main() -> int:
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
     args = parser.parse_args()
     repo_root = args.repo_root.resolve()
-    broken = broken_references(repo_root)
+    documents = markdown_documents(repo_root)
+    broken = broken_references(repo_root, documents)
     if broken:
         for reference in broken:
             print(f"{reference.document}:{reference.line}: missing path: {reference.target}")
         return 1
-    print(f"Documentation paths OK ({len(markdown_documents(repo_root))} files checked)")
+    print(f"Documentation paths OK ({len(documents)} files checked)")
     return 0
 
 

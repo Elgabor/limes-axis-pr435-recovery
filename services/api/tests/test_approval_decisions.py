@@ -981,12 +981,8 @@ def test_approval_decision_endpoint_denies_actor_without_required_scope(
         assert list(session.scalars(select(AuditEvent))) == []
 
 
-def test_openapi_exposes_approval_decision_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/approvals/{approval_id}/decision" in response.json()["paths"]
+def test_openapi_exposes_approval_decision_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/approvals/{approval_id}/decision" in openapi_schema["paths"]
 
 
 async def test_inbox_reconciliation_marks_recorded_decisions_as_decided(

@@ -6869,12 +6869,8 @@ def test_create_connector_run_rejects_live_sync_mode(
     assert response.json()["detail"]["reason"] == "unsupported_execution_mode"
 
 
-def test_openapi_exposes_connector_run_endpoints() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+def test_openapi_exposes_connector_run_endpoints(openapi_schema: dict) -> None:
+    paths = openapi_schema["paths"]
     assert "/demo/manufacturing/connectors/runs" in paths
     assert "/demo/manufacturing/connectors/runs/checkpoints" in paths
     assert "/demo/manufacturing/connectors/runs/{run_id}/dispatch" in paths

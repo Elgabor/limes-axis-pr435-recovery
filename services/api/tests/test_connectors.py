@@ -889,6 +889,28 @@ def test_file_csv_connector_preview_blocks_empty_required_values() -> None:
     ]
 
 
+def test_file_csv_connector_preview_reports_each_duplicate_header_once_in_order() -> None:
+    preview = preview_file_csv_connector(
+        bootstrap_connector_registry(),
+        ConnectorCsvPreviewRequest(
+            file_name="assets.csv",
+            csv_content=(
+                "asset_id,asset_name,domain,station,risk_level,station,asset_id,station\n"
+                "asset_1,Line 2,Operations,Line 2,high,Line 2,asset_1,Line 2\n"
+            ),
+        ),
+    )
+
+    assert preview.preview_status == "blocked"
+    assert preview.proposed_entities == []
+    assert preview.accepted_record_count == 0
+    assert preview.rejected_record_count == 1
+    assert preview.validation_issues == [
+        "Duplicate CSV header: asset_id",
+        "Duplicate CSV header: station",
+    ]
+
+
 def test_file_csv_connector_preview_blocks_duplicate_node_ids() -> None:
     preview = preview_file_csv_connector(
         bootstrap_connector_registry(),
@@ -1378,12 +1400,8 @@ def test_connector_external_db_preview_endpoint_uses_persisted_registry_referenc
     assert response.json()["preview_status"] == "ready"
 
 
-def test_openapi_exposes_connector_endpoints() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+def test_openapi_exposes_connector_endpoints(openapi_schema: dict) -> None:
+    paths = openapi_schema["paths"]
     assert "/demo/manufacturing/connectors" in paths
     assert "/demo/manufacturing/connectors/file-csv/preview" in paths
     assert "/demo/manufacturing/connectors/external-db/preview" in paths

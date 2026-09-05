@@ -152,7 +152,7 @@ test.describe("Axis rendered proof: governed source ingestion", () => {
       // State 5 (desktop): truthful stale evidence after real drift plus a
       // concurrent discovery refresh — the row reads Stale fingerprint and no
       // longer offers a selection control.
-      addColumnToSourceTable(token, `production_orders_${token}`);
+      addColumnToSourceTable(`production_orders_${token}`);
       const governance = await seedGovernanceRecords(page.request, `${token}drift`);
       await discoverSourceTables(page.request, {
         token: `${token}drift`,

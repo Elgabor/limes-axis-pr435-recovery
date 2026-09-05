@@ -448,12 +448,8 @@ def test_persisted_audit_events_endpoint_binds_read_scope_from_oidc_token(
     assert "tenant_other" not in str(body)
 
 
-def test_openapi_exposes_persisted_audit_events_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/audit/events" in response.json()["paths"]
+def test_openapi_exposes_persisted_audit_events_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/audit/events" in openapi_schema["paths"]
 
 
 def test_export_persisted_audit_events_returns_manifest_and_retention_controls(
@@ -1358,12 +1354,8 @@ def test_persisted_audit_export_endpoint_uses_configured_ledger_signer(
     assert "api-test-signing-secret" not in str(body)
 
 
-def test_openapi_exposes_persisted_audit_export_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/audit/export" in response.json()["paths"]
+def test_openapi_exposes_persisted_audit_export_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/audit/export" in openapi_schema["paths"]
 
 
 # --- Object-store WORM / object-lock enforcement -------------------------------

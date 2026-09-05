@@ -1284,10 +1284,6 @@ def test_connector_ontology_promotion_rejects_idempotency_conflict(
     assert response.json()["detail"]["promotion_id"] == "promote_asset_line_2_packaging_20260622"
 
 
-def test_openapi_exposes_connector_ontology_promotion_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+def test_openapi_exposes_connector_ontology_promotion_endpoint(openapi_schema: dict) -> None:
+    paths = openapi_schema["paths"]
     assert "/demo/manufacturing/connectors/ontology-proposals/promotions" in paths

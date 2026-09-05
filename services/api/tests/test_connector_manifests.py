@@ -1350,12 +1350,8 @@ def test_transition_connector_manifest_endpoint_updates_manifest_with_audit(
     assert body["notes"][-1] == "Lifecycle transition: active_preview"
 
 
-def test_openapi_exposes_connector_manifest_endpoints() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+def test_openapi_exposes_connector_manifest_endpoints(openapi_schema: dict) -> None:
+    paths = openapi_schema["paths"]
     assert "/demo/manufacturing/connectors/manifests" in paths
     assert "get" in paths["/demo/manufacturing/connectors/manifests"]
     assert "post" in paths["/demo/manufacturing/connectors/manifests"]
@@ -1363,7 +1359,7 @@ def test_openapi_exposes_connector_manifest_endpoints() -> None:
     assert "post" in paths["/operations/connectors/manifests/validation"]
     assert "/demo/manufacturing/connectors/manifests/{connector_id}/lifecycle" in paths
     assert "post" in paths["/demo/manufacturing/connectors/manifests/{connector_id}/lifecycle"]
-    schemas = response.json()["components"]["schemas"]
+    schemas = openapi_schema["components"]["schemas"]
     for schema_name in (
         "ConnectorManifestCreateRequest",
         "ConnectorManifestReplaceRequest",

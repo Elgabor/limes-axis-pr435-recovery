@@ -124,7 +124,7 @@ test.describe("Axis rendered proof: governed source activation", () => {
       await panel.getByLabel("Schema to discover").fill(SOURCE_SCHEMA);
       await panel.getByRole("button", { name: "Discover tables" }).click();
       await expect(panel.getByRole("table")).toBeVisible({ timeout: 15_000 });
-      addColumnToSourceTable(token, `quality_checks_${token}`);
+      addColumnToSourceTable(`quality_checks_${token}`);
       await discoverSourceTables(page.request, {
         token,
         discoveryId: `discovery_e2e_shot_${token}`,

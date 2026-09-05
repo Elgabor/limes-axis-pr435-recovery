@@ -49,13 +49,6 @@ class TenantQuotaKey(StrEnum):
     MAX_CONNECTOR_SYNC_ROWS_PER_RUN = "max_connector_sync_rows_per_run"
 
 
-class TenantLifecycleValidationError(ValueError):
-    def __init__(self, message: str, reason: str) -> None:
-        super().__init__(message)
-        self.message = message
-        self.reason = reason
-
-
 class TenantPermissionDenied(PermissionError):
     def __init__(self, required_permission: str, decision: PermissionDecision) -> None:
         super().__init__(decision.reason)

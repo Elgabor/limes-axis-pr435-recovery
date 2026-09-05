@@ -221,7 +221,7 @@ test.describe("Axis live story: governed source activation", () => {
     // a CONCURRENT discovery run (here: through the real API) refreshes the
     // persisted observations. This page still holds the pre-drift
     // fingerprints it reviewed, so its next activation is stale by design.
-    addColumnToSourceTable(token, `production_orders_${token}`);
+    addColumnToSourceTable(`production_orders_${token}`);
     const refreshed = await discoverSourceTables(page.request, {
       token,
       discoveryId: `discovery_e2e_drift_${token}`,

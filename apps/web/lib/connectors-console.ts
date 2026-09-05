@@ -235,14 +235,6 @@ export function deriveConnectorId(fileName: string, connectorType: string): stri
   return `${connectorType}_${slug || "connector"}`;
 }
 
-/** Mirrors the API's `ConnectorCsvPreviewRequest` (connectors.py). */
-export type ConnectorCsvPreviewPayload = {
-  tenant_id: string;
-  connector_id: string;
-  file_name: string;
-  csv_content: string;
-};
-
 /** Mirrors the API's `ConnectorExternalDbPreviewRequest` (connectors.py, extra="forbid"). */
 export type ConnectorExternalDbPreviewPayload = {
   tenant_id: string;

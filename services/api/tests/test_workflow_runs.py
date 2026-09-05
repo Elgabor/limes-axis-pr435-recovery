@@ -283,9 +283,5 @@ def test_persisted_workflow_runs_endpoint_returns_empty_console_for_empty_query(
     assert body["metrics"][0]["value"] == "0"
 
 
-def test_openapi_exposes_persisted_workflow_runs_endpoint() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    assert "/demo/manufacturing/workflows/runs" in response.json()["paths"]
+def test_openapi_exposes_persisted_workflow_runs_endpoint(openapi_schema: dict) -> None:
+    assert "/demo/manufacturing/workflows/runs" in openapi_schema["paths"]

@@ -872,12 +872,8 @@ def test_revoke_connector_credential_lease_uses_live_runtime_when_enabled(
     assert body["lease_result"]["secret_material_returned"] == "false"
 
 
-def test_openapi_exposes_connector_credential_lease_endpoints() -> None:
-    client = TestClient(create_app())
-    response = client.get("/openapi.json")
-
-    assert response.status_code == 200
-    paths = response.json()["paths"]
+def test_openapi_exposes_connector_credential_lease_endpoints(openapi_schema: dict) -> None:
+    paths = openapi_schema["paths"]
     assert "/demo/manufacturing/connectors/credential-leases" in paths
     assert "get" in paths["/demo/manufacturing/connectors/credential-leases"]
     assert "post" in paths["/demo/manufacturing/connectors/credential-leases"]

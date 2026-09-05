@@ -457,36 +457,6 @@ def default_ontology_relationship_metadata(
     )
 
 
-def ontology_relationship_metadata_payload(
-    relationship_id: str,
-    permission_scope: str,
-    *,
-    evidence_refs: list[str] | None = None,
-    confidence: float = 0.9,
-    source_adapter: str = "axis-reference-ontology",
-    valid_from: str = "2026-06-21T16:30:00+02:00",
-    valid_to: str | None = None,
-    last_verified_at: str = "2026-06-21T16:30:00+02:00",
-    verification_status: str = "reference_verified",
-) -> dict:
-    metadata = default_ontology_relationship_metadata(
-        relationship_id,
-        permission_scope,
-    )
-    metadata = metadata.model_copy(
-        update={
-            "source_adapter": source_adapter,
-            "confidence": confidence,
-            "evidence_refs": evidence_refs or metadata.evidence_refs,
-            "valid_from": valid_from,
-            "valid_to": valid_to,
-            "last_verified_at": last_verified_at,
-            "verification_status": verification_status,
-        }
-    )
-    return metadata.model_dump()
-
-
 class ManufacturingOntology(BaseModel):
     tenant_id: str = Field(min_length=1)
     plant_name: str | None = Field(default=None, min_length=1)

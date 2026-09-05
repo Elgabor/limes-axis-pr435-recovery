@@ -1,5 +1,4 @@
 import { cn } from "@/lib/cn";
-import { brandTokens } from "@/lib/foundation";
 
 /**
  * The Limes Axis mark from the brand kit: a vertical Signal Blue axis split by
@@ -17,7 +16,7 @@ import { brandTokens } from "@/lib/foundation";
  * <rect> — the smoke e2e asserts `.axis-mark rect` carries the signal fill.
  */
 
-const signal = `rgb(var(--signal, ${brandTokens.signalChannels}))`;
+const signal = "rgb(var(--signal, 47 100 255))";
 
 export function AxisMarkGlyph({
   cx,
