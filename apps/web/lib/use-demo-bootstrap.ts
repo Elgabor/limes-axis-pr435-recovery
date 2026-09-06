@@ -22,7 +22,7 @@ import { useConsole } from "@/providers/console-provider";
  * answers 200 with `idempotent_replay: true` — so the CTA is safe to retry.
  */
 
-export const DEMO_BOOTSTRAP_ENDPOINT = "/demo/manufacturing/bootstrap";
+export const DEMO_BOOTSTRAP_ENDPOINT = "/demo/bootstrap";
 export const DEMO_BOOTSTRAP_SCOPE = "demo:scenario:bootstrap";
 export { DEMO_TENANT_ID } from "@/lib/tenant-scope";
 /** Fallback actor when no authenticated API session is attached. */

@@ -7,7 +7,7 @@ import type { IdentitySessionReadModel } from "./platform-overview";
  * alias; the console does not. Kept as one constant so the next move is a
  * one-line change rather than another sweep of call sites.
  *
- * `/demo/manufacturing/bootstrap` is deliberately excluded: it seeds the
+ * `/demo/bootstrap` is deliberately excluded: it seeds the
  * demonstration scenario and has no operational equivalent.
  */
 export const OPERATIONS_API_PREFIX = "/operations";

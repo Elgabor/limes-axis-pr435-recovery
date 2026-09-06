@@ -97,7 +97,7 @@ policy, register an agent, run a governed workflow) whose done-state derives
 from the live registry counts. Its "Explore with demo data" CTA calls:
 
 ```text
-POST /demo/manufacturing/bootstrap
+POST /demo/bootstrap
 ```
 
 The endpoint copies the canonical demo scenario records into the target tenant

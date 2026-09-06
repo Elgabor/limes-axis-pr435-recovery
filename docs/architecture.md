@@ -66,6 +66,9 @@ and explicit configuration gates.
   supplies existing shared dependency and authorization callables. The
   [route inventory](api-route-inventory.md) records every operation and the
   [extraction guide](api-route-extraction.md) defines the remaining migration.
+  The composition root also adds [legacy API migration notices](api-compatibility.md)
+  and observes usage through the existing optional OTel runtime; aliases retain
+  the same domain and authorization handlers.
 - **Operational data.** Postgres is the source of truth for tenants, identities,
   approvals, policies, actions, runs, connector metadata, usage projections and
   append-only audit evidence. Raw connector rows and materialized export bundles

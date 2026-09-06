@@ -24,7 +24,7 @@ test.describe("Axis live story: onboarding demo bootstrap", () => {
   test("bootstraps the demo scenario into a throwaway tenant", {
     tag: "@stateful",
   }, async ({ request }) => {
-    const response = await request.post(`${API_BASE_URL}/demo/manufacturing/bootstrap`, {
+    const response = await request.post(`${API_BASE_URL}/demo/bootstrap`, {
       data: {
         tenant_id: E2E_TENANT_ID,
         requested_by: "e2e-onboarding-story",

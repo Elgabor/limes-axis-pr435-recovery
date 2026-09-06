@@ -69,6 +69,11 @@ from axis_api.agent_runs import (
     list_agent_run_results,
     start_agent_run,
 )
+from axis_api.api_compatibility import (
+    DEPRECATION_EXPOSE_HEADERS,
+    LegacyRouteDeprecationMiddleware,
+    add_legacy_deprecation_headers,
+)
 from axis_api.approval_decisions import (
     ApprovalDecisionConflict,
     ApprovalDecisionPersistenceResult,
@@ -2331,6 +2336,7 @@ def create_app(
             type(exc).__name__,
         )
         headers = {REQUEST_ID_HEADER: request_id}
+        add_legacy_deprecation_headers(headers, request.scope)
         origin = request.headers.get("origin")
         if origin and (
             "*" in resolved_settings.cors_origins or origin in resolved_settings.cors_origins
@@ -2339,7 +2345,9 @@ def create_app(
                 {
                     "Access-Control-Allow-Credentials": "true",
                     "Access-Control-Allow-Origin": origin,
-                    "Access-Control-Expose-Headers": REQUEST_ID_HEADER,
+                    "Access-Control-Expose-Headers": ", ".join(
+                        [REQUEST_ID_HEADER, *DEPRECATION_EXPOSE_HEADERS]
+                    ),
                     "Vary": "Origin",
                 }
             )
@@ -2371,7 +2379,7 @@ def create_app(
             "X-Axis-Csrf-Token",
             REQUEST_ID_HEADER,
         ],
-        expose_headers=[REQUEST_ID_HEADER],
+        expose_headers=[REQUEST_ID_HEADER, *DEPRECATION_EXPOSE_HEADERS],
     )
     app.add_middleware(RequestCorrelationMiddleware)
     app.state.settings = resolved_settings
@@ -3384,7 +3392,17 @@ def create_app(
                 },
             ) from exc
 
-    # Bootstrap seeds demonstration data, so it has no production operations alias.
+    # Both demo paths share this handler; bootstrap never enters the operations namespace.
+    @app.post(
+        "/demo/bootstrap",
+        response_model=DemoBootstrapRecordView,
+        responses={
+            403: {"description": "Demo scenario bootstrap permission denied"},
+            422: {"description": "Demo scenario bootstrap validation failed"},
+        },
+        status_code=status.HTTP_201_CREATED,
+        tags=["demo"],
+    )
     @app.post(
         "/demo/manufacturing/bootstrap",
         response_model=DemoBootstrapRecordView,
@@ -9622,6 +9640,7 @@ def create_app(
         prefix="/demo/manufacturing",
         deprecated=True,
     )
+    app.add_middleware(LegacyRouteDeprecationMiddleware, telemetry=telemetry)
     return app
 
 

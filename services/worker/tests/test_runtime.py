@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import runpy
 from typing import Any
 
 import pytest
@@ -16,6 +17,13 @@ from axis_worker.runtime import (
 
 class _Result:
     claimed = 0
+
+
+def test_package_entry_point_delegates_once_to_runtime(monkeypatch) -> None:
+    calls = []
+    monkeypatch.setattr(runtime_module, "main", lambda: calls.append("main"))
+    runpy.run_module("axis_worker", run_name="__main__")
+    assert calls == ["main"]
 
 
 class _BlockingDispatcher:

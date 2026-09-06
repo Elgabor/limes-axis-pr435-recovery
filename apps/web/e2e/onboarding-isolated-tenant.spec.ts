@@ -42,7 +42,7 @@ test.describe("Axis live story: isolated-tenant onboarding", () => {
     const connectorId = `file_csv_e2e_onb_${token}`;
 
     // --- Fresh tenant: bootstrapped scenario, zero connectors -------------
-    const bootstrap = await request.post(`${AXIS_API_BASE_URL}/demo/manufacturing/bootstrap`, {
+    const bootstrap = await request.post(`${AXIS_API_BASE_URL}/demo/bootstrap`, {
       data: {
         tenant_id: tenantId,
         requested_by: "e2e-isolated-onboarding",

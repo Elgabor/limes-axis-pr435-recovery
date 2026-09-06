@@ -25,6 +25,9 @@ Python arguments are relative to the selected package. Use selectors on a
 component target, not `make test`, which forwards them to every Python suite.
 For a failure, add `-x -vv --tb=short`; add `--durations=15` to identify slow
 tests. API warnings are errors. TypeScript checks unused locals and parameters.
+The [unused-surface audit](code-health-unused-surface.md) records consumer evidence
+and compatibility decisions; the [API policy](api-compatibility.md) defines the
+telemetry and notice required before removing legacy routes.
 
 API settings are organized by [capability](configuration.md) behind the stable
 flat environment facade. After changing a field, run `make settings-reference`

@@ -1,6 +1,6 @@
 # API domain route extraction
 
-The [generated inventory](api-route-inventory.md) maps all 250 OpenAPI HTTP
+The [generated inventory](api-route-inventory.md) maps all 251 OpenAPI HTTP
 operations, including 103 deprecated aliases, to their handler and owning module.
 Domain labels describe the extraction plan; ownership links describe current code.
 `make route-inventory` regenerates it and the API test suite rejects stale output.

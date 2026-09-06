@@ -23939,6 +23939,61 @@
         ]
       }
     },
+    "/demo/bootstrap": {
+      "post": {
+        "operationId": "manufacturing_demo_bootstrap_demo_bootstrap_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoBootstrapRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoBootstrapRecordView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "403": {
+            "description": "Demo scenario bootstrap permission denied"
+          },
+          "422": {
+            "description": "Demo scenario bootstrap validation failed"
+          }
+        },
+        "summary": "Manufacturing Demo Bootstrap",
+        "tags": [
+          "demo"
+        ]
+      }
+    },
     "/demo/manufacturing/actions": {
       "get": {
         "deprecated": true,

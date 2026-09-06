@@ -137,7 +137,7 @@ jobs:
       # answers 422, and a body without the scope answers 403.
       - name: Seed demo scenario
         run: |
-          curl -fsS -X POST "http://127.0.0.1:8000/demo/manufacturing/bootstrap" \
+          curl -fsS -X POST "http://127.0.0.1:8000/demo/bootstrap" \
             -H "content-type: application/json" \
             -d '{"tenant_id":"tenant_demo_manufacturing","requested_by":"ci","actor_scopes":["demo:scenario:bootstrap"]}' \
             > /dev/null

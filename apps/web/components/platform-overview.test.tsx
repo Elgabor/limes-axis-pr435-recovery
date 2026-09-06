@@ -410,7 +410,7 @@ describe("PlatformOverview demo bootstrap CTA", () => {
 
     expect(mocks.axisFetchParsedJson).toHaveBeenCalledTimes(1);
     const [endpoint, , options] = mocks.axisFetchParsedJson.mock.calls[0];
-    expect(endpoint).toBe("/demo/manufacturing/bootstrap");
+    expect(endpoint).toBe("/demo/bootstrap");
     expect(options).toMatchObject({
       method: "POST",
       body: {
@@ -426,7 +426,7 @@ describe("PlatformOverview demo bootstrap CTA", () => {
 
   it("renders the bootstrap failure inline on the checklist without refreshing", async () => {
     mocks.axisFetchParsedJson.mockRejectedValue(
-      new AxisApiError("/demo/manufacturing/bootstrap", 403, {
+      new AxisApiError("/demo/bootstrap", 403, {
         body: { detail: { message: "Demo bootstrap forbidden", debug: "secret-debug" } },
         requestId: "req-demo-bootstrap-403",
       }),

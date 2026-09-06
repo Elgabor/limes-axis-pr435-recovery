@@ -186,6 +186,7 @@ class TelemetryRuntime:
     connector_sync_rows_counter: Counter
     approval_decision_counter: Counter
     audit_export_counter: Counter
+    deprecated_request_counter: Counter
 
     @property
     def metrics_enabled(self) -> bool:
@@ -237,6 +238,11 @@ def _build_runtime(
             "axis.audit_exports",
             unit="1",
             description="Audit evidence export operations.",
+        ),
+        deprecated_request_counter=meter.create_counter(
+            "axis.api.deprecated_requests",
+            unit="1",
+            description="Legacy API responses by registered route, method and status.",
         ),
     )
 

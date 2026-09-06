@@ -64,7 +64,7 @@ test.describe("Axis live story: SSO-gated connector lifecycle", () => {
     foreignPersona = await createForeignTenantPersona(request, runToken);
     // The foreign tenant must exist so its verified session reads an empty
     // registry instead of an unbootstrapped-tenant failure.
-    const bootstrap = await request.post(`${AXIS_API_BASE_URL}/demo/manufacturing/bootstrap`, {
+    const bootstrap = await request.post(`${AXIS_API_BASE_URL}/demo/bootstrap`, {
       data: {
         tenant_id: `tenant_e2e_sso_other_${runToken}`,
         requested_by: "e2e-sso-denial-lane",

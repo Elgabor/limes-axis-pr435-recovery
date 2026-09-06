@@ -86,6 +86,11 @@ fabricated gauges):
   `axis.connector_sync_rows{connector_id,status}`, `axis.audit_exports{format}`.
 - Worker: `axis.scheduled_job_runs{job,status}`.
 
+The API also emits `axis.api.deprecated_requests` for the legacy manufacturing
+namespace, labelled only by registered route template (or `unmatched`), bounded
+HTTP method and response status. See [API compatibility](api-compatibility.md)
+for the migration date, collection requirements and zero-usage removal gate.
+
 Metrics are gated by `AXIS_OTEL_METRICS_ENABLED` (default `true`, but only ever
 active when `AXIS_OTEL_ENABLED` is also true).
 

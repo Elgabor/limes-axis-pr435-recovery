@@ -25,3 +25,4 @@ sequence remains in [the architecture changelog](../architecture-changelog.md).
 - [`0006-domain-model-routers.md`](./0006-domain-model-routers.md) — Accepted
 - [`0007-model-aggregate-persistence.md`](./0007-model-aggregate-persistence.md) — Accepted
 - [`0008-connector-conformance-health.md`](./0008-connector-conformance-health.md) — Accepted
+- [`0009-api-compatibility-removal.md`](./0009-api-compatibility-removal.md) — Accepted

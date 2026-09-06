@@ -8,7 +8,7 @@ Handler ownership is derived from source declarations; domain labels are
 the extraction map, not a claim that every domain already has a router.
 See [route extraction](api-route-extraction.md) for boundaries and verification.
 
-**250 operations**, 103 deprecated aliases.
+**251 operations**, 103 deprecated aliases.
 
 | Domain | Operations |
 | --- | ---: |
@@ -24,7 +24,7 @@ See [route extraction](api-route-extraction.md) for boundaries and verification.
 | operations | 21 |
 | policies | 5 |
 | simulation | 4 |
-| system | 4 |
+| system | 5 |
 | tenants | 10 |
 | workflows | 4 |
 
@@ -38,6 +38,7 @@ See [route extraction](api-route-extraction.md) for boundaries and verification.
 | GET | `/data/assets/{asset_id}/resources` | `data_asset_resources_route` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
 | GET | `/data/assets/{asset_id}/stewardship` | `data_asset_stewardship_view_route` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
 | PUT | `/data/assets/{asset_id}/stewardship` | `declare_data_asset_stewardship_route` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
+| POST | `/demo/bootstrap` | `manufacturing_demo_bootstrap` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
 | GET | `/demo/manufacturing/actions` | `manufacturing_action_registry` | [axis_api.main](../services/api/src/axis_api/main.py) | yes |
 | GET | `/demo/manufacturing/actions/runs` | `manufacturing_action_run_list` | [axis_api.main](../services/api/src/axis_api/main.py) | yes |
 | POST | `/demo/manufacturing/actions/runs/{action_run_id}/outcome` | `manufacturing_action_run_outcome` | [axis_api.main](../services/api/src/axis_api/main.py) | yes |

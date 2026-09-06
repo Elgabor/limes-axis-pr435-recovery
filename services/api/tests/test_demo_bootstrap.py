@@ -90,14 +90,16 @@ def build_client(session_factory: sessionmaker[Session]) -> TestClient:
     return TestClient(app)
 
 
+@pytest.mark.parametrize("endpoint", ["/demo/bootstrap", "/demo/manufacturing/bootstrap"])
 def test_bootstrap_creates_scenario_records_for_fresh_tenant(
     session_factory: sessionmaker[Session],
+    endpoint: str,
 ) -> None:
     seed_canonical_reference_records(session_factory)
     client = build_client(session_factory)
 
     response = client.post(
-        "/demo/manufacturing/bootstrap",
+        endpoint,
         json=bootstrap_request_payload(),
     )
 
@@ -115,6 +117,7 @@ def test_bootstrap_creates_scenario_records_for_fresh_tenant(
 
     client.close()
     assert response.status_code == 201
+    assert ("Deprecation" in response.headers) == (endpoint != "/demo/bootstrap")
     body = response.json()
     assert body["tenant_id"] == "tenant_fresh_plant"
     assert body["bootstrapped"] is True
@@ -173,7 +176,7 @@ def test_bootstrap_replay_returns_existing_record_without_duplicates(
     payload = bootstrap_request_payload()
 
     first_response = client.post("/demo/manufacturing/bootstrap", json=payload)
-    replay_response = client.post("/demo/manufacturing/bootstrap", json=payload)
+    replay_response = client.post("/demo/bootstrap", json=payload)
 
     with session_factory() as session:
         tenant_records = session.scalars(
@@ -190,6 +193,8 @@ def test_bootstrap_replay_returns_existing_record_without_duplicates(
     client.close()
     assert first_response.status_code == 201
     assert replay_response.status_code == 200
+    assert "Deprecation" in first_response.headers
+    assert "Deprecation" not in replay_response.headers
     replay_body = replay_response.json()
     assert replay_body["idempotent_replay"] is True
     assert replay_body["bootstrapped"] is True

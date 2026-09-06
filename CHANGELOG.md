@@ -7,6 +7,12 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Legacy API usage counters and deprecation/Sunset notices with a planned
+  2027-01-01 removal subject to observed migration and maintainer review.
+  `/demo/bootstrap` shares the existing governed demo handler; console and CI
+  use the new path while all 103 legacy operations remain supported
+  ([#357](https://github.com/Limes-Labs/limes-axis/issues/357)).
+
 - Reusable connector conformance checks and reference fault fixtures in the
   authoring SDK, plus a metadata-only freshness/lag/checkpoint/error/retry health
   model. Preview/supported release criteria require adapter-specific and host
