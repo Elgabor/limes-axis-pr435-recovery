@@ -152,7 +152,9 @@ claim and audit gates. `make verify` also checks REST/OpenAPI compatibility.
 
 NOT RUN for this contract: live provider I/O, production host adoption, external
 writeback, cloud secret/object-store access, distributed checkpoint contention,
-partner interoperability and hosted performance. Broader conformance and
-operational health remain [#342](https://github.com/Limes-Labs/limes-axis/issues/342).
+partner interoperability and hosted performance. The
+[shared conformance suite and operational health model](connector-conformance.md)
+add reusable fixture checks and metadata projections; production adoption and
+source-specific certification still require separate evidence.
 Record exact commands and results in the implementation PR; the reference
 must not be used as evidence that another connector is production-ready.

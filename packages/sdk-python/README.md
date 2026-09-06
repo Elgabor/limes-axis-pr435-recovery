@@ -16,6 +16,8 @@ runnable example.
 
 See [`docs/connector-authoring.md`](../../docs/connector-authoring.md) for source
 ports, host responsibilities, checkpoint handling and protocol compatibility.
+The [conformance and health guide](../../docs/connector-conformance.md) covers
+reusable fixture reports, operational metadata and release certification evidence.
 
 ## Development
 

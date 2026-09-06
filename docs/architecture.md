@@ -56,7 +56,9 @@ and explicit configuration gates.
   ports and an offline reference in the existing Python SDK. Production adapters
   retain their current API/worker ports and governance owners; SDK imports do
   not register or enable sources. See the
-  [authoring contract ADR](adr/0005-connector-authoring-contract.md).
+  [authoring contract ADR](adr/0005-connector-authoring-contract.md). The same SDK
+  owns [fixture conformance and operational health models](connector-conformance.md);
+  host adoption and preview/supported certification require their own evidence.
 - **Control API.** `services/api` exposes the HTTP surface and currently composes
   most routes and dependencies in `axis_api.main.create_app`. Domain modules own
   behavior even where route registration still lives in that composition root.

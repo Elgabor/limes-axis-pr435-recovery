@@ -9,7 +9,8 @@ the repo naming reserved for future extraction (`limes-axis-sdk`).
 
 The separate `axis_sdk.connector_authoring` namespace provides the
 [versioned source-authoring contract](connector-authoring.md) and an offline
-reference. It does not add connector REST endpoints or register source adapters.
+reference, plus [fixture conformance and operational health](connector-conformance.md).
+It does not add connector REST endpoints or register source adapters.
 
 ## Design Boundaries
 

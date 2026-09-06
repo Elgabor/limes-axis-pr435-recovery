@@ -7,6 +7,12 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Reusable connector conformance checks and reference fault fixtures in the
+  authoring SDK, plus a metadata-only freshness/lag/checkpoint/error/retry health
+  model. Preview/supported release criteria require adapter-specific and host
+  evidence; no source is automatically certified or enabled
+  ([#342](https://github.com/Limes-Labs/limes-axis/issues/342)).
+
 - Connector authoring protocol 1.0 in the Python SDK: typed source, discovery,
   read, checkpoint, health and optional writeback contracts, explicit version
   negotiation and a bounded offline reference. The author guide maps adoption

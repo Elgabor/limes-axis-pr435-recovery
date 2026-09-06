@@ -39,7 +39,7 @@ boundaries in the next section; they are not new permissions or switches.
 | Streams | Absent: batch file reader only | Absent: bounded pull reads only | Future webhook/queue/industrial-event ingestion must reuse G0–G7 and define backpressure, tenant fairness and event checkpoints. Temporal scheduling is not a stream source. |
 | Writeback | No external source writeback | Read-only source sessions; no external source writeback | Governed Axis ontology promotion exists separately: G0, G1, G7 plus the existing approval/workflow/policy/idempotency boundary. It does not authorize writes to the source. |
 | Retries | Conditional: failed-run resume from committed batches; duplicate completed execution replays | Same live-sync path; activated ingestion additionally has bounded jittered retries, fenced claims, dead-letter and governed requeue | G0–G7 for live sync; G0, G2–G7 for ingestion. No generic provider-specific retry adapter or cross-source delivery guarantee. |
-| Observability | Metadata-only runs, checkpoints, claims, last successful sync and evidence views | Same, plus resource observations, binding eligibility, ingestion overview, attempt history and extraction-batch reconciliation | G0, G7 for reads; evidence originates in the gated write paths. Optional worker telemetry emits outcome counts. This is not a uniform connector-health/SLO contract. |
+| Observability | Metadata-only runs, checkpoints, claims, last successful sync and evidence views | Same, plus resource observations, binding eligibility, ingestion overview, attempt history and extraction-batch reconciliation | G0, G7 for reads; evidence originates in the gated write paths. Optional worker telemetry emits outcome counts. The SDK now supplies a [shared health model](connector-conformance.md); production collection and source-specific SLO evidence remain separate. |
 
 ## Existing gates and owners
 
@@ -100,8 +100,9 @@ Remaining reusable gaps:
 - The [versioned authoring contract](connector-authoring.md) now defines source
   ports, negotiation and a typed health observation with an offline reference.
   Production adapters retain their current ports until explicit governed
-  adoption. Uniform operational health and broader source conformance remain
-  [separate work](https://github.com/Limes-Labs/limes-axis/issues/342).
+  adoption. The [shared conformance suite and health model](connector-conformance.md)
+  now provide offline fixture reports and operational metadata semantics; actual
+  source/host adoption and release certification remain explicit evidence gates.
 - Live-sync resume uses offsets, so source mutation can change the rows seen
   after a checkpoint. Keyset extraction restarts with no incoming watermark;
   recording a watermark does not yet implement incremental ingestion across requests.
