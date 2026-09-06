@@ -20,3 +20,4 @@ sequence remains in [the architecture changelog](../architecture-changelog.md).
 - [`0001-repository-governance-baseline.md`](./0001-repository-governance-baseline.md) — Accepted
 - [`0002-commercial-source-and-oss-export-boundary.md`](./0002-commercial-source-and-oss-export-boundary.md) — Accepted
 - [`0003-external-await-transaction-boundary.md`](./0003-external-await-transaction-boundary.md) — Proposed
+- [`0004-capability-settings-facade.md`](./0004-capability-settings-facade.md) — Accepted

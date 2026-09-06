@@ -1,6 +1,6 @@
 .PHONY: install lint test typecheck build-web docs-check edition-matrix-check edition-export-readiness openapi openapi-check test-sdk security-check deployment-check deployment-profile-render-check deployment-rollout-rehearsal-plan deployment-rollout-rehearsal deployment-ha-rehearsal-plan deployment-ha-rehearsal deployment-load-rehearsal-plan deployment-load-rehearsal deployment-tls-readiness-plan deployment-tls-readiness deployment-backup-rehearsal-plan deployment-backup-rehearsal deployment-restore-rehearsal-plan deployment-restore-rehearsal deployment-typedb-recovery-rehearsal-plan deployment-typedb-recovery-rehearsal deployment-object-storage-recovery-rehearsal-plan deployment-object-storage-recovery-rehearsal deployment-temporal-recovery-rehearsal-plan deployment-temporal-recovery-rehearsal deployment-secret-rotation-rehearsal-plan deployment-secret-rotation-rehearsal container-check container-release-check container-security-check vulnerability-management-check container-build-api container-build-web container-build-worker container-build container-scan-local worker test-api test-worker test-web test-integration test-e2e-connectors-source dev-stack-up dev-stack-down demo-stack-up demo-stack-down demo-db-upgrade demo-api demo-api-sso demo-web demo-keycloak-check demo-keycloak-bootstrap-check demo-check demo-check-live demo-verify demo-backup-plan demo-backup-local demo-restore-local
 
-.PHONY: verify test-schemas test-e2e-smoke benchmark-lineage
+.PHONY: verify test-schemas test-e2e-smoke benchmark-lineage settings-reference settings-reference-check
 
 PYTEST_ARGS ?=
 WEB_TEST_ARGS ?=
@@ -54,6 +54,12 @@ test-e2e-smoke:
 
 benchmark-lineage:
 	cd services/api && uv run python scripts/benchmark_lineage.py $(BENCHMARK_ARGS)
+
+settings-reference:
+	cd services/api && uv run python scripts/export_settings_reference.py
+
+settings-reference-check:
+	cd services/api && uv run python scripts/export_settings_reference.py --check
 
 test-integration:
 	cd services/api && AXIS_RUN_INTEGRATION=1 uv run pytest tests/integration

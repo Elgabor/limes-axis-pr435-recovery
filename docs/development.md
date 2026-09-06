@@ -18,12 +18,17 @@ make test-sdk PYTEST_ARGS='tests/test_config.py -q'
 make test-web WEB_TEST_ARGS='lib/axis-api.test.ts'
 make lint typecheck
 make openapi-check docs-check
+make settings-reference-check
 ```
 
 Python arguments are relative to the selected package. Use selectors on a
 component target, not `make test`, which forwards them to every Python suite.
 For a failure, add `-x -vv --tb=short`; add `--durations=15` to identify slow
 tests. API warnings are errors. TypeScript checks unused locals and parameters.
+
+API settings are organized by [capability](configuration.md) behind the stable
+flat environment facade. After changing a field, run `make settings-reference`
+and commit the generated reference; API tests reject stale documentation.
 
 `make test` includes API, worker, SDK, web and JSON schemas. `make verify`
 also runs lint, typecheck, web build, OpenAPI parity, documentation, demo,

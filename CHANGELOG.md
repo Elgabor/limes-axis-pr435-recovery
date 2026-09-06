@@ -24,6 +24,12 @@ release-bound behavior, not the complete commit history.
 
 ### Changed
 
+- API settings are grouped into seven capabilities behind the existing flat
+  environment facade, with a generated operator reference. Production startup
+  now rejects non-positive rate limits and inconsistent enabled source-ingestion
+  retry and extraction claim windows. Existing aliases, defaults and development
+  behavior are preserved ([#358](https://github.com/Limes-Labs/limes-axis/issues/358)).
+
 - Governed model invocations commit the requested record before calling the
   provider, so a provider timeout no longer occupies a database connection and
   the idempotency key survives an interrupted process. At most one provider

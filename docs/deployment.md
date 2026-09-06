@@ -5,6 +5,11 @@ Limes Axis commercial product. It is a self-hostable package for enterprise
 evaluation, cluster planning and future hardening. It is not a production
 certification.
 
+The [API configuration reference](configuration-reference.md) lists environment
+names, defaults and constraints by capability. Review the
+[production combination checks](configuration.md#production-combinations)
+before enabling a production profile; invalid combinations fail before startup.
+
 The chart lives in `infra/helm/limes-axis` and currently deploys only the Axis
 API and web console. The repository includes local API and web image builds,
 while production operators must still supply signed, published images and the

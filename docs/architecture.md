@@ -71,6 +71,11 @@ and explicit configuration gates.
 - **Deployment.** The repository ships one self-hosted topology for the API,
   console, worker, Postgres, TypeDB, Temporal, MinIO and Keycloak. Readiness and
   deployment contracts are checked from the same repository.
+- **Configuration.** Seven capability models own API setting declarations;
+  `axis_api.config.Settings` loads one flat environment facade and retains the
+  existing aliases and caller attributes. Cross-capability production validation
+  runs before application initialization. See [configuration](configuration.md)
+  and the [configuration ownership ADR](adr/0004-capability-settings-facade.md).
 
 ## Boundary Ownership
 
