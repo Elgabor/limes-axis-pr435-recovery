@@ -12012,6 +12012,326 @@
         "title": "ConnectorTenantConfiguration",
         "type": "object"
       },
+      "ConnectorWorkspaceCounts": {
+        "properties": {
+          "egress_policies": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Egress Policies"
+          },
+          "evidence_issues": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Issues"
+          },
+          "pending_proposals": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Proposals"
+          },
+          "runs": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runs"
+          },
+          "source_limit": {
+            "default": 100,
+            "title": "Source Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "runs",
+          "pending_proposals",
+          "egress_policies",
+          "evidence_issues"
+        ],
+        "title": "ConnectorWorkspaceCounts",
+        "type": "object"
+      },
+      "ConnectorWorkspaceDetail": {
+        "properties": {
+          "connector": {
+            "$ref": "#/components/schemas/ConnectorRegistryItem"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "connector"
+        ],
+        "title": "ConnectorWorkspaceDetail",
+        "type": "object"
+      },
+      "ConnectorWorkspaceItem": {
+        "properties": {
+          "connector_status": {
+            "$ref": "#/components/schemas/OverviewStatus"
+          },
+          "last_successful_sync": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorWorkspaceSyncObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/ConnectorWorkspaceManifestLabel"
+          },
+          "persisted_manifest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorWorkspaceManifestStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preview_sample": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorWorkspaceSampleCount"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "registry_origin": {
+            "$ref": "#/components/schemas/ConnectorRegistryOrigin"
+          }
+        },
+        "required": [
+          "manifest",
+          "connector_status",
+          "registry_origin",
+          "persisted_manifest",
+          "preview_sample",
+          "last_successful_sync"
+        ],
+        "title": "ConnectorWorkspaceItem",
+        "type": "object"
+      },
+      "ConnectorWorkspaceManifestLabel": {
+        "properties": {
+          "connector_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Connector Id",
+            "type": "string"
+          },
+          "connector_type": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Connector Type",
+            "type": "string"
+          },
+          "display_name": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connector_id",
+          "display_name",
+          "connector_type"
+        ],
+        "title": "ConnectorWorkspaceManifestLabel",
+        "type": "object"
+      },
+      "ConnectorWorkspaceManifestStatus": {
+        "properties": {
+          "status": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ConnectorWorkspaceManifestStatus",
+        "type": "object"
+      },
+      "ConnectorWorkspaceSampleCount": {
+        "properties": {
+          "record_count": {
+            "minimum": 0.0,
+            "title": "Record Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "record_count"
+        ],
+        "title": "ConnectorWorkspaceSampleCount",
+        "type": "object"
+      },
+      "ConnectorWorkspaceSummary": {
+        "properties": {
+          "connectors": {
+            "items": {
+              "$ref": "#/components/schemas/ConnectorWorkspaceItem"
+            },
+            "maxItems": 50,
+            "title": "Connectors",
+            "type": "array"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ConnectorWorkspaceCounts"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 50.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "offset": {
+            "minimum": 0.0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "plant_name": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plant Name"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/ManufacturingResponseProvenance"
+          },
+          "registry_status": {
+            "$ref": "#/components/schemas/OverviewStatus"
+          },
+          "scenario": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenario"
+          },
+          "tenant_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "total_connectors": {
+            "minimum": 0.0,
+            "title": "Total Connectors",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "plant_name",
+          "scenario",
+          "provenance",
+          "registry_status",
+          "generated_at",
+          "connectors",
+          "total_connectors",
+          "offset",
+          "limit",
+          "next_offset",
+          "counts"
+        ],
+        "title": "ConnectorWorkspaceSummary",
+        "type": "object"
+      },
+      "ConnectorWorkspaceSyncObservation": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "records_read": {
+            "minimum": 0.0,
+            "title": "Records Read",
+            "type": "integer"
+          },
+          "run_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "completed_at",
+          "records_read"
+        ],
+        "title": "ConnectorWorkspaceSyncObservation",
+        "type": "object"
+      },
       "ContractCheck": {
         "properties": {
           "detail": {
@@ -31300,6 +31620,160 @@
         ]
       }
     },
+    "/demo/manufacturing/connectors/workspace": {
+      "get": {
+        "deprecated": true,
+        "operationId": "connector_workspace_summary_demo_manufacturing_connectors_workspace_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorWorkspaceSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Connector Workspace Summary",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/demo/manufacturing/connectors/workspace/detail": {
+      "get": {
+        "deprecated": true,
+        "operationId": "connector_workspace_detail_demo_manufacturing_connectors_workspace_detail_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connector_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Connector Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorWorkspaceDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Connector Workspace Detail",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
     "/demo/manufacturing/demo-readiness": {
       "get": {
         "deprecated": true,
@@ -40366,6 +40840,158 @@
         "summary": "Manufacturing Connector Run Execute Sync",
         "tags": [
           "demo"
+        ]
+      }
+    },
+    "/operations/connectors/workspace": {
+      "get": {
+        "operationId": "connector_workspace_summary_operations_connectors_workspace_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorWorkspaceSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Connector Workspace Summary",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/operations/connectors/workspace/detail": {
+      "get": {
+        "operationId": "connector_workspace_detail_operations_connectors_workspace_detail_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "connector_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Connector Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorWorkspaceDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Connector Workspace Detail",
+        "tags": [
+          "connectors"
         ]
       }
     },

@@ -51,7 +51,11 @@ and explicit configuration gates.
 
 - **Console and public contracts.** `apps/web` renders the governance console and
   parses API responses through local runtime contracts. `packages/schemas` owns
-  versionable public JSON schemas.
+  versionable public JSON schemas. The connector console reads a
+  [paged workspace projection](connector-workspace.md) before selected details;
+  `axis_api.connector_workspace` owns the projection while the HTTP boundary
+  retains principal/tenant binding. [ADR 0011](adr/0011-connector-workspace-read-model.md)
+  records its audit, invalidation and compatibility rules.
 - **Connector authoring.** `axis_sdk.connector_authoring` owns versioned source
   ports and an offline reference in the existing Python SDK. Production adapters
   retain their current API/worker ports and governance owners; SDK imports do

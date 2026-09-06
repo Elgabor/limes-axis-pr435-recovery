@@ -1,0 +1,83 @@
+{
+  "date": "2026-09-06",
+  "baseline_commit": "269a96f7613e345fe1392633fd3f8604d43b5c85",
+  "fixture": "60 synthetic reference connectors, CSV selected, empty auxiliary registries; real API with isolated SQLite; production Next.js; Chromium 151 / Playwright 1.62.1; desktop 1440x1000",
+  "scope": "Connector HTTP response bodies only. Identity, health, readiness and static resources excluded. One browser sample per revision; timing is observational, not a capacity result.",
+  "before": {
+    "requests": [
+      {
+        "path": "/operations/connectors?tenant_id=tenant_demo_manufacturing",
+        "status": 200,
+        "bytes": 156014,
+        "start_ms": 0.0,
+        "response_end_ms": 283.621
+      },
+      {
+        "path": "/operations/connectors/credential-handles?tenant_id=tenant_demo_manufacturing",
+        "status": 200,
+        "bytes": 742,
+        "start_ms": 0.427,
+        "response_end_ms": 270.63
+      },
+      {
+        "path": "/operations/connectors/credential-leases?tenant_id=tenant_demo_manufacturing",
+        "status": 200,
+        "bytes": 933,
+        "start_ms": 0.902,
+        "response_end_ms": 270.764
+      },
+      {
+        "path": "/operations/connectors/egress-policies?tenant_id=tenant_demo_manufacturing",
+        "status": 200,
+        "bytes": 950,
+        "start_ms": 1.336,
+        "response_end_ms": 218.409
+      },
+      {
+        "path": "/operations/connectors/runs?tenant_id=tenant_demo_manufacturing",
+        "status": 200,
+        "bytes": 775,
+        "start_ms": 1.725,
+        "response_end_ms": 270.099
+      },
+      {
+        "path": "/operations/connectors/evidence-invariants?tenant_id=tenant_demo_manufacturing",
+        "status": 200,
+        "bytes": 735,
+        "start_ms": 2.126,
+        "response_end_ms": 309.632
+      },
+      {
+        "path": "/operations/connectors/ontology-proposals?tenant_id=tenant_demo_manufacturing",
+        "status": 200,
+        "bytes": 871,
+        "start_ms": 2.566,
+        "response_end_ms": 307.117
+      }
+    ],
+    "count": 7,
+    "bytes": 161020,
+    "page_errors": []
+  },
+  "after": {
+    "requests": [
+      {
+        "path": "/operations/connectors/workspace?tenant_id=tenant_demo_manufacturing&offset=0",
+        "status": 200,
+        "bytes": 6935,
+        "start_ms": 0.0,
+        "response_end_ms": 61.702
+      },
+      {
+        "path": "/operations/connectors/workspace/detail?tenant_id=tenant_demo_manufacturing&connector_id=file_csv_manufacturing_assets",
+        "status": 200,
+        "bytes": 2652,
+        "start_ms": 73.36,
+        "response_end_ms": 17.254
+      }
+    ],
+    "count": 2,
+    "bytes": 9587,
+    "page_errors": []
+  }
+}

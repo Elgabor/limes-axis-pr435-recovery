@@ -71,7 +71,7 @@ const connectorPersistedManifestSummary = z.object({
   registered_at: z.string(),
   notes: stringArraySchema,
 });
-const connectorRegistryItem = z.object({
+export const connectorRegistryItem = z.object({
   manifest: connectorManifest,
   runtime_policy: connectorRuntimePolicy,
   preview_sample: connectorPreviewSample.nullable(),

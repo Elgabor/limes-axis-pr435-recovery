@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   connectorEndpointFixtures,
   connectorRegistryFixture,
+  workspaceFixture,
   manifestDetailFixture,
   manifestRegistryFixture,
 } from "./connector-fixtures";
@@ -78,19 +79,32 @@ function queryResult(data: unknown, source: Source) {
 
 /** Serve fixtures for every endpoint, with optional per-path overrides. */
 function mockQueries(overrides: Record<string, { data: unknown; source: Source }> = {}) {
-  mocks.useAxisQuery.mockImplementation((path: string) => {
+  mocks.useAxisQuery.mockImplementation((path: string, options: { enabled?: boolean }) => {
+    if (options.enabled === false) return queryResult(null, "loading");
     const basePath = path.split("?")[0];
     const override = overrides[path] ?? overrides[basePath];
-    if (override) {
-      return queryResult(override.data, override.source);
+    const registry = overrides[`${OPERATIONS_API_PREFIX}/connectors/workspace`]?.data as
+      typeof connectorRegistryFixture | undefined;
+    if (basePath === `${OPERATIONS_API_PREFIX}/connectors/workspace`) {
+      if (override && !override.data) return queryResult(null, override.source);
+      const data = registry ?? connectorRegistryFixture;
+      return queryResult("counts" in data ? data : workspaceFixture(data), override?.source ?? "api");
+    }
+    if (override) return queryResult(override.data, override.source);
+    if (basePath === `${OPERATIONS_API_PREFIX}/connectors/workspace/detail`) {
+      const connectorId = new URL(path, "http://localhost").searchParams.get("connector_id");
+      const fullRegistry = registry && !("counts" in registry) ? registry : connectorRegistryFixture;
+      const connector = fullRegistry.connectors.find(
+        (item) => item.manifest.connector_id === connectorId,
+      );
+      return connector
+        ? queryResult({ tenant_id: connectorRegistryFixture.tenant_id, connector }, "api")
+        : { ...queryResult(null, "unavailable"), errorStatus: 404 };
     }
     const fixture = connectorEndpointFixtures[path]
       ?? connectorEndpointFixtures[basePath]
       ?? connectorEndpointFixtures[`${basePath}?tenant_id=tenant_demo_manufacturing`];
-    if (fixture) {
-      return queryResult(fixture, "api");
-    }
-    return queryResult(null, "loading");
+    return fixture ? queryResult(fixture, "api") : queryResult(null, "loading");
   });
 }
 
@@ -140,13 +154,17 @@ describe("ConnectorConsole states", () => {
     const connectorCalls = mocks.useAxisQuery.mock.calls.filter(
       ([path]) => typeof path === "string" && path.startsWith(`${OPERATIONS_API_PREFIX}/connectors`),
     );
-    expect(new Set(connectorCalls.map(([path]) => path)).size).toBe(9);
+    const enabledPaths = new Set(connectorCalls.filter(([, options]) => options.enabled)
+      .map(([path]) => path.split("?")[0]));
+    expect(enabledPaths).toEqual(new Set([
+      `${OPERATIONS_API_PREFIX}/connectors/workspace`,
+      `${OPERATIONS_API_PREFIX}/connectors/workspace/detail`,
+      `${OPERATIONS_API_PREFIX}/connectors/manifests/file_csv_manufacturing_assets`,
+    ]));
     connectorCalls.forEach(([path, options]) => {
       expect(path).toContain("tenant_id=tenant_acme");
       expect(options).toMatchObject({ expectedTenantId: "tenant_acme" });
-      expect(options.enabled).toBe(
-        path.includes("/evidence-invariants/snapshots") ? false : true,
-      );
+
     });
   });
 
@@ -168,7 +186,7 @@ describe("ConnectorConsole states", () => {
 
   it("renders loading skeletons without error copy while the registry loads", () => {
     mockQueries({
-      [`${OPERATIONS_API_PREFIX}/connectors`]: { data: null, source: "loading" },
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: { data: null, source: "loading" },
     });
     renderConsole();
 
@@ -178,7 +196,7 @@ describe("ConnectorConsole states", () => {
 
   it("renders the ErrorPanel when the registry API is unreachable", () => {
     mockQueries({
-      [`${OPERATIONS_API_PREFIX}/connectors`]: { data: null, source: "unavailable" },
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: { data: null, source: "unavailable" },
     });
     renderConsole();
 
@@ -193,7 +211,7 @@ describe("ConnectorConsole states", () => {
   it("renders the EmptyPanel with a wizard CTA when the registry has zero connectors", async () => {
     const user = userEvent.setup();
     mockQueries({
-      [`${OPERATIONS_API_PREFIX}/connectors`]: {
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: {
         data: { ...connectorRegistryFixture, connectors: [] },
         source: "api",
       },
@@ -209,7 +227,7 @@ describe("ConnectorConsole states", () => {
 
   it("uses connector registry provenance instead of treating every API payload as live", () => {
     mockQueries({
-      [`${OPERATIONS_API_PREFIX}/connectors`]: {
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: {
         data: { ...connectorRegistryFixture, provenance: "reference_scenario" },
         source: "api",
       },
@@ -250,7 +268,10 @@ describe("ConnectorConsole metrics", () => {
 
   it("shows a placeholder value for a metric whose registry is unavailable", () => {
     mockQueries({
-      [`${OPERATIONS_API_PREFIX}/connectors/egress-policies`]: { data: null, source: "unavailable" },
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: {
+        data: { ...workspaceFixture(), counts: { ...workspaceFixture().counts, egress_policies: null } },
+        source: "api",
+      },
     });
     renderConsole();
 
@@ -399,7 +420,7 @@ describe("ConnectorConsole list and detail", () => {
   it("renders never-sampled state in the connector list and detail", async () => {
     const user = userEvent.setup();
     mockQueries({
-      [`${OPERATIONS_API_PREFIX}/connectors`]: {
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: {
         data: {
           ...connectorRegistryFixture,
           connectors: connectorRegistryFixture.connectors.map((connector, index) => (
@@ -441,7 +462,7 @@ describe("ConnectorConsole list and detail", () => {
 
   it("renders successful sync evidence ahead of an existing preview sample", () => {
     mockQueries({
-      [`${OPERATIONS_API_PREFIX}/connectors`]: {
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: {
         data: {
           ...connectorRegistryFixture,
           connectors: connectorRegistryFixture.connectors.map((connector, index) => (
@@ -615,7 +636,7 @@ describe("ConnectorConsole persisted registry entries", () => {
 
   function mockWithWizardManifest() {
     mockQueries({
-      [`${OPERATIONS_API_PREFIX}/connectors`]: {
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: {
         data: {
           ...connectorRegistryFixture,
           connectors: [...connectorRegistryFixture.connectors, wizardConnector],
@@ -666,7 +687,7 @@ describe("ConnectorConsole persisted registry entries", () => {
         },
       };
     });
-    const oldestConnector = persistedConnectors[0];
+    const oldestConnector = persistedConnectors[100];
     const oldestManifest = {
       ...wizardManifest,
       manifest_id: oldestConnector.persisted_manifest.manifest_id,
@@ -682,11 +703,17 @@ describe("ConnectorConsole persisted registry entries", () => {
     const oldestDetailPath =
       `${OPERATIONS_API_PREFIX}/connectors/manifests/${oldestConnector.manifest.connector_id}`;
     mockQueries({
-      [`${OPERATIONS_API_PREFIX}/connectors`]: {
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: {
         data: {
-          ...connectorRegistryFixture,
-          connectors: [...connectorRegistryFixture.connectors, ...persistedConnectors],
+          ...workspaceFixture(),
+          connectors: workspaceFixture().connectors,
+          total_connectors: 103,
+          next_offset: 25,
         },
+        source: "api",
+      },
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace/detail`]: {
+        data: { tenant_id: connectorRegistryFixture.tenant_id, connector: oldestConnector },
         source: "api",
       },
       [oldestDetailPath]: {
@@ -702,9 +729,9 @@ describe("ConnectorConsole persisted registry entries", () => {
 
     renderConsole();
 
-    const selectedItem = screen.getByRole("button", { name: /Scale fixture 000/ });
-    expect(within(selectedItem).getByText("Registered Preview Only")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Scale fixture 000" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Scale fixture 100/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Scale fixture 100" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Next connectors" })).toBeEnabled();
     expect(screen.getByText("Current revision")).toBeInTheDocument();
     expect(mocks.useAxisQuery).toHaveBeenCalledWith(
       expect.stringContaining(oldestDetailPath),
@@ -712,7 +739,7 @@ describe("ConnectorConsole persisted registry entries", () => {
     );
   });
 
-  it("uses the complete connector registry without requesting the capped manifest list", () => {
+  it("uses the workspace total without requesting the capped manifest list", () => {
     mockQueries();
     renderConsole();
 
@@ -778,7 +805,7 @@ describe("ConnectorConsole persisted registry entries", () => {
       notes: ["authoritative detail"],
     };
     mockQueries({
-      [`${OPERATIONS_API_PREFIX}/connectors`]: {
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: {
         data: {
           ...connectorRegistryFixture,
           connectors: [...connectorRegistryFixture.connectors, wizardConnector],
@@ -829,5 +856,53 @@ describe("ConnectorConsole persisted registry entries", () => {
     });
     expect(parsedExport.runtime_policy.row_limit).toBe(250);
     expect(parsedExport.notes).toEqual(["authoritative detail"]);
+  });
+});
+
+
+describe("ConnectorConsole workspace navigation", () => {
+  it("requests another page and clears a prior connector selection", async () => {
+    const user = userEvent.setup();
+    mockQueries({
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace`]: {
+        data: { ...workspaceFixture(), total_connectors: 60, next_offset: 25 }, source: "api",
+      },
+    });
+    renderConsole();
+    await user.click(screen.getByRole("button", { name: "Next connectors" }));
+    expect(window.location.search).toContain("offset=25");
+    expect(mocks.useAxisQuery).toHaveBeenCalledWith(
+      expect.stringContaining("offset=25"), expect.objectContaining({ enabled: true }),
+    );
+  });
+
+  it("clears the wizard when a verified cookie principal changes within the tenant", async () => {
+    const user = userEvent.setup();
+    const identity = {
+      authenticated: true, actor_id: "first", api_auth_required: true, tenant_id: "tenant_demo_manufacturing",
+    };
+    const scope = {
+      identity: queryResult(identity, "api"),
+      tenantId: "tenant_demo_manufacturing", tenantQueriesEnabled: true,
+    };
+    mocks.useConsoleTenantScope.mockReturnValue(scope);
+    mockQueries();
+    const view = renderConsole();
+    await user.click(screen.getByRole("button", { name: "Add connector" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    mocks.useConsoleTenantScope.mockReturnValue({
+      ...scope, identity: queryResult({ ...identity, actor_id: "second" }, "api"),
+    });
+    view.rerender(<ToastProvider><ConnectorConsole /></ToastProvider>);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the paged list visible if a selected detail fails", () => {
+    mockQueries({
+      [`${OPERATIONS_API_PREFIX}/connectors/workspace/detail`]: { data: null, source: "unavailable" },
+    });
+    renderConsole();
+    expect(screen.getByRole("button", { name: /Manufacturing assets CSV/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Connector detail unavailable" })).toBeInTheDocument();
   });
 });

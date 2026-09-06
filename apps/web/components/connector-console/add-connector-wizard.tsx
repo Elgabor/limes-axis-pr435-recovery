@@ -122,6 +122,8 @@ function IssueList({ title, issues }: { title: string; issues: string[] }) {
 
 export function AddConnectorWizard({
   connectors,
+  templatesLoading = false,
+  templatesUnavailable = false,
   identitySession,
   open,
   onOpenChange,
@@ -129,6 +131,8 @@ export function AddConnectorWizard({
   tenantId,
 }: {
   connectors: ConnectorRegistryItem[];
+  templatesLoading?: boolean;
+  templatesUnavailable?: boolean;
   identitySession: IdentitySessionReadModel | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -491,6 +495,8 @@ export function AddConnectorWizard({
           <DialogDescription>{copy.description}</DialogDescription>
         </DialogHeader>
 
+        {templatesLoading ? <p role="status">Loading connector templates…</p> : null}
+        {templatesUnavailable ? <FieldError>Connector templates unavailable. Close and reopen to retry.</FieldError> : null}
         {step === "type" ? (
           <div className="grid gap-3">
             <p className="m-0 text-sm font-medium text-ink">{copy.typeStep.title}</p>
@@ -838,7 +844,7 @@ export function AddConnectorWizard({
             {copy.cancel}
           </Button>
           {step === "type" ? (
-            <Button className="px-4 py-2 text-sm" onClick={() => setStep("source")}>
+            <Button className="px-4 py-2 text-sm" disabled={templatesLoading || templatesUnavailable} onClick={() => setStep("source")}>
               {copy.next}
             </Button>
           ) : null}

@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback } from "react";
+
 import { Card } from "@/components/ui/card";
 import { DataTable } from "@/components/ui/data-table";
 import { DetailGrid, KeyValueRow } from "@/components/ui/detail-grid";
@@ -324,16 +326,17 @@ export function ConnectorDetail({
     `${CONNECTOR_ENDPOINTS.manifests}/${encodeURIComponent(manifest.connector_id)}`,
     tenantId,
   );
+  const parseManifestDetail = useCallback((value: unknown) => {
+    const detail = parseConnectorManifestDetail(value);
+    if (detail.connector_id !== manifest.connector_id) {
+      throw new Error("Connector manifest detail response does not match the selected connector.");
+    }
+    return detail;
+  }, [manifest.connector_id]);
   const manifestDetail = useAxisQuery<ConnectorManifestDetail>(manifestDetailPath, {
     enabled: connector.persisted_manifest !== null,
     expectedTenantId: tenantId,
-    parse: (value) => {
-      const detail = parseConnectorManifestDetail(value);
-      if (detail.connector_id !== manifest.connector_id) {
-        throw new Error("Connector manifest detail response does not match the selected connector.");
-      }
-      return detail;
-    },
+    parse: parseManifestDetail,
   });
   const effectiveConnector = connectorWithCurrentManifest(
     connector,

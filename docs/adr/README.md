@@ -27,3 +27,4 @@ sequence remains in [the architecture changelog](../architecture-changelog.md).
 - [`0008-connector-conformance-health.md`](./0008-connector-conformance-health.md) — Accepted
 - [`0009-api-compatibility-removal.md`](./0009-api-compatibility-removal.md) — Accepted
 - [`0010-mcp-gateway-boundary.md`](./0010-mcp-gateway-boundary.md) — Accepted
+- [`0011-connector-workspace-read-model.md`](./0011-connector-workspace-read-model.md) — Accepted

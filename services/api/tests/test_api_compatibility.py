@@ -70,7 +70,7 @@ def test_all_legacy_operations_have_an_equivalent_canonical_contract(openapi_sch
         if path.startswith("/demo/manufacturing/")
         for method in operations
     ]
-    assert len(legacy) == 103
+    assert len(legacy) == 105
     for method, path in legacy:
         canonical = (
             "/demo/bootstrap"

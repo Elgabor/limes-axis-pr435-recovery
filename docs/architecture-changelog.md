@@ -19,6 +19,27 @@ runtime dependency changes. Each entry should include:
 Small implementation increments that do not alter architecture belong in the
 normal release changelog or pull request, not here.
 
+## 2026-09-06 — Project the Connector Workspace Before Loading Details
+
+**Issue:** [#364](https://github.com/Limes-Labs/limes-axis/issues/364)
+
+**Boundary:** console reads through the authenticated API into existing
+connector registries and audit evidence.
+
+The console now requests a bounded page/counter projection and selected details.
+The projection has a domain owner, while principal/tenant authorization stays
+in the HTTP composition root. Counter savepoints isolate failures; page and
+counter audits remain in the caller's transaction. Identity changes invalidate
+browser data, and no shared cache is introduced.
+
+Compatibility: full registries, legacy aliases, snapshot permissions and
+mutation paths remain supported. Counter windows retain their old first-100
+semantics; deep links can select a connector outside the visible page.
+
+Evidence: [ADR 0011](adr/0011-connector-workspace-read-model.md), the
+[workspace contract and measurements](connector-workspace.md), API parity and
+rollback tests, and browser query/navigation checks.
+
 ## 2026-09-05 — Commit Before the External Await on the Model Invocation Path
 
 **Issue:** [#362](https://github.com/Limes-Labs/limes-axis/issues/362)

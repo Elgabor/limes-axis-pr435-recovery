@@ -156,3 +156,8 @@ metadata-only records, warms up three reads, then reports statement counts and
 median/min/max latency. Each sample opens a fresh ORM session. Imports, seeding
 and warmup are outside timing. Run without concurrent suites/builds; use query
 counts as the stable regression signal, not a wall-clock assertion in CI.
+
+The [connector workspace measurement](connector-workspace.md#measured-evidence-and-reproduction)
+uses an isolated API fixture and a real browser to capture the initial request
+waterfall and response bytes. Its HTTP measurements are separate from database
+capacity and readiness checks.

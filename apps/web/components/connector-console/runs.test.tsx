@@ -75,7 +75,7 @@ function queryResult(data: unknown, source: Source) {
 function buildRegistries(
   overrides: Partial<Record<keyof ConnectorRegistries, { data: unknown; source: Source }>> = {},
 ): ConnectorRegistries {
-  const paths: Record<keyof ConnectorRegistries, string> = {
+  const paths: Partial<Record<keyof ConnectorRegistries, string>> = {
     registry: `${OPERATIONS_API_PREFIX}/connectors`,
     credentialHandles: `${OPERATIONS_API_PREFIX}/connectors/credential-handles`,
     credentialLeases: `${OPERATIONS_API_PREFIX}/connectors/credential-leases`,
@@ -85,7 +85,6 @@ function buildRegistries(
       `${OPERATIONS_API_PREFIX}/connectors/evidence-invariants?tenant_id=tenant_demo_manufacturing`,
     evidenceSnapshots:
       `${OPERATIONS_API_PREFIX}/connectors/evidence-invariants/snapshots?tenant_id=tenant_demo_manufacturing`,
-    ontologyProposals: `${OPERATIONS_API_PREFIX}/connectors/ontology-proposals`,
   };
 
   return Object.fromEntries(

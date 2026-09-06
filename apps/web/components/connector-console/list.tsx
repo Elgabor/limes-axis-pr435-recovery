@@ -1,11 +1,13 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { PlatformStatusPill } from "@/components/status-pill";
 import { cn } from "@/lib/cn";
-import { formatConnectorLabel, type ConnectorRegistryItem } from "@/lib/connectors-demo";
+import { formatConnectorLabel } from "@/lib/connectors-demo";
 import { formatDateTime, pluralize } from "@/lib/format";
+import type { ConnectorWorkspaceItem } from "@/lib/runtime-contracts/connector-workspace";
 import { strings } from "@/lib/strings";
 
 function manifestLifecycleClass(status: string): string {
@@ -21,13 +23,23 @@ function manifestLifecycleClass(status: string): string {
   return "signal-action-required";
 }
 
-/** Connector list rail over the API's complete registry contract. */
+/** Connector list rail over the API's paged summary contract. */
 export function ConnectorList({
   connectors,
   selectedConnectorId,
   onSelect,
+  totalConnectors,
+  offset,
+  limit,
+  nextOffset,
+  onPageChange,
 }: {
-  connectors: ConnectorRegistryItem[];
+  connectors: ConnectorWorkspaceItem[];
+  totalConnectors: number;
+  offset: number;
+  limit: number;
+  nextOffset: number | null;
+  onPageChange: (offset: number) => void;
   selectedConnectorId: string;
   onSelect: (connectorId: string) => void;
 }) {
@@ -36,7 +48,7 @@ export function ConnectorList({
       <div className="grid gap-1">
         <Eyebrow>{strings.connectors.list.eyebrow}</Eyebrow>
         <h2 className="font-display m-0 text-xl text-ink">
-          {pluralize(connectors.length, "connector")}
+          {pluralize(totalConnectors, "connector")}
         </h2>
       </div>
       <div className="grid gap-2">
@@ -99,6 +111,19 @@ export function ConnectorList({
           );
         })}
       </div>
+      {totalConnectors > limit || offset > 0 ? (
+        <nav aria-label="Connector pages" className="grid gap-2">
+          <p className="m-0 text-xs text-muted">
+            {connectors.length ? `${offset + 1}–${offset + connectors.length}` : "0"} of {totalConnectors}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button aria-label="Previous connectors" variant="secondary" disabled={offset === 0}
+              onClick={() => onPageChange(Math.max(0, offset - limit))}>Previous</Button>
+            <Button aria-label="Next connectors" variant="secondary" disabled={nextOffset === null}
+              onClick={() => { if (nextOffset !== null) onPageChange(nextOffset); }}>Next</Button>
+          </div>
+        </nav>
+      ) : null}
     </Card>
   );
 }

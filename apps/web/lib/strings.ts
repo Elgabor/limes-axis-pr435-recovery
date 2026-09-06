@@ -1015,18 +1015,18 @@ const connectors = {
   metrics: {
     stripLabel: "Connector metrics",
     connectors: { label: "Connectors", detail: "Registered data sources" },
-    runs: { label: "Runs", detail: "Governed sync runs recorded" },
+    runs: { label: "Runs", detail: "Up to 100 recent sync runs" },
     pendingProposals: {
       label: "Pending proposals",
-      detail: "Ontology proposals awaiting promotion",
+      detail: "Unpromoted among 100 recent proposals",
     },
     egressPolicies: {
       label: "Egress policies",
-      detail: "Approved outbound data boundaries",
+      detail: "Up to 100 recent policy records",
     },
     evidenceIssues: {
       label: "Evidence issues",
-      detail: "Open audit-evidence findings",
+      detail: "Findings across 100 recent records per evidence type",
     },
     unavailable: "—",
   },

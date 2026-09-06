@@ -1282,10 +1282,10 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByText("Fallback connector seed")).toHaveCount(0);
     await expect(page.getByRole("button", { name: /Manufacturing assets CSV/ })).toHaveCount(0);
 
-    // The registry endpoint stays demoted behind the technical-details expander.
-    await expect(page.getByText(`${OPERATIONS_API_PREFIX}/connectors`, { exact: true })).toHaveCount(0);
+    // The workspace endpoint stays demoted behind the technical-details expander.
+    await expect(page.getByText(`${OPERATIONS_API_PREFIX}/connectors/workspace`, { exact: true })).toHaveCount(0);
     await page.getByRole("button", { name: "Technical details" }).click();
-    await expect(page.getByText(`${OPERATIONS_API_PREFIX}/connectors`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`${OPERATIONS_API_PREFIX}/connectors/workspace`, { exact: true })).toBeVisible();
 
     await expectNoHorizontalOverflow(page);
     await expectNoUndersizedTargets(page);

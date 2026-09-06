@@ -1,6 +1,6 @@
 # Legacy API migration and removal policy
 
-The 103 deprecated HTTP operations under `/demo/manufacturing/` remain available
+The 105 deprecated HTTP operations under `/demo/manufacturing/` remain available
 with their existing handlers, authorization, tenant binding, validation, response
 bodies, status codes, audit and idempotency behavior. Deprecation is a notice;
 this release does not remove or redirect an operation.

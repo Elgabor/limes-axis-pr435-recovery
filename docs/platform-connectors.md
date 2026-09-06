@@ -2,6 +2,8 @@
 
 For the audited current capabilities, supported source IDs, gate mapping and
 remaining gaps, start with the [connector capability matrix](connector-capabilities.md).
+The console loading contract, authorization parity, freshness rules and measured
+request reduction are documented in the [workspace read model](connector-workspace.md).
 
 The connector foundation introduces a public-safe contract for bringing
 external data sources into Axis without enabling live production mutation.

@@ -402,6 +402,12 @@ from axis_api.connector_source_ingestion import (
     record_connector_source_ingestion_request,
     requeue_connector_source_ingestion_request,
 )
+from axis_api.connector_workspace import (
+    ConnectorWorkspaceDetail,
+    ConnectorWorkspaceSummary,
+    read_connector_workspace_detail,
+    read_connector_workspace_summary,
+)
 from axis_api.connectors import (
     ConnectorCsvPreviewRequest,
     ConnectorCsvPreviewResult,
@@ -4375,6 +4381,77 @@ def create_app(
                     "message": "Manufacturing action registry reference payload is invalid.",
                     "tenant_id": tenant_id,
                     "surface": "actions",
+                },
+            ) from exc
+
+    @operations_router.get(
+        "/connectors/workspace",
+        response_model=ConnectorWorkspaceSummary,
+        tags=["connectors"],
+    )
+    def connector_workspace_summary(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        response: Response,
+        tenant_id: str = Query(min_length=1),
+        offset: int = Query(default=0, ge=0, le=1_000_000),
+        limit: int = Query(default=25, ge=1, le=50),
+    ) -> ConnectorWorkspaceSummary:
+        _authorize_tenant_read(tenant_id, principal)
+        response.headers["Cache-Control"] = "private, no-store"
+        try:
+            return read_connector_workspace_summary(
+                repository,
+                tenant_id=tenant_id,
+                actor_id=principal.actor_id if principal else "connector-workspace-reader",
+                offset=offset,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": AxisErrorCode.VALIDATION_FAILED.value,
+                    "message": "Connector workspace page exceeds or violates its contract.",
+                },
+            ) from exc
+
+    @operations_router.get(
+        "/connectors/workspace/detail",
+        response_model=ConnectorWorkspaceDetail,
+        tags=["connectors"],
+    )
+    def connector_workspace_detail(
+        repository: PersistenceRepository,
+        principal: OidcPrincipalDependency,
+        response: Response,
+        tenant_id: str = Query(min_length=1),
+        connector_id: str = Query(min_length=1),
+    ) -> ConnectorWorkspaceDetail:
+        _authorize_tenant_read(tenant_id, principal)
+        response.headers["Cache-Control"] = "private, no-store"
+        try:
+            return read_connector_workspace_detail(
+                repository,
+                tenant_id=tenant_id,
+                connector_id=connector_id,
+            )
+        except ConnectorReferenceRecordInvalid as exc:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": AxisErrorCode.VALIDATION_FAILED.value,
+                    "message": "Connector registry reference payload is invalid.",
+                },
+            ) from exc
+        except ManufacturingTenantNotFound:
+            raise
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": AxisErrorCode.NOT_FOUND.value,
+                    "message": "Connector not found in the tenant registry.",
                 },
             ) from exc
 

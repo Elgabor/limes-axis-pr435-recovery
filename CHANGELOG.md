@@ -46,6 +46,13 @@ release-bound behavior, not the complete commit history.
 
 ### Changed
 
+- The connector console loads a bounded, principal-scoped summary and selected
+  details on demand. A local 60-connector browser fixture drops from seven
+  initial requests/161,020 bytes to two requests/9,587 bytes; pagination, audit
+  and identity invalidation retain explicit contracts. Existing registries and
+  aliases remain supported
+  ([#364](https://github.com/Limes-Labs/limes-axis/issues/364)).
+
 - Model endpoint and invocation persistence now has an aggregate owner behind
   the existing repository methods, preserving caller-owned transactions and
   SQL behavior. Shared facade/aggregate contracts also run against PostgreSQL

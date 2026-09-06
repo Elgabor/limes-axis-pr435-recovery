@@ -12,11 +12,9 @@ import { MasterDetail } from "@/components/ui/master-detail";
 import { MetricStrip, type Metric } from "@/components/ui/metric-strip";
 import { SourcePill } from "@/components/ui/source-pill";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
-import { pendingProposalCount } from "@/lib/connectors-console";
 import {
   formatConnectorLabel,
   type ConnectorEvidenceInvariantSnapshotRecord,
-  type ConnectorRegistryItem,
 } from "@/lib/connectors-demo";
 import {
   enumUrlField,
@@ -49,52 +47,50 @@ import { ManifestImportPanel } from "./manifest-import-panel";
 
 /*
  * Connector console orchestrator: five user-relevant metrics, a master/detail
- * layout over the connector registry, and the Add Connector wizard. Each
- * registry endpoint loads independently — a failing side registry degrades its
- * own section instead of blanking the page.
+ * layout over the connector registry, and the Add Connector wizard. The
+ * summary supplies the list and counters; selected details load on demand.
+ * A failing counter or detail degrades its own section.
  */
 
-function countOrPlaceholder(count: number | undefined): string | number {
-  return count === undefined ? strings.connectors.metrics.unavailable : formatNumber(count);
+function countOrPlaceholder(count: number | null | undefined): string | number {
+  return count == null ? strings.connectors.metrics.unavailable : formatNumber(count);
 }
 
 function buildMetrics(
   registries: ConnectorRegistries,
-  connectors: ConnectorRegistryItem[],
 ): Metric[] {
   const copy = strings.connectors.metrics;
-  const invariantCount = registries.evidenceInvariants.data?.invariants.length;
+  const counts = registries.registry.data?.counts;
+  const invariantCount = counts?.evidence_issues;
 
   return [
     {
       label: copy.connectors.label,
-      value: countOrPlaceholder(registries.registry.data ? connectors.length : undefined),
+      value: countOrPlaceholder(registries.registry.data?.total_connectors),
       detail: copy.connectors.detail,
     },
     {
       label: copy.runs.label,
-      value: countOrPlaceholder(registries.runs.data?.runs.length),
+      value: countOrPlaceholder(counts?.runs),
       detail: copy.runs.detail,
     },
     {
       label: copy.pendingProposals.label,
       value: countOrPlaceholder(
-        registries.ontologyProposals.data
-          ? pendingProposalCount(registries.ontologyProposals.data.proposals)
-          : undefined,
+        counts?.pending_proposals,
       ),
       detail: copy.pendingProposals.detail,
     },
     {
       label: copy.egressPolicies.label,
-      value: countOrPlaceholder(registries.egressPolicies.data?.policies.length),
+      value: countOrPlaceholder(counts?.egress_policies),
       detail: copy.egressPolicies.detail,
     },
     {
       label: copy.evidenceIssues.label,
       value: countOrPlaceholder(invariantCount),
       detail: copy.evidenceIssues.detail,
-      ...(invariantCount !== undefined
+      ...(invariantCount != null
         ? { tone: invariantCount > 0 ? ("action" as const) : ("ready" as const) }
         : {}),
     },
@@ -111,6 +107,7 @@ function formatUpdatedAt(updatedAt: Date): string {
 
 const connectorUrlSchema = {
   connectorId: stringUrlField("connector_id"),
+  offset: stringUrlField("offset", "0"),
   snapshotId: stringUrlField("snapshot_id"),
   tab: enumUrlField("tab", connectorDetailTabs, "overview"),
 };
@@ -146,24 +143,34 @@ function SnapshotPanel({ snapshot }: { snapshot: ConnectorEvidenceInvariantSnaps
 }
 
 export function ConnectorConsole() {
-  const { identity, tenantId, tenantQueriesEnabled } = useConsoleTenantScope();
+  const scope = useConsoleTenantScope();
+  // Cookie sessions have no browser token identity. Remount all workspace
+  // queries and action drafts when the API-verified principal changes.
+  const principalKey = JSON.stringify([
+    scope.tenantId, scope.identity.data?.actor_id, scope.identity.data?.authenticated,
+  ]);
+  return <ConnectorWorkspace key={principalKey} scope={scope} />;
+}
+
+function ConnectorWorkspace({ scope }: { scope: ReturnType<typeof useConsoleTenantScope> }) {
+  const { identity, tenantId, tenantQueriesEnabled } = scope;
   const [urlState, setUrlState] = useConsoleUrlState(connectorUrlSchema);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const requestedOffset = Number(urlState.offset);
+  const offset = Number.isSafeInteger(requestedOffset)
+    && requestedOffset >= 0 && requestedOffset <= 1_000_000 ? requestedOffset : 0;
   const registries = useConnectorRegistries(
     tenantId,
     tenantQueriesEnabled,
     urlState.snapshotId,
     urlState.connectorId,
+    urlState.tab,
+    offset,
+    wizardOpen,
   );
   const { registry } = registries;
   const { triggerRefresh } = useConsole();
-  const [wizardOpen, setWizardOpen] = useState(false);
-  // Real fetch time (no hardcoded timestamps): stamped when a new registry
-  // payload arrives, using the render-time state-adjustment pattern.
-  const [fetchStamp, setFetchStamp] = useState<{ payload: unknown; at: Date } | null>(null);
-  if (registry.data && fetchStamp?.payload !== registry.data) {
-    setFetchStamp({ payload: registry.data, at: new Date() });
-  }
-  const updatedAt = fetchStamp?.at ?? null;
+  const updatedAt = registry.data ? new Date(registry.data.generated_at) : null;
 
   const connectors = useMemo(() => registry.data?.connectors ?? [], [registry.data]);
   const requestedSnapshot = urlState.snapshotId
@@ -172,11 +179,7 @@ export function ConnectorConsole() {
       ) ?? null
     : null;
   const requestedConnectorId = urlState.connectorId || requestedSnapshot?.connector_id || "";
-  const selectedConnector = requestedConnectorId
-    ? connectors.find(
-        (connector) => connector.manifest.connector_id === requestedConnectorId,
-      )
-    : connectors[0];
+  const selectedConnector = registries.detail.data?.connector;
 
   if (!tenantQueriesEnabled || tenantId === null) {
     if (identity.source === "loading") {
@@ -211,7 +214,7 @@ export function ConnectorConsole() {
     return (
       <ErrorPanel
         detail={strings.connectors.error.detail}
-        endpoint={CONNECTOR_ENDPOINTS.registry}
+        endpoint={CONNECTOR_ENDPOINTS.workspace}
         reference={registry.errorRequestId ?? undefined}
         title={strings.connectors.error.title}
       />
@@ -241,7 +244,7 @@ export function ConnectorConsole() {
     );
   }
 
-  if (requestedConnectorId && !selectedConnector) {
+  if (requestedConnectorId && registries.detail.errorStatus === 404) {
     return (
       <EmptyPanel
         detail={strings.connectors.requestedMissing.detail}
@@ -255,7 +258,9 @@ export function ConnectorConsole() {
   const identitySession = identity.data;
   const wizard = (
     <AddConnectorWizard
-      connectors={connectors}
+      connectors={registries.templates.data?.connectors ?? []}
+      templatesLoading={registries.templates.source === "loading"}
+      templatesUnavailable={registries.templates.source === "unavailable"}
       identitySession={identitySession}
       open={wizardOpen}
       onCreated={triggerRefresh}
@@ -306,7 +311,7 @@ export function ConnectorConsole() {
       </div>
 
       <MetricStrip
-        metrics={buildMetrics(registries, connectors)}
+        metrics={buildMetrics(registries)}
         label={strings.connectors.metrics.stripLabel}
       />
 
@@ -318,7 +323,7 @@ export function ConnectorConsole() {
 
       {requestedSnapshot ? <SnapshotPanel snapshot={requestedSnapshot} /> : null}
 
-      {connectors.length === 0 || !selectedConnector ? (
+      {registryData.total_connectors === 0 ? (
         <EmptyPanel
           action={{
             label: strings.connectors.empty.action,
@@ -330,7 +335,18 @@ export function ConnectorConsole() {
         />
       ) : (
         <MasterDetail
-          detail={
+          detail={registries.detail.source === "unavailable" ? (
+            <ErrorPanel
+              title="Connector detail unavailable"
+              detail="Refresh to load the selected connector again."
+              endpoint={CONNECTOR_ENDPOINTS.detail}
+              reference={registries.detail.errorRequestId ?? undefined}
+            />
+          ) : !selectedConnector ? (
+            registries.selectedConnectorId ? <LoadingPanel layout="detail" /> : (
+              <EmptyPanel title="Select a connector" detail="Choose a connector from the list." icon={Cable} />
+            )
+          ) : (
             <ConnectorDetail
               activeTab={
                 requestedSnapshot && urlState.tab === "overview"
@@ -350,11 +366,18 @@ export function ConnectorConsole() {
               registries={registries}
               tenantId={tenantId}
             />
-          }
+          )}
           list={
             <ConnectorList
               connectors={connectors}
-              selectedConnectorId={selectedConnector.manifest.connector_id}
+              selectedConnectorId={registries.selectedConnectorId}
+              totalConnectors={registryData.total_connectors}
+              offset={registryData.offset}
+              limit={registryData.limit}
+              nextOffset={registryData.next_offset}
+              onPageChange={(nextOffset) => setUrlState({
+                offset: String(nextOffset), connectorId: "", snapshotId: "",
+              })}
               onSelect={(connectorId) => setUrlState({
                 connectorId,
                 snapshotId: "",

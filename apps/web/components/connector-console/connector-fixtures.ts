@@ -355,3 +355,34 @@ export const connectorEndpointFixtures: Record<string, unknown> = {
     evidenceInvariantReportFixture,
   [`${OPERATIONS_API_PREFIX}/connectors/ontology-proposals`]: ontologyProposalRegistryFixture,
 };
+
+/** Compact HTTP summary fixture; heavy records remain in the detail fixture. */
+export function workspaceFixture(registry = connectorRegistryFixture) {
+  return {
+    tenant_id: registry.tenant_id,
+    plant_name: registry.plant_name,
+    scenario: registry.scenario,
+    provenance: registry.provenance,
+    registry_status: registry.registry_status,
+    generated_at: "2026-09-06T20:00:00Z",
+    connectors: registry.connectors.map((connector) => ({
+      manifest: {
+        connector_id: connector.manifest.connector_id,
+        display_name: connector.manifest.display_name,
+        connector_type: connector.manifest.connector_type,
+      },
+      connector_status: connector.connector_status,
+      registry_origin: connector.registry_origin,
+      persisted_manifest: connector.persisted_manifest
+        ? { status: connector.persisted_manifest.status } : null,
+      preview_sample: connector.preview_sample
+        ? { record_count: connector.preview_sample.record_count } : null,
+      last_successful_sync: connector.last_successful_sync,
+    })),
+    total_connectors: registry.connectors.length,
+    offset: 0,
+    limit: 25,
+    next_offset: null,
+    counts: { runs: 1, pending_proposals: 1, egress_policies: 1, evidence_issues: 1, source_limit: 100 },
+  };
+}
