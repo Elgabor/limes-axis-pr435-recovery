@@ -7,6 +7,11 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- MCP 2026-07-28 gateway design: audience-bound authorization, governed capability
+  mappings, transport/resource budgets and a defensive threat model. This defines
+  implementation gates without enabling an endpoint, tool or task runtime
+  ([#367](https://github.com/Limes-Labs/limes-axis/issues/367)).
+
 - Legacy API usage counters and deprecation/Sunset notices with a planned
   2027-01-01 removal subject to observed migration and maintainer review.
   `/demo/bootstrap` shares the existing governed demo handler; console and CI

@@ -96,6 +96,11 @@ and explicit configuration gates.
 
 ## Boundary Ownership
 
+The future [MCP gateway boundary](mcp-gateway.md) and
+[threat model](mcp-threat-model.md) specify an authenticated adapter to these
+owners. [ADR 0010](adr/0010-mcp-gateway-boundary.md) records the decision; no MCP
+endpoint, capability catalog or task runtime is currently implemented.
+
 The owner links identify where a boundary is implemented. The test links identify
 the nearest contract evidence; they are not an exhaustive test inventory.
 
