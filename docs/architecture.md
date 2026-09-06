@@ -69,6 +69,9 @@ and explicit configuration gates.
   append-only audit evidence. Raw connector rows and materialized export bundles
   belong in object storage; only metadata, digests and opaque storage references
   belong in Postgres.
+  Model endpoint/invocation SQL lives in `axis_api.repositories.models`; the
+  existing persistence facade delegates with the same caller-owned session.
+  See [aggregate ownership and transaction boundaries](persistence-aggregates.md).
 - **Ontology.** Ontology access goes through Axis query and mutation ports. The
   persisted Postgres-backed reference graph supports the public demo path;
   TypeDB query and mutation runtimes are enabled independently.

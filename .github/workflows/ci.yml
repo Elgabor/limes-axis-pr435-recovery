@@ -107,6 +107,11 @@ jobs:
         working-directory: services/api
         run: uv sync --locked
 
+      - name: Test model persistence on PostgreSQL
+        env:
+          AXIS_MODEL_CONTRACT_POSTGRES_DSN: postgresql+psycopg://axis:axis@localhost:5432/axis
+        run: make test-model-persistence-postgres
+
       # Migrations are Postgres-only (JSONB columns), which is why this job cannot
       # fall back to SQLite the way local development can.
       - name: Migrate database

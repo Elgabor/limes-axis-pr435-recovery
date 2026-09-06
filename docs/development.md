@@ -54,6 +54,13 @@ The smoke suite runs Chromium at desktop, mobile and tablet sizes. To rebuild
 and run it directly: `pnpm --filter @limes-axis/web test:e2e`. A build embeds the
 API URL; changing the environment only when starting Next does not retarget it.
 
+The model persistence contract runs through both the existing facade and the
+aggregate implementation in the default API suite. For its real PostgreSQL lane,
+set `AXIS_MODEL_CONTRACT_POSTGRES_DSN` to an isolated test server with `CREATEDB`
+and run `make test-model-persistence-postgres`. It creates/migrates a temporary
+database and cleans up only that database. The live-API CI job runs this lane;
+see [aggregate verification](persistence-aggregates.md).
+
 ## Runtime and worktrees
 
 Create a worktree from the intended Git revision and run `make install` there.

@@ -29,6 +29,11 @@ release-bound behavior, not the complete commit history.
 
 ### Changed
 
+- Model endpoint and invocation persistence now has an aggregate owner behind
+  the existing repository methods, preserving caller-owned transactions and
+  SQL behavior. Shared facade/aggregate contracts also run against PostgreSQL
+  in CI ([#356](https://github.com/Limes-Labs/limes-axis/issues/356)).
+
 - Model HTTP handlers now live in a domain router, with the existing application
   dependencies, authorization, tenant binding and audit behavior preserved.
   A generated route ownership map tracks the remaining composition-root work
