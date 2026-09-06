@@ -9,8 +9,10 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from axis_api import main
 from axis_api.config import Settings
 from axis_api.db import session_scope
+from axis_api.identity import OidcPrincipal
 from axis_api.main import create_app
 from axis_api.model_endpoints import (
     MODEL_ENDPOINT_ADMIN_SCOPE,
@@ -1421,3 +1423,48 @@ async def test_commit_failure_never_reissues_a_provider_call(
             )
             assert replay.idempotent_replay is True
             assert replay_runtime.requests == []
+
+
+def test_model_router_keeps_settings_and_dependency_overrides_per_application(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_scope(session_factory) as session:
+        seed_external_endpoint(AxisPersistenceRepository(session))
+    principal = OidcPrincipal(
+        tenant_id=TENANT_ID, actor_id="agent_daily_brief", scopes=[MODEL_INVOKE_SCOPE],
+    )
+    runtime = RecordingModelInvocationRuntime()
+    repository_calls = []
+
+    def overridden_repository():
+        repository_calls.append(True)
+        with session_scope(session_factory) as session:
+            yield AxisPersistenceRepository(session)
+
+    clients = {}
+    for enabled in (False, True):
+        app = create_app(Settings(
+            postgres_dsn="sqlite+pysqlite://", external_model_egress_enabled=enabled,
+        ))
+        # Use the existing dependency function identities, not module-specific substitutes.
+        app.dependency_overrides[main.persistence_repository] = overridden_repository
+        app.dependency_overrides[main.oidc_principal] = lambda: principal
+        app.dependency_overrides[main.model_invocation_runtime] = lambda: runtime
+        clients[enabled] = TestClient(app)
+
+    for enabled, expected_status in ((False, 403), (True, 201), (False, 403)):
+        response = clients[enabled].post(
+            "/platform/models/invocations",
+            json=invocation_request(
+                idempotency_key=f"router-isolation-{len(repository_calls)}",
+                egress_policy_evidence=dict(VALID_EGRESS_EVIDENCE),
+            ).model_dump(mode="json"),
+        )
+        assert response.status_code == expected_status
+    assert len(repository_calls) == 3
+    assert len(runtime.requests) == 1
+    with session_factory() as session:
+        blocked = session.scalars(select(AuditEvent).where(
+            AuditEvent.event_type == "model.invocation.blocked",
+        )).all()
+        assert len(blocked) == 2  # Denials still commit audit before returning 403.

@@ -30,6 +30,12 @@ API settings are organized by [capability](configuration.md) behind the stable
 flat environment facade. After changing a field, run `make settings-reference`
 and commit the generated reference; API tests reject stale documentation.
 
+After moving or changing an HTTP handler, run `make route-inventory` and commit
+the generated [ownership map](api-route-inventory.md). API tests reject a stale
+inventory; `make route-inventory-check` runs that check directly. Follow the
+[domain extraction boundaries](api-route-extraction.md) and run
+`make openapi-check` for public contract parity.
+
 `make test` includes API, worker, SDK, web and JSON schemas. `make verify`
 also runs lint, typecheck, web build, OpenAPI parity, documentation, demo,
 security, deployment, Helm render and container-package contracts. These are

@@ -60,6 +60,10 @@ and explicit configuration gates.
 - **Control API.** `services/api` exposes the HTTP surface and currently composes
   most routes and dependencies in `axis_api.main.create_app`. Domain modules own
   behavior even where route registration still lives in that composition root.
+  Model HTTP handlers live in `axis_api.routes.models`; the composition root
+  supplies existing shared dependency and authorization callables. The
+  [route inventory](api-route-inventory.md) records every operation and the
+  [extraction guide](api-route-extraction.md) defines the remaining migration.
 - **Operational data.** Postgres is the source of truth for tenants, identities,
   approvals, policies, actions, runs, connector metadata, usage projections and
   append-only audit evidence. Raw connector rows and materialized export bundles

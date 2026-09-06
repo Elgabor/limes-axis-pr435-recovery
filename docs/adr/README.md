@@ -22,3 +22,4 @@ sequence remains in [the architecture changelog](../architecture-changelog.md).
 - [`0003-external-await-transaction-boundary.md`](./0003-external-await-transaction-boundary.md) — Proposed
 - [`0004-capability-settings-facade.md`](./0004-capability-settings-facade.md) — Accepted
 - [`0005-connector-authoring-contract.md`](./0005-connector-authoring-contract.md) — Accepted
+- [`0006-domain-model-routers.md`](./0006-domain-model-routers.md) — Accepted

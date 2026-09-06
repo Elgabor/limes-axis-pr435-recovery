@@ -29,6 +29,11 @@ release-bound behavior, not the complete commit history.
 
 ### Changed
 
+- Model HTTP handlers now live in a domain router, with the existing application
+  dependencies, authorization, tenant binding and audit behavior preserved.
+  A generated route ownership map tracks the remaining composition-root work
+  ([#355](https://github.com/Limes-Labs/limes-axis/issues/355)).
+
 - The connector capability audit records the existing source families, runtime
   gates and gaps. Bounded Postgres extraction now uses its profile's statement
   timeout and returns a null watermark for tables without a single-column
