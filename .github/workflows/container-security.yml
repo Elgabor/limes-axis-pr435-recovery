@@ -50,7 +50,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build image for scan
         run: docker build -f ${{ matrix.dockerfile }} -t limes-axis-${{ matrix.component }}:scan .
