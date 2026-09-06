@@ -1,6 +1,7 @@
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from itertools import batched
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -2736,21 +2737,35 @@ class AxisPersistenceRepository:
         self.session.flush()
         return self.create_data_asset_stewardship_record(record)
 
-    def list_all_current_data_asset_stewardship(
+    def list_current_data_asset_stewardship(
         self,
         tenant_id: str,
+        asset_ids: Sequence[str],
     ) -> list[DataAssetStewardshipRecord]:
-        """Materialize one consistent tenant stewardship view in a single query."""
+        """Read current stewardship for named assets in bounded query batches.
 
-        statement = (
-            select(DataAssetStewardshipRecord)
-            .where(
-                DataAssetStewardshipRecord.tenant_id == tenant_id,
-                DataAssetStewardshipRecord.replaced_by_revision_number.is_(None),
+        The caller passes the assets its response will actually contain, so the
+        read stays proportional to the response instead of to everything the
+        tenant has ever declared.
+        """
+
+        if not asset_ids:
+            return []
+        records: list[DataAssetStewardshipRecord] = []
+        # Registries have no connector cap. Keep each IN clause below backend
+        # parameter limits without truncating the catalog or duplicating rows.
+        for asset_id_batch in batched(sorted(set(asset_ids)), 500):
+            statement = (
+                select(DataAssetStewardshipRecord)
+                .where(
+                    DataAssetStewardshipRecord.tenant_id == tenant_id,
+                    DataAssetStewardshipRecord.asset_id.in_(asset_id_batch),
+                    DataAssetStewardshipRecord.replaced_by_revision_number.is_(None),
+                )
+                .order_by(DataAssetStewardshipRecord.asset_id.asc())
             )
-            .order_by(DataAssetStewardshipRecord.asset_id.asc())
-        )
-        return list(self.session.scalars(statement))
+            records.extend(self.session.scalars(statement))
+        return records
 
     def acquire_data_asset_stewardship_lock(
         self,
@@ -2845,18 +2860,34 @@ class AxisPersistenceRepository:
     def count_data_resource_observations_by_asset(
         self,
         tenant_id: str,
+        asset_ids: Sequence[str],
     ) -> dict[str, int]:
-        """One grouped query materializing per-asset observation counts."""
+        """Count observations for named assets in bounded grouped queries.
 
-        statement = (
-            select(
-                DataAssetResourceObservation.asset_id,
-                func.count(DataAssetResourceObservation.id),
+        Scoping the group-by to the requested assets keeps the aggregate
+        proportional to the response. The composite ``(tenant_id, asset_id)``
+        index keeps the scan proportional to this tenant's rows; without it the
+        planner combines two single-column indexes and touches index entries for
+        every other tenant holding the same asset ids.
+        """
+
+        if not asset_ids:
+            return {}
+        counts: dict[str, int] = {}
+        for asset_id_batch in batched(sorted(set(asset_ids)), 500):
+            statement = (
+                select(
+                    DataAssetResourceObservation.asset_id,
+                    func.count(DataAssetResourceObservation.id),
+                )
+                .where(
+                    DataAssetResourceObservation.tenant_id == tenant_id,
+                    DataAssetResourceObservation.asset_id.in_(asset_id_batch),
+                )
+                .group_by(DataAssetResourceObservation.asset_id)
             )
-            .where(DataAssetResourceObservation.tenant_id == tenant_id)
-            .group_by(DataAssetResourceObservation.asset_id)
-        )
-        return {asset_id: count for asset_id, count in self.session.execute(statement).all()}
+            counts.update(self.session.execute(statement).all())
+        return counts
 
     def record_repeat_data_resource_observation(
         self,

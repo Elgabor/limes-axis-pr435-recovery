@@ -437,6 +437,7 @@ from axis_api.data_assets import (
     DataAssetCatalog,
     DataAssetNotInCatalog,
     build_data_asset_catalog,
+    data_asset_id_for_connector,
     ensure_data_asset_in_catalog,
 )
 from axis_api.db import create_session_factory, session_scope
@@ -4455,18 +4456,30 @@ def create_app(
         tenant_id: str = Query(min_length=1),
     ) -> DataAssetCatalog:
         _authorize_tenant_read(tenant_id, principal)
+        # The registry decides which assets the response contains, so it is read
+        # first: both supporting reads are then scoped to those assets instead
+        # of to everything the tenant has ever declared or observed.
+        registry = get_persisted_manufacturing_connector_registry(
+            repository,
+            tenant_id=tenant_id,
+        )
+        catalog_asset_ids = [
+            data_asset_id_for_connector(item.manifest.connector_id)
+            for item in registry.connectors
+        ]
         stewardship_by_asset = {
             record.asset_id: stewardship_summary_for_asset(record)
-            for record in repository.list_all_current_data_asset_stewardship(tenant_id)
+            for record in repository.list_current_data_asset_stewardship(
+                tenant_id,
+                catalog_asset_ids,
+            )
         }
         return build_data_asset_catalog(
-            get_persisted_manufacturing_connector_registry(
-                repository,
-                tenant_id=tenant_id,
-            ),
+            registry,
             stewardship_by_asset=stewardship_by_asset,
             observed_resource_counts=repository.count_data_resource_observations_by_asset(
-                tenant_id
+                tenant_id,
+                catalog_asset_ids,
             ),
         )
 

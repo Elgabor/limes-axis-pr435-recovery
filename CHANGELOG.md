@@ -40,7 +40,13 @@ release-bound behavior, not the complete commit history.
   messages and ordering.
 - Local development targets load the repository-root environment file; setup
   uses committed lockfiles and verification includes the public schema package.
-
+- The data asset catalog read is bounded to the assets it returns instead of
+  materializing every current stewardship row and grouping every observation
+  row for the tenant. A new `(tenant_id, asset_id)` index on
+  `data_asset_resource_observations` keeps the scoped count proportional to the
+  requesting tenant's rows; without it the planner combined two single-column
+  indexes and scanned index entries belonging to every other tenant. Responses
+  are unchanged ([#363](https://github.com/Limes-Labs/limes-axis/issues/363)).
 - The architecture overview now describes current runtime truth while delivery
   history lives in a separate changelog ([#359](https://github.com/Limes-Labs/limes-axis/issues/359)).
 - The API compatibility suite is warning-clean and fails on new warnings

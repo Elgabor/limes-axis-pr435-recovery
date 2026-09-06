@@ -78,6 +78,15 @@ the canonical structured `403`. Unknown tenants return the shared structured
 `404`. Unauthenticated demo traffic keeps working under the existing
 demo-mode convention.
 
+## Read cost
+
+The catalog response is built from the tenant's connector registry, and its two
+supporting reads — current stewardship and per-asset observation counts — are
+scoped to the asset ids the response contains rather than to everything the
+tenant has declared or observed. The inventory of bounded and unbounded reads,
+the measured query plans and the one index this justified are recorded in
+[query bounding and index evidence](./performance-query-bounding.md).
+
 ## Console surface
 
 The Data page (`/data`) renders metrics, a searchable URL-backed list and the

@@ -1239,6 +1239,14 @@ class DataAssetResourceObservation(Base):
             "resource_name",
             name="uq_data_asset_res_obs_tenant_connector_resource",
         ),
+        # The catalog read counts observations for a named asset set. Without a
+        # composite index the planner combines the two single-column indexes and
+        # touches entries for every other tenant holding the same asset ids.
+        Index(
+            "ix_data_asset_resource_observations_tenant_asset",
+            "tenant_id",
+            "asset_id",
+        ),
     )
 
 

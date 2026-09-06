@@ -1,8 +1,9 @@
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -14,6 +15,8 @@ from axis_api.models import Base
 from axis_api.persistence import (
     AxisPersistenceRepository,
     ConnectorRunCreate,
+    DataAssetStewardshipCreate,
+    DataResourceObservationCreate,
     DemoReferenceRecordCreate,
     TenantCreate,
 )
@@ -350,3 +353,169 @@ def test_data_asset_catalog_has_no_legacy_demo_alias(
     )
 
     assert response.status_code == 404
+
+
+# --- Catalog read bounding (issue #363) ---
+
+CATALOG_ASSET_IDS = (
+    "source:file_csv_manufacturing_assets:default",
+    "source:external_db_operational_mirror:default",
+)
+OFF_CATALOG_ASSET_IDS = tuple(f"source:retired_connector_{n}:default" for n in range(1, 6))
+
+
+@contextmanager
+def captured_sql(session_factory: sessionmaker):
+    """Record every statement the endpoint actually sends to the database."""
+
+    engine = session_factory.kw["bind"]
+    statements: list[str] = []
+
+    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", before_cursor_execute)
+    try:
+        yield statements
+    finally:
+        event.remove(engine, "before_cursor_execute", before_cursor_execute)
+
+
+def seed_stewardship_and_observations(
+    session_factory: sessionmaker,
+    asset_ids: tuple[str, ...],
+) -> None:
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        for asset_id in asset_ids:
+            repository.create_data_asset_stewardship_record(
+                DataAssetStewardshipCreate(
+                    tenant_id=TENANT_A,
+                    asset_id=asset_id,
+                    revision_number=1,
+                    owner="plant-operations",
+                    classification="internal",
+                    residency="eu",
+                    retention="P5Y",
+                    declared_by="test",
+                )
+            )
+            repository.create_data_resource_observation(
+                DataResourceObservationCreate(
+                    tenant_id=TENANT_A,
+                    connector_id=asset_id.split(":")[1],
+                    asset_id=asset_id,
+                    resource_name="line_events",
+                    drift_state="added",
+                    observed_by="test",
+                )
+            )
+
+
+def test_catalog_reads_are_bounded_to_the_returned_assets(
+    session_factory: sessionmaker,
+) -> None:
+    """The supporting reads must scale with the response, not with the tenant.
+
+    Both reads used to be tenant-wide: one materialized every current
+    stewardship row and the other grouped every observation the tenant had,
+    while the response only ever uses the assets the registry returns.
+    """
+
+    seed_stewardship_and_observations(session_factory, CATALOG_ASSET_IDS)
+    seed_stewardship_and_observations(session_factory, OFF_CATALOG_ASSET_IDS)
+    client = build_client(session_factory)
+
+    with captured_sql(session_factory) as statements:
+        response = client.get("/data/assets", params={"tenant_id": TENANT_A})
+
+    assert response.status_code == 200
+    stewardship_reads = [s for s in statements if "FROM data_asset_stewardship_records" in s]
+    observation_reads = [s for s in statements if "FROM data_asset_resource_observations" in s]
+    assert stewardship_reads, "the catalog must still read stewardship"
+    assert observation_reads, "the catalog must still read observations"
+    assert all("asset_id IN" in statement for statement in stewardship_reads)
+    assert all("asset_id IN" in statement for statement in observation_reads)
+
+
+def test_off_catalog_rows_do_not_change_the_catalog_response(
+    session_factory: sessionmaker,
+) -> None:
+    """Scoping the reads is behaviour-preserving.
+
+    Rows for assets outside the registry were already ignored by the projection;
+    they were simply read first. The response must be identical either way.
+    """
+
+    seed_stewardship_and_observations(session_factory, CATALOG_ASSET_IDS)
+    client = build_client(session_factory)
+    without_noise = client.get("/data/assets", params={"tenant_id": TENANT_A}).json()
+
+    seed_stewardship_and_observations(session_factory, OFF_CATALOG_ASSET_IDS)
+    with_noise = client.get("/data/assets", params={"tenant_id": TENANT_A}).json()
+
+    assert with_noise == without_noise
+    # Guard the other direction too: the scope must still cover every asset the
+    # response returns, so under-scoping cannot pass by making both sides equal.
+    assert [asset["asset_id"] for asset in with_noise["assets"]] == list(CATALOG_ASSET_IDS)
+    assert all(asset["stewardship"] is not None for asset in with_noise["assets"])
+    assert all(asset["observed_resource_count"] == 1 for asset in with_noise["assets"])
+
+
+def test_scoped_reads_return_nothing_without_asset_ids(
+    session_factory: sessionmaker,
+) -> None:
+    """An empty catalog short-circuits instead of issuing a tenant-wide read."""
+
+    seed_stewardship_and_observations(session_factory, CATALOG_ASSET_IDS)
+
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        with captured_sql(session_factory) as statements:
+            assert repository.list_current_data_asset_stewardship(TENANT_A, []) == []
+            assert repository.count_data_resource_observations_by_asset(TENANT_A, []) == {}
+
+    assert statements == []
+
+
+def test_scoped_reads_stay_within_the_tenant(session_factory: sessionmaker) -> None:
+    """Asset ids are not a cross-tenant lookup key."""
+
+    seed_stewardship_and_observations(session_factory, CATALOG_ASSET_IDS)
+
+    with session_scope(session_factory) as session:
+        repository = AxisPersistenceRepository(session)
+        assert repository.list_current_data_asset_stewardship(TENANT_B, CATALOG_ASSET_IDS) == []
+        assert (
+            repository.count_data_resource_observations_by_asset(TENANT_B, CATALOG_ASSET_IDS)
+            == {}
+        )
+
+
+def test_large_catalog_reads_preserve_all_assets_with_a_database_parameter_limit(
+    session_factory: sessionmaker,
+) -> None:
+    # SQLite supports an enforced connection-level bind-parameter budget. This
+    # exercises the actual database error boundary rather than mocking SQL.
+    import sqlite3
+
+    asset_ids = tuple(f"source:large_catalog_{n:04d}:default" for n in range(1001))
+    seed_stewardship_and_observations(session_factory, asset_ids)
+    with session_scope(session_factory) as session:
+        connection = session.connection().connection.driver_connection
+        previous_limit = connection.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 999)
+        try:
+            repository = AxisPersistenceRepository(session)
+            # Duplicate, unsorted input must not duplicate rows or lose global
+            # ordering when it crosses a query-batch boundary.
+            requested_ids = [*reversed(asset_ids), *asset_ids[:5]]
+            stewardship = repository.list_current_data_asset_stewardship(
+                TENANT_A, requested_ids,
+            )
+            counts = repository.count_data_resource_observations_by_asset(
+                TENANT_A, requested_ids,
+            )
+            assert [row.asset_id for row in stewardship] == list(asset_ids)
+            assert counts == dict.fromkeys(asset_ids, 1)
+        finally:
+            connection.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, previous_limit)
