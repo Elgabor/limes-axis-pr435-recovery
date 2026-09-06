@@ -52,6 +52,11 @@ and explicit configuration gates.
 - **Console and public contracts.** `apps/web` renders the governance console and
   parses API responses through local runtime contracts. `packages/schemas` owns
   versionable public JSON schemas.
+- **Connector authoring.** `axis_sdk.connector_authoring` owns versioned source
+  ports and an offline reference in the existing Python SDK. Production adapters
+  retain their current API/worker ports and governance owners; SDK imports do
+  not register or enable sources. See the
+  [authoring contract ADR](adr/0005-connector-authoring-contract.md).
 - **Control API.** `services/api` exposes the HTTP surface and currently composes
   most routes and dependencies in `axis_api.main.create_app`. Domain modules own
   behavior even where route registration still lives in that composition root.
@@ -156,6 +161,7 @@ the nearest contract evidence; they are not an exhaustive test inventory.
 - [Audit](./platform-audit.md)
 - [Connectors](./platform-connectors.md)
 - [Connector capability matrix](./connector-capabilities.md)
+- [Connector authoring contract](./connector-authoring.md)
 - [Ontology](./platform-ontology.md)
 - [Workflows](./platform-workflows.md)
 - [Model routing](./platform-model-routing.md)

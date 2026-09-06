@@ -97,9 +97,11 @@ cover empty, complete and row-capped reads with and without a primary key.
 
 Remaining reusable gaps:
 
-- No stable multi-source SDK/version negotiation or uniform health contract.
-  The [SDK issue](https://github.com/Limes-Labs/limes-axis/issues/334) and
-  [conformance issue](https://github.com/Limes-Labs/limes-axis/issues/342) own those extensions.
+- The [versioned authoring contract](connector-authoring.md) now defines source
+  ports, negotiation and a typed health observation with an offline reference.
+  Production adapters retain their current ports until explicit governed
+  adoption. Uniform operational health and broader source conformance remain
+  [separate work](https://github.com/Limes-Labs/limes-axis/issues/342).
 - Live-sync resume uses offsets, so source mutation can change the rows seen
   after a checkpoint. Keyset extraction restarts with no incoming watermark;
   recording a watermark does not yet implement incremental ingestion across requests.

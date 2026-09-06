@@ -7,12 +7,16 @@ who script against the governed control-plane surface instead of the console.
 The SDK lives in [`packages/sdk-python`](../packages/sdk-python) and follows
 the repo naming reserved for future extraction (`limes-axis-sdk`).
 
+The separate `axis_sdk.connector_authoring` namespace provides the
+[versioned source-authoring contract](connector-authoring.md) and an offline
+reference. It does not add connector REST endpoints or register source adapters.
+
 ## Design Boundaries
 
 - The SDK is standalone: it depends only on `httpx` and `pydantic` and never
   imports the API service. `limes-axis-api` is a dev-only dependency used to
   run the SDK test suite against the real FastAPI application in-process.
-- The SDK only talks to the configured `base_url`. It performs no other
+- The REST client only talks to the configured `base_url`. It performs no other
   network egress and sends no telemetry.
 - Response models mirror the committed OpenAPI artifact
   ([`docs/openapi.json`](./openapi.json)) and tolerate additive fields.

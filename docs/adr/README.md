@@ -21,3 +21,4 @@ sequence remains in [the architecture changelog](../architecture-changelog.md).
 - [`0002-commercial-source-and-oss-export-boundary.md`](./0002-commercial-source-and-oss-export-boundary.md) — Accepted
 - [`0003-external-await-transaction-boundary.md`](./0003-external-await-transaction-boundary.md) — Proposed
 - [`0004-capability-settings-facade.md`](./0004-capability-settings-facade.md) — Accepted
+- [`0005-connector-authoring-contract.md`](./0005-connector-authoring-contract.md) — Accepted

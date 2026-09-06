@@ -7,6 +7,11 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Connector authoring protocol 1.0 in the Python SDK: typed source, discovery,
+  read, checkpoint, health and optional writeback contracts, explicit version
+  negotiation and a bounded offline reference. The author guide maps adoption
+  to existing host gates without enabling new sources
+  ([#334](https://github.com/Limes-Labs/limes-axis/issues/334)).
 - A repository-topology ADR makes the private repository the commercial source
   of truth and defines the fail-closed, fresh-history boundary for any future
   OSS edition ([#319](https://github.com/Limes-Labs/limes-axis/issues/319)).
