@@ -19,6 +19,28 @@ runtime dependency changes. Each entry should include:
 Small implementation increments that do not alter architecture belong in the
 normal release changelog or pull request, not here.
 
+## 2026-09-07 — Specify the Hosted Prospect Sandbox Lifecycle
+
+**Issue:** [#322](https://github.com/Limes-Labs/limes-axis/issues/322)
+
+**Boundary:** planned Hosted evaluation admission, workflow installation and
+resource lifecycle, through the existing API, worker and deployment owners.
+
+The [sandbox contract](prospect-sandboxes.md) selects a dedicated evaluation
+deployment per prospect, authenticated leases and replacement generations.
+Expiry is an admission condition independent of a cleanup scheduler. A pinned
+synthetic pack must prove a real workflow/approval/audit journey; the existing
+reference bootstrap does not satisfy installation or reset on its own.
+
+Compatibility: this is a specification only. Tenant states, API routes, local
+demo behavior and runtime configuration remain unchanged. The edition matrix
+keeps the capability Planned / Hosted. Pack installation, hosted lifecycle and
+complete deletion require implementation and separate release rehearsals.
+
+Evidence: [ADR 0012](adr/0012-prospect-sandbox-lifecycle.md), source-owner and
+release-evidence tables, existing lifecycle/bootstrap/identity tests and the
+documentation/edition checks. No hosted environment is created by this slice.
+
 ## 2026-09-06 — Project the Connector Workspace Before Loading Details
 
 **Issue:** [#364](https://github.com/Limes-Labs/limes-axis/issues/364)

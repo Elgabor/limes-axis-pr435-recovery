@@ -5,6 +5,10 @@ written for real SME and enterprise feedback sessions: the environment must use
 the Axis API, migrations, persisted bootstrap records and local self-hosted
 services, not browser-local mock data.
 
+For future hosted invitations, use the separate
+[prospect sandbox contract](prospect-sandboxes.md). Passing this local checklist
+does not establish its identity, expiry, reset, quota or deletion guarantees.
+
 ## Current Position
 
 Axis is ready for a structured SME feedback demo when the acceptance checklist

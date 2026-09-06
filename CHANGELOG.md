@@ -7,6 +7,12 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Hosted prospect sandbox specification: dedicated evaluation environments,
+  authenticated time-limited access, generation replacement, synthetic workflow
+  installation and retention-aware cleanup gates. This is a design contract;
+  hosted invitations and reset are not enabled
+  ([#322](https://github.com/Limes-Labs/limes-axis/issues/322)).
+
 - MCP 2026-07-28 gateway design: audience-bound authorization, governed capability
   mappings, transport/resource budgets and a defensive threat model. This defines
   implementation gates without enabling an endpoint, tool or task runtime

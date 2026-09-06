@@ -226,6 +226,11 @@ missing a scope receive the `403` surfaced inline on the relevant form.
 
 ## Boundaries
 
+The [prospect sandbox specification](prospect-sandboxes.md) defines future
+Hosted use of these lifecycle primitives. Its invite deadlines, generation
+fences, automatic reset and complete cleanup require additional implementation;
+provisioning or suspending a tenant alone does not satisfy that contract.
+
 The slice is a foundation. It does not yet include:
 
 - tenant deletion or data export (`pending_deletion` is modeled and blocked at

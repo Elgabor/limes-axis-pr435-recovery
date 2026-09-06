@@ -1268,8 +1268,9 @@ plan is
 - [x] Run the editions audit against the written boundary rule, block export
   while any capability is undecided and publish the editions statement in
   `docs/editions.md`.
-- [ ] Design the invite-based hosted prospect sandbox with automatic reset and
-  time-boxed access as the first hosted-edition deliverable.
+- [x] Design the invite-based hosted prospect sandbox with automatic reset and
+  time-boxed access in [the sandbox contract](docs/prospect-sandboxes.md).
+  Hosted implementation and its release rehearsals remain pending.
 - [ ] Complete the governance console redesign (phases 2-6): action-first
   overview and approvals, rebuilt agents, workflows, connectors and ontology
   surfaces, governance pages, onboarding checklist and demo-data switch.

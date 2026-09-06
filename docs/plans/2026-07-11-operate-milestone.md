@@ -345,10 +345,12 @@ design the hosted prospect sandbox. This is the first workstream to execute.
       reports) and an organization administration pack (multi-organization
       management, user provisioning, advanced SSO federation). Categories
       only; no pricing in this repository.
-- [ ] Prospect sandbox design: invite-based dedicated demo tenants with the
-      manufacturing vertical pre-loaded, automatic reset and time-boxed
-      access, as the first hosted-edition deliverable. Self-serve trials are
-      explicitly deferred until billing and abuse prevention exist.
+- [x] [Prospect sandbox design](../prospect-sandboxes.md): dedicated evaluation
+      deployments with authenticated tenant access, a pinned synthetic
+      manufacturing pack, automatic generation replacement and an absolute
+      deadline. The design is complete; hosted implementation and release
+      rehearsals remain pending. Self-serve trials stay deferred until billing
+      and abuse prevention exist.
 
 **Dependencies.** None inbound — this executes first. The sandbox build
 happens in the commercial repository once WS-F's vertical pack exists.

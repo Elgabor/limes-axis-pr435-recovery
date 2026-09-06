@@ -333,7 +333,7 @@ name = "Time-boxed hosted prospect sandbox and reset lifecycle"
 lifecycle = "planned"
 disposition = "hosted"
 areas = ["services/api", "services/worker", "apps/web", "infra/helm/limes-axis"]
-evidence = ["plan.md"]
+evidence = ["docs/prospect-sandboxes.md", "docs/adr/0012-prospect-sandbox-lifecycle.md"]
 rationale = "Invites, isolation, reset, abuse prevention and capacity are hosted fleet operations."
 
 [[capabilities]]

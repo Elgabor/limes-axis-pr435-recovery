@@ -105,6 +105,12 @@ The future [MCP gateway boundary](mcp-gateway.md) and
 owners. [ADR 0010](adr/0010-mcp-gateway-boundary.md) records the decision; no MCP
 endpoint, capability catalog or task runtime is currently implemented.
 
+The future [prospect sandbox contract](prospect-sandboxes.md) specifies dedicated
+Hosted evaluations, durable access leases and generation replacement through
+these same owners. [ADR 0012](adr/0012-prospect-sandbox-lifecycle.md) records the
+planned boundary; invitation, expiry, reset and complete cleanup are not current
+runtime capabilities.
+
 The owner links identify where a boundary is implemented. The test links identify
 the nearest contract evidence; they are not an exhaustive test inventory.
 
