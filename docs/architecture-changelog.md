@@ -19,6 +19,23 @@ runtime dependency changes. Each entry should include:
 Small implementation increments that do not alter architecture belong in the
 normal release changelog or pull request, not here.
 
+## 2026-09-07 — Prepare Reproducible Private OSS Candidates
+
+**Issue:** [#321](https://github.com/Limes-Labs/limes-axis/issues/321)
+
+**Boundary:** private commercial Git source to an internal, files-only candidate.
+
+The [candidate generator](oss-export.md) uses a pinned exact-file policy and the
+existing capability matrix, with conservative content/licence checks and a
+canonical provenance manifest. Verification rebuilds expected bytes from source.
+Every candidate remains publication-blocked until separate authenticated release
+reviews; there is no publisher, network operation or production file allowlist.
+
+Compatibility: no runtime, API, tenancy or repository-history transition occurs.
+Synthetic clean-checkout reproduction and rejection tests verify local behavior;
+independent scans, legal review and a real useful-edition release remain NOT RUN.
+[ADR 0013](adr/0013-oss-candidate-provenance-gate.md) records the decision.
+
 ## 2026-09-07 — Specify the Hosted Prospect Sandbox Lifecycle
 
 **Issue:** [#322](https://github.com/Limes-Labs/limes-axis/issues/322)

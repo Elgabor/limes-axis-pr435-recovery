@@ -7,6 +7,11 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Local files-only OSS candidate preparation with exact committed allowlists,
+  capability/licence/content checks, reproducible provenance manifests and an
+  explicit human release gate. Candidates remain private and publication-blocked
+  ([#321](https://github.com/Limes-Labs/limes-axis/issues/321)).
+
 - Hosted prospect sandbox specification: dedicated evaluation environments,
   authenticated time-limited access, generation replacement, synthetic workflow
   installation and retention-aware cleanup gates. This is a design contract;

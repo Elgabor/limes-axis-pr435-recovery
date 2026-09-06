@@ -64,6 +64,10 @@ and run `make test-model-persistence-postgres`. It creates/migrates a temporary
 database and cleans up only that database. The live-API CI job runs this lane;
 see [aggregate verification](persistence-aggregates.md).
 
+The [OSS candidate contract](oss-export.md) documents the offline file allowlist,
+manifest checks and separate release review. Its synthetic repository tests run
+in the API suite; no publication or production export is part of `make verify`.
+
 ## Runtime and worktrees
 
 Create a worktree from the intended Git revision and run `make install` there.

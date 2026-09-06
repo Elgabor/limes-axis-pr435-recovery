@@ -21,7 +21,7 @@ install:
 
 lint:
 	pnpm lint
-	cd services/api && uv run ruff check .
+	cd services/api && uv run ruff check --config pyproject.toml . ../../scripts/prepare_oss_export.py
 	cd services/worker && uv run ruff check .
 	cd packages/sdk-python && uv run ruff check .
 

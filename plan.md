@@ -1268,6 +1268,9 @@ plan is
 - [x] Run the editions audit against the written boundary rule, block export
   while any capability is undecided and publish the editions statement in
   `docs/editions.md`.
+- [x] Define the [OSS export and provenance gate](docs/oss-export.md) and implement
+  reproducible local candidate preparation. Real edition extraction, independent
+  release reviews and public publication remain pending.
 - [x] Design the invite-based hosted prospect sandbox with automatic reset and
   time-boxed access in [the sandbox contract](docs/prospect-sandboxes.md).
   Hosted implementation and its release rehearsals remain pending.

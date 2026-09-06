@@ -80,8 +80,8 @@ make edition-export-readiness
 The first command validates schema, evidence paths, full repository-area
 coverage and generated documentation. The second additionally fails when any
 entry is `undecided`. A passing matrix is necessary but not sufficient for
-publication: #321 must still prove a clean allowlisted export, provenance,
-secret/proprietary scans, reproducibility and human approval.
+publication. The [OSS candidate and release gate](oss-export.md) defines exact
+file selection, provenance checks, reproducibility and mandatory human approvals.
 
 Every matrix PR records the changed capability IDs, rationale, reviewer roles
 and remaining `NOT RUN` boundaries. Git history is the decision log; silent
@@ -91,8 +91,10 @@ file moves do not change product disposition.
 
 - `undecided`: none at this review. Adding one is allowed for honest planning
   but immediately makes `make edition-export-readiness` fail.
-- `NOT RUN`: no OSS tree, export manifest or fresh-history repository has been
-  generated.
+- Local candidate generation and manifest integrity are exercised with synthetic
+  clean repositories.
+- `NOT RUN`: no curated Axis OSS tree, release manifest or fresh-history public
+  repository has been generated.
 - `NOT RUN`: no legal, licence/provenance or independent security approval has
   been performed.
 - No disposition is a promise of an OSS release date, support level, price or

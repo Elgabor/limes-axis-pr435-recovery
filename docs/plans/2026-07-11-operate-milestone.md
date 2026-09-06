@@ -345,6 +345,9 @@ design the hosted prospect sandbox. This is the first workstream to execute.
       reports) and an organization administration pack (multi-organization
       management, user provisioning, advanced SSO federation). Categories
       only; no pricing in this repository.
+- [x] Define the [OSS export and provenance gate](../oss-export.md) and implement
+  reproducible local candidate preparation. Real edition extraction, independent
+  release reviews and public publication remain pending.
 - [x] [Prospect sandbox design](../prospect-sandboxes.md): dedicated evaluation
       deployments with authenticated tenant access, a pinned synthetic
       manufacturing pack, automatic generation replacement and an absolute
