@@ -24,6 +24,9 @@ release-bound behavior, not the complete commit history.
 
 ### Changed
 
+- Container build, signing-provenance and SARIF upload actions use reviewed
+  dependency updates; static contract checks retain the exact expected versions.
+
 - Data-asset lineage batches promotion history reads while retaining tenant
   isolation, chronological output and the latest-50 limit per proposal.
 - CSV preview detects duplicate headers in one pass with unchanged validation

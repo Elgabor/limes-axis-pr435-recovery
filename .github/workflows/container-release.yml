@@ -59,11 +59,11 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v4.1.0
+        uses: docker/setup-buildx-action@v4.3.0
 
       - name: Extract image metadata
         id: meta
-        uses: docker/metadata-action@v6.1.0
+        uses: docker/metadata-action@v6.2.0
         with:
           images: ${{ matrix.image }}
           tags: |
@@ -78,7 +78,7 @@ jobs:
 
       - name: Build image
         id: build
-        uses: docker/build-push-action@v7.2.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -159,10 +159,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v4.1.0
+        uses: docker/setup-buildx-action@v4.3.0
 
       - name: Login to GHCR
-        uses: docker/login-action@v4.2.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -170,7 +170,7 @@ jobs:
 
       - name: Extract image metadata
         id: meta
-        uses: docker/metadata-action@v6.1.0
+        uses: docker/metadata-action@v6.2.0
         with:
           images: ${{ matrix.image }}
           tags: |
@@ -185,7 +185,7 @@ jobs:
 
       - name: Build and publish image
         id: build
-        uses: docker/build-push-action@v7.2.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -205,7 +205,7 @@ jobs:
         run: cosign sign --yes "${IMAGE_DIGEST_REF}"
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v4.1.1
+        uses: actions/attest-build-provenance@v4.2.2
         with:
           subject-name: ${{ matrix.image }}
           subject-digest: ${{ steps.build.outputs.digest }}

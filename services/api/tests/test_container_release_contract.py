@@ -33,8 +33,8 @@ def test_container_release_workflow_declares_supply_chain_boundaries() -> None:
 
     assert "ghcr.io/${{ github.repository_owner }}/limes-axis-api" in required_terms
     assert "ghcr.io/${{ github.repository_owner }}/limes-axis-web" in required_terms
-    assert "docker/build-push-action@v7.2.0" in required_terms
-    assert "actions/attest-build-provenance@v4.1.1" in required_terms
+    assert "docker/build-push-action@v7.3.0" in required_terms
+    assert "actions/attest-build-provenance@v4.2.2" in required_terms
     assert "sigstore/cosign-installer@v4.1.2" in required_terms
     assert "sbom: true" in required_terms
     assert "provenance: mode=max" in required_terms
