@@ -9,6 +9,8 @@ source/object-store doubles, and the full cancel lifecycle contract.
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -412,32 +414,44 @@ def test_batch_keys_are_deterministic_for_idempotent_store_writes(
     assert len(keys) == 2 and keys[0] == keys[1]
 
 
-def test_no_pk_reads_are_single_pass_and_never_claim_resumability() -> None:
-    """No stable ordering key: one bounded pass, null cursor, honest caps."""
+@pytest.mark.parametrize("has_primary_key", [True, False])
+@pytest.mark.parametrize(
+    ("source_rows", "max_rows", "truncated"), [(0, 10, False), (1, 10, False), (3, 2, True)],
+)
+def test_bounded_reader_uses_profile_timeout_and_reports_ordering(
+    monkeypatch: pytest.MonkeyPatch, has_primary_key: bool,
+    source_rows: int, max_rows: int, truncated: bool,
+) -> None:
+    """Exercise the real read loop with only the database driver substituted."""
 
-    rows = [{"value": index} for index in range(5)]
-    result = {
-        "ordering_mode": "none",
-        "cursor_watermark": None,
-        "rows": rows,
-        "byte_size": sum(len(json.dumps(row, sort_keys=True).encode()) for row in rows),
-        "truncated": False,
-        "limit_reason": None,
-    }
-    assert result["cursor_watermark"] is None
-    limits = ExtractionLimits(max_rows=3, max_bytes=1_000_000, page_size=2, time_budget_seconds=30)
-    # The cap gate refuses row 4 once max_rows is hit — no looping, ever.
-    gate = __import__(
-        "axis_api.connector_source_extraction", fromlist=["_cap_gate"]
-    )._cap_gate(
-        len(json.dumps({"value": 9}).encode()),
-        existing_rows=result["rows"][:3],
-        existing_bytes=100,
-        limits=limits,
-        deadline=float("inf"),
-        clock=lambda: 0.0,
+    connect = MagicMock()
+    cursor = connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value
+    cursor.description = [SimpleNamespace(name="order_id")]
+    cursor.fetchall.return_value = [("order_id",)] if has_primary_key else []
+    cursor.fetchmany.side_effect = [[(i,) for i in range(1, source_rows + 1)], []]
+    monkeypatch.setattr("axis_api.connector_source_extraction.psycopg.connect", connect)
+
+    runtime = make_runtime(None)
+    result = runtime._read_bounded(
+        RESOURCE,
+        ExtractionLimits(max_rows=max_rows, max_bytes=1024, page_size=5, time_budget_seconds=30),
+        {},
     )
-    assert gate == "row_limit"
+
+    statements = [call.args[0] for call in cursor.execute.call_args_list]
+    assert statements[:2] == [
+        "SET TRANSACTION READ ONLY",
+        "SET LOCAL statement_timeout = 10000",
+    ]
+    assert connect.call_args.kwargs["connect_timeout"] == 3
+    expected_rows = min(source_rows, max_rows)
+    assert result["rows"] == [{"order_id": i} for i in range(1, expected_rows + 1)]
+    assert result["truncated"] is truncated
+    assert result["limit_reason"] == ("row_limit" if truncated else None)
+    assert result["ordering_mode"] == ("primary_key" if has_primary_key else "none")
+    assert result["cursor_watermark"] == (
+        {"order_id": expected_rows} if has_primary_key and expected_rows else None
+    )
 
 
 def test_cap_gate_refuses_single_oversized_row() -> None:

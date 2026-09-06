@@ -155,6 +155,7 @@ the nearest contract evidence; they are not an exhaustive test inventory.
 - [Approvals](./platform-approvals.md)
 - [Audit](./platform-audit.md)
 - [Connectors](./platform-connectors.md)
+- [Connector capability matrix](./connector-capabilities.md)
 - [Ontology](./platform-ontology.md)
 - [Workflows](./platform-workflows.md)
 - [Model routing](./platform-model-routing.md)

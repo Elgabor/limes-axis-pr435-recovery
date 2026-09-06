@@ -362,17 +362,15 @@ class SelfHostedPostgresExtractionRuntime:
             **hardening,
         ) as connection, connection.cursor() as cursor:
             cursor.execute("SET TRANSACTION READ ONLY")
-            statement_timeout_ms = (
-                self.settings.external_db_discovery_statement_timeout_seconds * 1000
-            )
+            statement_timeout_ms = self._profile.statement_timeout_seconds * 1000
             cursor.execute(f"SET LOCAL statement_timeout = {statement_timeout_ms}")
             ordering_mode, pk_column = self._primary_key_probe(
                 cursor, schema_name, table_name
             )
+            watermark: dict | None = None
             if ordering_mode == "primary_key":
                 # Keyset paging over a verified single-column primary key:
                 # deterministic order, honest watermark, resumable later.
-                watermark: dict | None = None
                 while True:
                     if watermark is not None:
                         cursor.execute(

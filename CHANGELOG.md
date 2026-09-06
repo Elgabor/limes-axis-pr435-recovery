@@ -24,6 +24,12 @@ release-bound behavior, not the complete commit history.
 
 ### Changed
 
+- The connector capability audit records the existing source families, runtime
+  gates and gaps. Bounded Postgres extraction now uses its profile's statement
+  timeout and returns a null watermark for tables without a single-column
+  primary key, fixing two read-loop errors found by the audit
+  ([#333](https://github.com/Limes-Labs/limes-axis/issues/333)).
+
 - API settings are grouped into seven capabilities behind the existing flat
   environment facade, with a generated operator reference. Production startup
   now rejects non-positive rate limits and inconsistent enabled source-ingestion
