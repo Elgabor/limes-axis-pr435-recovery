@@ -7,6 +7,13 @@ audit trail. Routing (:func:`decide_model_route`) is pure and deterministic —
 no enabled endpoint matching the request means a blocked decision, never a
 silent fallback to an external hop.
 
+Transactions: callers that own the request transaction can opt into three
+phases — prepare and commit, external await, idempotent finalize. The requested
+row is committed before the provider call, so no database transaction is held
+across the external await and the idempotency key is durable if the process
+dies mid-call. See
+``docs/platform-model-routing.md`` and ADR 0003.
+
 Privacy: prompts and responses are never persisted or audited. The invocation
 row and audit payload carry SHA-256 hashes plus token counts; an optional
 bounded excerpt (``AXIS_MODEL_INVOCATION_PROMPT_EXCERPT_CHARS``, default 0)
@@ -23,6 +30,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy.exc import IntegrityError
 
 from axis_api.audit import AuditEventCreate
 from axis_api.demo import ModelRouteTelemetry, OverviewStatus
@@ -39,6 +47,7 @@ from axis_api.model_providers import (
     ModelInvocationRuntimeResult,
     ModelProviderInvocationError,
 )
+from axis_api.models import ModelInvocation
 from axis_api.permissions import PermissionDecision, PermissionRequest, evaluate_permission
 from axis_api.persistence import (
     AxisPersistenceRepository,
@@ -67,6 +76,20 @@ MODEL_INVOCATION_PREVIEWED_AUDIT_EVENT_TYPE = "model.invocation.previewed"
 MODEL_INVOCATION_REQUESTED_STATUS = "requested"
 MODEL_INVOCATION_FAILED_STATUS = "failed"
 MODEL_INVOCATION_COST_BASIS = "estimated_from_endpoint_rates"
+
+COMPLETED_REPLAY_NOTE = (
+    "Idempotent replay: the stored invocation record is returned; response "
+    "bodies are never persisted, so output_text is empty."
+)
+# Reachable because the requested row is committed before the provider call:
+# a duplicate delivery can now observe an invocation whose outcome is not yet
+# known. Re-invoking would risk a second provider call, so the record is
+# returned as-is.
+IN_FLIGHT_REPLAY_NOTE = (
+    "Idempotent replay: the provider call for this idempotency key is still in "
+    "flight or was interrupted before its outcome was recorded. No result is "
+    "available yet and no second provider call was issued."
+)
 
 ROUTE_STATUS_ROUTED = "routed"
 ROUTE_STATUS_BLOCKED = "blocked"
@@ -411,7 +434,20 @@ async def invoke_model(
     prompt_excerpt_chars: int = 0,
     usage_metering_enabled: bool = False,
     usage_window_seconds: int = DEFAULT_USAGE_PERIOD_WINDOW_SECONDS,
+    commit_before_provider_call: bool = False,
 ) -> ModelInvocationResult:
+    """Run one governed model invocation.
+
+    ``commit_before_provider_call`` states that the caller owns the request
+    transaction and that everything pending in the session is this invocation's
+    own prepared evidence. The request handler for
+    ``POST /platform/models/invocations`` sets it, which closes the transaction
+    before the provider call and makes the idempotency key durable. Callers
+    that embed an invocation inside a larger unit of work — an agent run, for
+    example — leave it unset, because committing there would also commit their
+    own partial state.
+    """
+
     permission_decision = _evaluate_invoke_permission(
         tenant_id=request.tenant_id,
         actor_id=request.actor_id,
@@ -505,7 +541,13 @@ async def invoke_model(
             audit_event_type=audit_event.event_type,
         )
 
-    invocation = repository.create_model_invocation(
+    # Phase 1 — prepare and commit. The requested row carries the idempotency
+    # key together with the route, permission, policy and egress decisions.
+    # When the caller owns the transaction, committing it here makes that
+    # evidence durable and returns the pooled connection, so nothing stays open
+    # across the external await.
+    invocation, duplicate_delivery = _prepare_invocation(
+        repository,
         ModelInvocationCreate(
             tenant_id=request.tenant_id,
             idempotency_key=request.idempotency_key,
@@ -526,16 +568,37 @@ async def invoke_model(
             egress_decision=egress_decision,
             prompt_sha256=prompt_sha256,
             prompt_excerpt=_bounded_excerpt(request.prompt, prompt_excerpt_chars),
-        )
+        ),
+        commit=commit_before_provider_call,
     )
+    if duplicate_delivery:
+        # A concurrent request with the same key won the unique constraint
+        # while this one was still routing. Returning its record keeps
+        # duplicate delivery to at most one provider call.
+        if not _replay_matches_request(invocation, request, prompt_sha256):
+            raise ModelInvocationIdempotencyConflict(invocation.id)
+        return _result_from_invocation(
+            invocation,
+            permission_decision=permission_decision,
+            idempotent_replay=True,
+        )
+    invocation_id = invocation.id
 
+    # Phase 2 — external await. With phase 1 committed, no transaction is open
+    # here and no lazy attribute load is issued, so the provider timeout cannot
+    # occupy a database connection.
     runtime_result = await _call_runtime(
         runtime,
         request=request,
-        invocation_id=invocation.id,
+        invocation_id=invocation_id,
         endpoint=endpoint,
         model_id=route_decision.model_id or endpoint.default_model,
     )
+
+    # Phase 3 — idempotent finalize. A new transaction records the outcome
+    # against the committed row. If it never commits, the row stays
+    # ``requested``: a later retry replays that record instead of issuing a
+    # second provider call, because the result of the first one is unknown.
     status = _invocation_status(runtime_result)
     estimated_cost = _estimated_cost_eur(
         endpoint,
@@ -834,6 +897,43 @@ def _call_runtime_request(
     )
 
 
+def _prepare_invocation(
+    repository: AxisPersistenceRepository,
+    record: ModelInvocationCreate,
+    *,
+    commit: bool,
+) -> tuple[ModelInvocation, bool]:
+    """Persist the requested row, optionally committing it.
+
+    Returns the invocation and whether a concurrent request had already claimed
+    the idempotency key. Committing here ends the transaction before the
+    provider call; the unique constraint on tenant and idempotency key is what
+    makes a concurrent duplicate observable instead of fatal.
+    """
+
+    if not commit:
+        return repository.create_model_invocation(record), False
+    try:
+        # The insert is flushed here, so the unique constraint can already
+        # fire before the commit does.
+        invocation = repository.create_model_invocation(record)
+        repository.session.commit()
+    except IntegrityError:
+        repository.session.rollback()
+        existing = repository.get_model_invocation_by_idempotency_key(
+            record.tenant_id,
+            record.idempotency_key,
+        )
+        if existing is None:
+            # The conflict was not the tenant/idempotency uniqueness contract,
+            # so it is not ours to translate into an idempotent replay.
+            raise
+        return existing, True
+    # The session is configured with ``expire_on_commit=False``, so the
+    # committed row stays readable without a second query.
+    return invocation, False
+
+
 async def _call_runtime(
     runtime: ModelInvocationRuntime,
     *,
@@ -897,8 +997,9 @@ def _result_from_invocation(
     notes = list(runtime_notes or invocation.notes or [])
     if idempotent_replay:
         notes.append(
-            "Idempotent replay: the stored invocation record is returned; response "
-            "bodies are never persisted, so output_text is empty."
+            IN_FLIGHT_REPLAY_NOTE
+            if invocation.status == MODEL_INVOCATION_REQUESTED_STATUS
+            else COMPLETED_REPLAY_NOTE
         )
     return ModelInvocationResult(
         tenant_id=invocation.tenant_id,

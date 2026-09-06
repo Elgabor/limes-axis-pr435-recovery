@@ -19,6 +19,39 @@ runtime dependency changes. Each entry should include:
 Small implementation increments that do not alter architecture belong in the
 normal release changelog or pull request, not here.
 
+## 2026-09-05 — Commit Before the External Await on the Model Invocation Path
+
+**Issue:** [#362](https://github.com/Limes-Labs/limes-axis/issues/362)
+
+**Boundary:** the governed mutation path, where a request awaits an external
+runtime while its own transaction is still open.
+
+`POST /platform/models/invocations` wrote the requested invocation row — which
+carries the idempotency key together with the route, permission, policy and
+egress decisions — and then awaited the provider with that row uncommitted. The
+open transaction held a pooled connection for the provider's latency, and the
+idempotency key was not durable: an interrupted process lost the only record
+that the call had been issued, so a retry or a duplicate delivery could invoke
+the provider a second time.
+
+The path now runs prepare-and-commit, external-await, idempotent-finalize. The
+commit boundary is owned by the request handler rather than the domain
+function, because phase 1 commits the whole request session and only a handler
+that owns the transaction can take that contract; an agent run, which embeds an
+invocation in a larger unit of work, keeps its existing semantics.
+
+Compatibility: the response contract widens rather than breaks. A caller may
+now receive status `requested` for a key whose provider call is still in flight
+or was interrupted, with a note saying no result is available and no second
+call was issued. Such a record is replayed, never re-invoked, and clearing it
+is operator work today. Audit evidence written before the provider call now
+survives a request that later fails.
+
+Evidence: [ADR 0003](./adr/0003-external-await-transaction-boundary.md), the
+[external-await inventory](./performance-external-await-boundaries.md) and the
+transaction, pool-occupancy, interruption and duplicate-delivery tests in
+`services/api/tests/test_model_invocations.py`.
+
 ## 2026-08-29 — Separate Current Truth from Delivery History
 
 **Issue:** [#359](https://github.com/Limes-Labs/limes-axis/issues/359)

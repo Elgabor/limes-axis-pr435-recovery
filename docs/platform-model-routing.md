@@ -53,6 +53,33 @@ returns:
 Missing persisted reference records return 404. Invalid or tenant-mismatched
 payloads return 422.
 
+## Invocation Durability
+
+`POST /platform/models/invocations` runs in three phases: it commits the
+requested invocation row, then calls the provider, then records the outcome in
+a new transaction. Committing first makes the idempotency key durable before
+any external call and keeps a provider timeout from occupying a database
+connection. The phase contract and the inventory of the other external-await
+paths are in
+[external-await transaction boundaries](./performance-external-await-boundaries.md)
+and [ADR 0003](./adr/0003-external-await-transaction-boundary.md).
+
+A process can stop after the claim is committed but before the provider is
+called. This guarantees at-most-once dispatch, not exactly-once execution or
+automatic recovery.
+
+Two consequences are part of the endpoint contract:
+
+- At most one provider call is issued per tenant and idempotency key. A
+  duplicate delivery that arrives while the first call is in flight replays the
+  stored record instead of calling the provider again.
+- A replayed record whose outcome has not been written yet is returned with
+  status `requested` and a note stating that no result is available and that no
+  second call was issued. `requested` is not a failure status, and the record
+  is never re-invoked automatically: the outcome of the first provider call is
+  unknown, and Axis does not fabricate one. Clearing a record left `requested`
+  by an interrupted process is operator work.
+
 ## Console
 
 The `/model-routing` page shows:
@@ -82,11 +109,15 @@ Delivered:
   openai-compatible provider adapter;
 - metadata-only persisted invocation records with audit ledger evidence and
   per-tenant usage metering;
-- model-routed agent proposals through the governed agent run slice.
+- model-routed agent proposals through the governed agent run slice;
+- committed-before-provider-call invocation durability with single-call
+  duplicate delivery.
 
 Still Platform work:
 
 - additional provider adapters beyond openai-compatible endpoints;
 - provider-specific billing ingestion;
 - tenant-scoped budget enforcement;
-- policy-managed exception workflow for external model egress.
+- policy-managed exception workflow for external model egress;
+- recovery or expiry of invocation records left `requested` by an interrupted
+  process.

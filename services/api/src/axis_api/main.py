@@ -9687,6 +9687,10 @@ def create_app(
                     usage_window_seconds=(
                         resolved_settings.usage_metering_aggregation_window_seconds
                     ),
+                    # This handler owns the request transaction, so the
+                    # prepared invocation is committed before the provider
+                    # call instead of holding a connection for its duration.
+                    commit_before_provider_call=True,
                 )
             except ModelInvocationPermissionDenied as exc:
                 raise HTTPException(

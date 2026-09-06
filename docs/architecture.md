@@ -111,6 +111,13 @@ the nearest contract evidence; they are not an exhaustive test inventory.
 4. The transaction persists operational state and append-only audit evidence.
 5. Workflow signals or external adapters are invoked only through their ports;
    the approval outbox is available where crash-atomic delivery is required.
+6. A path that must await an external runtime inside the request commits the
+   record carrying its idempotency key and decision evidence before that call
+   and records the outcome afterwards, so no transaction is held across the
+   await and the key survives an interrupted process. Governed model
+   invocation is the path on this contract today; the inventory of the
+   remaining external-await paths is in
+   [external-await transaction boundaries](./performance-external-await-boundaries.md).
 
 ### Connector Ingestion Path
 

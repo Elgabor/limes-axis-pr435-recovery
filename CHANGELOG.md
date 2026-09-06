@@ -24,6 +24,13 @@ release-bound behavior, not the complete commit history.
 
 ### Changed
 
+- Governed model invocations commit the requested record before calling the
+  provider, so a provider timeout no longer occupies a database connection and
+  the idempotency key survives an interrupted process. At most one provider
+  call is now issued per tenant and idempotency key, including under concurrent
+  duplicate delivery; a replay whose outcome is not yet recorded returns status
+  `requested` with an explanatory note and is never re-invoked automatically
+  ([#362](https://github.com/Limes-Labs/limes-axis/issues/362)).
 - Container build, signing-provenance and SARIF upload actions use reviewed
   dependency updates; static contract checks retain the exact expected versions.
 
