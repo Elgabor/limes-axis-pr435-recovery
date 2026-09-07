@@ -137,6 +137,10 @@ release-bound behavior, not the complete commit history.
   indexes and scanned index entries belonging to every other tenant. Responses
   are unchanged ([#363](https://github.com/Limes-Labs/limes-axis/issues/363)).
 
+- Source extraction recognizes single-column primary keys for PostgreSQL roles
+  with SELECT-only access by reusing verified catalog schema evidence. P5 adds
+  reproducible offline and isolated PostgreSQL connector proofs.
+
 - PostgreSQL source discovery records versioned type/key/nullability metadata;
   extraction refuses live schema drift before reading rows. The console and API
   support explicit binding replacement with preserved history. Migration 0067

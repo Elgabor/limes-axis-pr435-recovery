@@ -575,9 +575,11 @@ class SelfHostedPostgresExtractionRuntime:
                     postgres_schema_fingerprint(columns, schema_fingerprint_version)
                     != pinned_schema_fingerprint):
                     return {"schema_drift": True}
-                ordering_mode, pk_column = self._primary_key_probe(
-                    cursor, schema_name, table_name
-                )
+                # information_schema.table_constraints hides keys from SELECT-only
+                # roles. Reuse catalog evidence already pinned in this snapshot.
+                primary_keys = [str(column[0]) for column in columns if column[3]]
+                pk_column = primary_keys[0] if len(primary_keys) == 1 else None
+                ordering_mode = "primary_key" if pk_column is not None else "none"
                 watermark: dict | None = None
                 if ordering_mode == "primary_key":
                     # Keyset paging over a verified single-column primary key:
@@ -706,24 +708,3 @@ class SelfHostedPostgresExtractionRuntime:
             psycopg.sql.SQL("SELECT 1 FROM {} LIMIT 2").format(qualified)
         )
         return len(cursor.fetchall()) > 1
-
-    @staticmethod
-    def _primary_key_probe(cursor, schema_name: str, table_name: str) -> tuple[str, str | None]:
-        cursor.execute(
-            """
-            SELECT kcu.column_name
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON tc.constraint_name = kcu.constraint_name
-             AND tc.table_schema = kcu.table_schema
-            WHERE tc.table_schema = %s
-              AND tc.table_name = %s
-              AND tc.constraint_type = 'PRIMARY KEY'
-            ORDER BY kcu.ordinal_position
-            """,
-            (schema_name, table_name),
-        )
-        columns = [str(row[0]) for row in cursor.fetchall()]
-        if len(columns) == 1:
-            return "primary_key", columns[0]
-        return "none", None

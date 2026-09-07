@@ -240,3 +240,62 @@ def test_postgres_source_outside_transaction(session_factory, tmp_path, monkeypa
     import test_connector_raw_durability as contracts
 
     contracts.test_source_read_runs_outside_axis_transaction(session_factory, tmp_path, monkeypatch)
+
+
+def test_batch_conflict_finalizes_outside_the_locked_transaction(
+    session_factory, tmp_path, monkeypatch
+):
+    import asyncio
+
+    from sqlalchemy import event
+
+    from axis_api.connector_source_ingestion import (
+        ObservationFreshnessIngestionRuntime,
+        SourceIngestionOutboxDispatcher,
+    )
+    from axis_api.object_storage import LocalObjectStore
+    from axis_api.persistence import AxisPersistenceRepository
+
+    fixtures.seed_extract_request(session_factory)
+    original = AxisPersistenceRepository.get_connector_source_extraction_batch_by_key
+    calls = []
+
+    def conflict_on_record(repository, tenant_id, batch_key):
+        calls.append(1)
+        if len(calls) == 2:
+            return object()
+        return original(repository, tenant_id, batch_key)
+
+    monkeypatch.setattr(
+        AxisPersistenceRepository,
+        "get_connector_source_extraction_batch_by_key",
+        conflict_on_record,
+    )
+
+    # If finalization regresses to a nested locked transaction, fail promptly.
+    def bounded_lock(dbapi_connection, _record):
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute("SET lock_timeout = '1s'")
+
+    event.listen(session_factory.kw["bind"], "connect", bounded_lock)
+    runtime = fixtures.make_runtime(session_factory, store=LocalObjectStore(tmp_path))
+    runtime._read_bounded = lambda *args, **kwargs: fixtures.bounded_result([{"id": 1}])
+    dispatcher = SourceIngestionOutboxDispatcher(
+        settings=fixtures.both_gates(),
+        session_factory=session_factory,
+        runtime=ObservationFreshnessIngestionRuntime(),
+        extraction_runtime=runtime,
+    )
+    assert asyncio.run(dispatcher.run_once()).dead_lettered == 1
+    with session_factory() as session:
+        repo = AxisPersistenceRepository(session)
+        request = repo.get_connector_source_ingestion_request(
+            fixtures.TENANT_A, "ingreq_e2e_extract"
+        )
+        assert request.last_error == "batch_key_conflict"
+        assert (
+            repo.get_connector_source_ingestion_request_batches(
+                fixtures.TENANT_A, "ingreq_e2e_extract", limit=10
+            )
+            == []
+        )
