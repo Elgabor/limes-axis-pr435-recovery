@@ -25,7 +25,7 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 
 import psycopg
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from axis_api.config import Settings
 from axis_api.connector_execution import read_only_session_connect_kwargs
@@ -151,6 +151,23 @@ class SourceExtractionOutcome(BaseModel):
     stored: dict | None = None
 
 
+class PreparedSourceExtraction(BaseModel):
+    """Validated metadata for one read; contains no repository, session or secret."""
+
+    model_config = ConfigDict(frozen=True)
+    tenant_id: str
+    connector_id: str
+    request_id: str
+    batch_key: str
+    binding_id: str
+    resource_name: str
+    pinned_schema_fingerprint: str
+    executed_by: str
+    limits: ExtractionLimits
+    hardening: dict[str, str]
+    classification: str
+
+
 class _SourceReadFailure(Exception):
     def __init__(self, error: psycopg.Error, *, extraction_performed: bool):
         if (error.sqlstate or "").startswith("28"):
@@ -190,6 +207,24 @@ class SourceExtractionRuntimePort(Protocol):
         pinned_schema_fingerprint: str,
         executed_by: str,
     ) -> SourceExtractionOutcome: ...
+
+    def prepare_selection(
+        self,
+        *,
+        repository: AxisPersistenceRepository,
+        tenant_id: str,
+        connector_id: str,
+        request_id: str,
+        batch_key: str,
+        binding_id: str,
+        resource_name: str,
+        pinned_schema_fingerprint: str,
+        executed_by: str,
+    ) -> PreparedSourceExtraction | SourceExtractionOutcome: ...
+
+    def read_selection(self, prepared: PreparedSourceExtraction) -> SourceExtractionOutcome: ...
+
+    def verify_stored_batch(self, adapter: str, key: str, digest: str, size: int) -> bool: ...
 
 
 def _qualified_name_is_safe(resource_name: str) -> bool:
@@ -238,6 +273,34 @@ class SelfHostedPostgresExtractionRuntime:
         pinned_schema_fingerprint: str,
         executed_by: str,
     ) -> SourceExtractionOutcome:
+        prepared = self.prepare_selection(
+            repository=repository,
+            tenant_id=tenant_id,
+            connector_id=connector_id,
+            request_id=request_id,
+            batch_key=batch_key,
+            binding_id=binding_id,
+            resource_name=resource_name,
+            pinned_schema_fingerprint=pinned_schema_fingerprint,
+            executed_by=executed_by,
+        )
+        if isinstance(prepared, SourceExtractionOutcome):
+            return prepared
+        return self.read_selection(prepared)
+
+    def prepare_selection(
+        self,
+        *,
+        repository: AxisPersistenceRepository,
+        tenant_id: str,
+        connector_id: str,
+        request_id: str,
+        batch_key: str,
+        binding_id: str,
+        resource_name: str,
+        pinned_schema_fingerprint: str,
+        executed_by: str,
+    ) -> PreparedSourceExtraction | SourceExtractionOutcome:
         if not (
             self.settings.source_ingestion_dispatch_enabled
             and self.settings.source_ingestion_extraction_enabled
@@ -297,9 +360,29 @@ class SelfHostedPostgresExtractionRuntime:
         if stewardship is not None:
             classification = stewardship.classification
 
+        return PreparedSourceExtraction(
+            tenant_id=tenant_id,
+            connector_id=connector_id,
+            request_id=request_id,
+            batch_key=batch_key,
+            binding_id=binding_id,
+            resource_name=resource_name,
+            pinned_schema_fingerprint=pinned_schema_fingerprint,
+            executed_by=executed_by,
+            limits=limits,
+            hardening=hardening,
+            classification=classification,
+        )
+
+    def verify_stored_batch(self, adapter: str, key: str, digest: str, size: int) -> bool:
+        if adapter != self._object_store.adapter_name:
+            return False
+        return self._object_store.verify_json(key, digest, size)
+
+    def read_selection(self, prepared: PreparedSourceExtraction) -> SourceExtractionOutcome:
         started = self._clock()
         try:
-            read = self._read_bounded(resource_name, limits, hardening)
+            read = self._read_bounded(prepared.resource_name, prepared.limits, prepared.hardening)
         except _SourceReadFailure as exc:
             return exc.outcome
         except psycopg.Error as exc:
@@ -308,18 +391,18 @@ class SelfHostedPostgresExtractionRuntime:
         duration_ms = int((self._clock() - started) * 1000)
         envelope = {
             "schema_version": ENVELOPE_SCHEMA_VERSION,
-            "tenant_id": tenant_id,
-            "connector_id": connector_id,
-            "request_id": request_id,
-            "binding_id": binding_id,
-            "resource_name": resource_name,
-            "pinned_schema_fingerprint": pinned_schema_fingerprint,
-            "observed_schema_fingerprint": observed_fingerprint,
+            "tenant_id": prepared.tenant_id,
+            "connector_id": prepared.connector_id,
+            "request_id": prepared.request_id,
+            "binding_id": prepared.binding_id,
+            "resource_name": prepared.resource_name,
+            "pinned_schema_fingerprint": prepared.pinned_schema_fingerprint,
+            "observed_schema_fingerprint": prepared.pinned_schema_fingerprint,
             "ordering_mode": read["ordering_mode"],
             "cursor_watermark": read["cursor_watermark"],
             "truncated": read["truncated"],
             "limit_reason": read["limit_reason"],
-            "limits_applied": limits.model_dump(),
+            "limits_applied": prepared.limits.model_dump(),
             "row_count": len(read["rows"]),
             "rows": read["rows"],
         }
@@ -327,7 +410,8 @@ class SelfHostedPostgresExtractionRuntime:
         digest = hashlib.sha256(encoded).hexdigest()
 
         storage_key = (
-            f"tenants/{tenant_id}/source-ingestion/{request_id}/{binding_id}/{batch_key}.json"
+            f"tenants/{prepared.tenant_id}/source-ingestion/{prepared.request_id}/"
+            f"{prepared.binding_id}/{prepared.batch_key}/{digest}.json"
         )
         try:
             stored_meta = self._object_store.put_json(storage_key, json.loads(encoded.decode()))
@@ -342,6 +426,15 @@ class SelfHostedPostgresExtractionRuntime:
                 extraction_performed=True,
             )
 
+        if (
+            stored_meta.checksum_sha256 != digest or stored_meta.size_bytes != len(encoded)
+            or stored_meta.storage_key != storage_key
+        ):
+            return SourceExtractionOutcome(
+                ok=False, reason="object_store_integrity_mismatch",
+                source_dial_performed=True, extraction_performed=True,
+            )
+
         return SourceExtractionOutcome(
             ok=True,
             source_dial_performed=True,
@@ -354,7 +447,7 @@ class SelfHostedPostgresExtractionRuntime:
             limit_reason=read["limit_reason"],
             duration_ms=duration_ms,
             digest_sha256=digest,
-            observed_schema_fingerprint=observed_fingerprint,
+            observed_schema_fingerprint=prepared.pinned_schema_fingerprint,
             payload_envelope=envelope,
             stored={
                 "storage_adapter": stored_meta.storage_adapter,
@@ -364,8 +457,8 @@ class SelfHostedPostgresExtractionRuntime:
                 "stored_size_bytes": stored_meta.size_bytes,
                 "checksum_sha256": stored_meta.checksum_sha256,
                 "digest_sha256": digest,
-                "classification": classification,
-                "executed_by": executed_by,
+                "classification": prepared.classification,
+                "executed_by": prepared.executed_by,
             },
         )
 
@@ -446,7 +539,7 @@ class SelfHostedPostgresExtractionRuntime:
                 connect_timeout=self._profile.connect_timeout_seconds,
                 **hardening,
             ) as connection, connection.cursor() as cursor:
-                cursor.execute("SET TRANSACTION READ ONLY")
+                cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
                 statement_timeout_ms = (
                     self._profile.statement_timeout_seconds * 1000
                 )
@@ -457,7 +550,7 @@ class SelfHostedPostgresExtractionRuntime:
                 watermark: dict | None = None
                 if ordering_mode == "primary_key":
                     # Keyset paging over a verified single-column primary key:
-                    # deterministic order, honest watermark, resumable later.
+                    # deterministic order within this snapshot; watermark is not a checkpoint.
                     while True:
                         if watermark is not None:
                             cursor.execute(

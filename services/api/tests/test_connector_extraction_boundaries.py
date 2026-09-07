@@ -84,7 +84,7 @@ def test_real_extraction_reader_handles_empty_exact_and_capped_sources(
         {"id": min(row_count, 2) - 1} if primary_key and row_count else None
     )
     assert outcome.ordering_mode == ("primary_key" if primary_key else "none")
-    assert driver.statements[0] == "SET TRANSACTION READ ONLY"
+    assert driver.statements[0] == "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY"
     assert driver.statements[1].startswith("SET LOCAL statement_timeout = ")
 
 

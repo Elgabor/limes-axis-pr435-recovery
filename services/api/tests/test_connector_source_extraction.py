@@ -97,7 +97,7 @@ class RecordingObjectStore:
         self.writes.append((key, payload))
         from axis_api.object_storage import StoredObjectMetadata
 
-        encoded = json.dumps(payload, sort_keys=True).encode()
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         import hashlib
 
         return StoredObjectMetadata(
@@ -690,14 +690,14 @@ def run_dispatcher(factory, settings=None, store=None, read_result=None, fail_se
     store = store or RecordingObjectStore()
     runtime = make_runtime(factory, settings, store)
 
-    original = runtime.extract_selection
+    original = runtime.prepare_selection
 
     def maybe_failing(**kwargs):
         if fail_second and kwargs["binding_id"] == "binding_extract_002":
             return SourceExtractionOutcome(ok=False, reason="stale_fingerprint")
         return original(**kwargs)
 
-    runtime.extract_selection = maybe_failing  # type: ignore[method-assign]
+    runtime.prepare_selection = maybe_failing  # type: ignore[method-assign]
     if read_result is not None:
         runtime._read_bounded = lambda *a, **k: read_result  # type: ignore[method-assign]
 

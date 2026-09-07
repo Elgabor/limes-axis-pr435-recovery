@@ -3411,6 +3411,22 @@ class AxisPersistenceRepository:
         self.session.flush()
         return rows
 
+    def lock_connector_source_ingestion_claim(
+        self, ingestion_request_id: UUID, claim_token: UUID, *, now: datetime,
+    ) -> bool:
+        """Fence a short batch transaction against claim takeover and expiry."""
+        statement = (
+            select(ConnectorSourceIngestionRequest.id)
+            .where(
+                ConnectorSourceIngestionRequest.id == ingestion_request_id,
+                ConnectorSourceIngestionRequest.claim_token == claim_token,
+                ConnectorSourceIngestionRequest.status == "dispatching",
+                ConnectorSourceIngestionRequest.lease_expires_at > now,
+            )
+            .with_for_update()
+        )
+        return self.session.scalar(statement) is not None
+
     def complete_connector_source_ingestion_request(
         self,
         ingestion_request_id: UUID,
@@ -3418,7 +3434,6 @@ class AxisPersistenceRepository:
         *,
         completed_at: datetime,
         evidence: dict,
-        require_unexpired: bool = False,
     ) -> bool:
         result = self.session.execute(
             update(ConnectorSourceIngestionRequest)
@@ -3426,8 +3441,7 @@ class AxisPersistenceRepository:
                 ConnectorSourceIngestionRequest.id == ingestion_request_id,
                 ConnectorSourceIngestionRequest.claim_token == claim_token,
                 ConnectorSourceIngestionRequest.status == "dispatching",
-                *((ConnectorSourceIngestionRequest.lease_expires_at > completed_at,)
-                  if require_unexpired else ()),
+                ConnectorSourceIngestionRequest.lease_expires_at > completed_at,
             )
             .values(
                 status="completed",
@@ -3460,6 +3474,7 @@ class AxisPersistenceRepository:
                 ConnectorSourceIngestionRequest.id == ingestion_request_id,
                 ConnectorSourceIngestionRequest.claim_token == claim_token,
                 ConnectorSourceIngestionRequest.status == "dispatching",
+                ConnectorSourceIngestionRequest.lease_expires_at > updated_at,
             )
             .values(
                 status="failed" if dead_letter else "pending",
@@ -3860,6 +3875,15 @@ class AxisPersistenceRepository:
             .execution_options(synchronize_session=False)
         )
         return result.rowcount == 1
+
+    def has_incompatible_raw_checkpoint(self, tenant_id: str, request_id: str) -> bool:
+        return self.session.scalar(
+            select(ConnectorSourceExtractionBatch.id).where(
+                ConnectorSourceExtractionBatch.tenant_id == tenant_id,
+                ConnectorSourceExtractionBatch.request_id == request_id,
+                ~ConnectorSourceExtractionBatch.batch_key.startswith("raw-v1:"),
+            ).limit(1)
+        ) is not None
 
     def get_connector_source_ingestion_request_batches(
         self,

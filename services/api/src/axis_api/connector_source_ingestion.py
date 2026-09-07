@@ -20,11 +20,13 @@ with jittered backoff.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import random
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol
+from typing import Protocol
 from uuid import UUID
 
 from axis_sdk.connector_authoring.contracts import ConnectorError
@@ -41,6 +43,8 @@ from axis_api.connector_source_extraction import (
     EXTRACTION_ACTOR,
     EXTRACTION_STAGE,
     VALIDATE_STAGE,
+    SourceExtractionOutcome,
+    SourceExtractionRuntimePort,
     planned_extraction_limits,
 )
 from axis_api.db import session_scope
@@ -902,6 +906,10 @@ def build_connector_source_ingestion_overview(
     )
 
 
+class _RawCheckpointConflict(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class _ClaimedIngestionRequest:
     id: UUID
@@ -913,6 +921,7 @@ class _ClaimedIngestionRequest:
     selections: list[dict]
     attempt_count: int
     claim_token: UUID
+    generation: str
 
 
 class SourceIngestionRunResult(BaseModel):
@@ -1001,7 +1010,7 @@ class SourceIngestionOutboxDispatcher:
         settings: Settings,
         session_factory: sessionmaker[Session],
         runtime: SourceIngestionRuntimePort,
-        extraction_runtime: Any | None = None,
+        extraction_runtime: SourceExtractionRuntimePort | None = None,
         s3_runtime: S3IngestionRuntime | None = None,
         clock: Callable[[], datetime] | None = None,
         random_uniform: Callable[[float, float], float] | None = None,
@@ -1053,6 +1062,8 @@ class SourceIngestionOutboxDispatcher:
                     selections=[dict(selection) for selection in row.selections],
                     attempt_count=row.attempt_count,
                     claim_token=row.claim_token,
+                    generation=json.dumps([row.requeue_idempotency_key,
+                        row.requeued_at.isoformat() if row.requeued_at else None]),
                 )
                 for row in rows
                 if row.claim_token is not None
@@ -1131,20 +1142,11 @@ class SourceIngestionOutboxDispatcher:
         return self._finalize_success(row, evidence)
 
     def _extract_selections(self, row: _ClaimedIngestionRequest, evidence: dict) -> _ProcessOutcome:
-        """Real bounded extraction per validated selection, then completion.
+        """Commit each raw batch under an unexpired claim, outside source I/O.
 
-        Batch metadata rows, their audit events, and the terminal request
-        transition share one transaction; payloads live only in the object
-        store. Any extraction failure dead-letters the whole request with a
-        public-safe reason — a partial read never looks complete.
-
-        Store/DB boundary honesty: ``put_json`` precedes the metadata insert
-        and the two stores cannot commit atomically. Batch keys are fully
-        deterministic (``request_id:binding_id:index``), so a retry overwrites
-        the same object instead of duplicating it. If the request still ends
-        dead-lettered after its attempts, an object may exist without a DB row;
-        operators reconcile by listing the tenant-scoped key prefix against
-        recorded batches — documented behaviour, not silent atomicity.
+        Operational retries verify and reuse committed selections. Explicit
+        requeue creates a new generation. Uncommitted objects may remain after
+        interruption; content addressing preserves earlier payloads.
         """
         if row.connector_id == S3_SOURCE_CONNECTOR_ID:
             return self._extract_s3_selections(row, evidence)
@@ -1164,24 +1166,27 @@ class SourceIngestionOutboxDispatcher:
             return result
 
         try:
-            with session_scope(self._session_factory) as session:
-                repository = AxisPersistenceRepository(session)
-                for selection in row.selections:
-                    # Generation-scoped key: operational retries (no committed
-                    # predecessor for this selection) keep one stable key; an
-                    # explicit RE-DISPATCH after remediation starts a new
-                    # generation so genuinely new bytes never collide with
-                    # immutable recorded history.
+            for selection in row.selections:
+                with session_scope(self._session_factory) as session:
+                    repository = AxisPersistenceRepository(session)
+                    if not repository.lock_connector_source_ingestion_claim(
+                        row.id, row.claim_token, now=self._clock(),
+                    ):
+                        return _ProcessOutcome(status="fenced")
                     binding_id = str(selection["binding_id"])
-                    generation = (
-                        repository.count_connector_source_extraction_batches_for_binding(
-                            row.tenant_id,
-                            row.request_id,
-                            binding_id,
-                        )
+                    identity = [row.tenant_id, row.connector_id, row.request_id,
+                                row.generation, binding_id, selection["resource_name"],
+                                selection["schema_fingerprint"]]
+                    batch_key = "raw-v1:" + hashlib.sha256(
+                        json.dumps(identity, separators=(",", ":")).encode()
+                    ).hexdigest()
+                    incompatible = repository.has_incompatible_raw_checkpoint(
+                        row.tenant_id, row.request_id,
                     )
-                    batch_key = f"{row.request_id}:{binding_id}:{generation}"
-                    outcome = self._extraction_runtime.extract_selection(
+                    existing = repository.get_connector_source_extraction_batch_by_key(
+                        row.tenant_id, batch_key,
+                    )
+                    prepared = self._extraction_runtime.prepare_selection(
                         repository=repository,
                         tenant_id=row.tenant_id,
                         connector_id=row.connector_id,
@@ -1192,45 +1197,58 @@ class SourceIngestionOutboxDispatcher:
                         pinned_schema_fingerprint=str(selection["schema_fingerprint"]),
                         executed_by=EXTRACTION_ACTOR,
                     )
-                    source_dial_performed |= outcome.source_dial_performed
-                    extraction_performed |= outcome.extraction_performed
-                    if not outcome.ok or outcome.stored is None:
-                        reason = (outcome.reason or "extraction_failed")[:80]
-                        failure_evidence = attempt_evidence(failed=True)
+                if incompatible:
+                    return self._finalize_failure(
+                        row, "checkpoint_version_incompatible", permanent=True,
+                        evidence=attempt_evidence(failed=True),
+                    )
+                if existing is not None and not isinstance(prepared, SourceExtractionOutcome):
+                    consistent = (
+                        existing.connector_id == row.connector_id
+                        and existing.binding_id == binding_id
+                        and existing.resource_name == selection["resource_name"]
+                        and existing.pinned_schema_fingerprint == selection["schema_fingerprint"]
+                        and existing.provenance.get("checkpoint_version") == "raw_batch_v1"
+                        and existing.provenance.get("generation") == row.generation
+                    )
+                    if not consistent or not self._extraction_runtime.verify_stored_batch(
+                        existing.storage_adapter, existing.storage_key,
+                        existing.digest_sha256, existing.stored_size_bytes,
+                    ):
                         return self._finalize_failure(
-                            row, reason, permanent=not outcome.retryable, evidence=failure_evidence
+                            row, "checkpoint_integrity_mismatch", permanent=True,
+                            evidence=attempt_evidence(failed=True),
                         )
+                    batches_summary.append({
+                        "batch_key": batch_key, "binding_id": binding_id,
+                        "resource_name": existing.resource_name, "row_count": existing.row_count,
+                        "truncated": existing.truncated, "digest_sha256": existing.digest_sha256,
+                        "storage_uri": existing.storage_uri,
+                    })
+                    continue
+                outcome = (
+                    prepared if isinstance(prepared, SourceExtractionOutcome)
+                    else self._extraction_runtime.read_selection(prepared)
+                )
+                source_dial_performed |= outcome.source_dial_performed
+                extraction_performed |= outcome.extraction_performed
+                if not outcome.ok or outcome.stored is None:
+                    reason = (outcome.reason or "extraction_failed")[:80]
+                    failure_evidence = attempt_evidence(failed=True)
+                    return self._finalize_failure(
+                        row, reason, permanent=not outcome.retryable, evidence=failure_evidence
+                    )
+                with session_scope(self._session_factory) as session:
+                    repository = AxisPersistenceRepository(session)
+                    if not repository.lock_connector_source_ingestion_claim(
+                        row.id, row.claim_token, now=self._clock(),
+                    ):
+                        return _ProcessOutcome(status="fenced")
                     existing = repository.get_connector_source_extraction_batch_by_key(
                         row.tenant_id, batch_key
                     )
                     if existing is not None:
-                        # Idempotent replay of a prior attempt's successful
-                        # batch: reuse ONLY when digest and storage reference
-                        # are consistent; anything else is an anomaly that
-                        # must stop the request, never be overwritten quietly.
-                        consistent = (
-                            existing.digest_sha256 == outcome.digest_sha256
-                            and existing.storage_key == outcome.stored["storage_key"]
-                        )
-                        if not consistent:
-                            return self._finalize_failure(
-                                row,
-                                "batch_key_conflict",
-                                permanent=True,
-                                evidence=attempt_evidence(failed=True),
-                            )
-                        batches_summary.append(
-                            {
-                                "batch_key": batch_key,
-                                "binding_id": selection["binding_id"],
-                                "resource_name": selection["resource_name"],
-                                "row_count": existing.row_count,
-                                "truncated": existing.truncated,
-                                "digest_sha256": existing.digest_sha256,
-                                "storage_uri": existing.storage_uri,
-                            }
-                        )
-                        continue
+                        raise _RawCheckpointConflict()
 
                     batch_event = repository.append_audit_event(
                         AuditEventCreate(
@@ -1274,6 +1292,8 @@ class SourceIngestionOutboxDispatcher:
                             limits_applied=dict(evidence.get("limits_applied", {})),
                             provenance={
                                 "stage": EXTRACTION_STAGE,
+                                "checkpoint_version": "raw_batch_v1",
+                                "generation": row.generation,
                                 "requested_by": row.requested_by,
                                 "attempt_count": row.attempt_count,
                             },
@@ -1300,6 +1320,11 @@ class SourceIngestionOutboxDispatcher:
                             "storage_uri": outcome.stored["storage_uri"],
                         }
                     )
+        except _RawCheckpointConflict:
+            return self._finalize_failure(
+                row, "batch_key_conflict", permanent=True,
+                evidence=attempt_evidence(failed=True),
+            )
         except Exception as exc:
             return self._finalize_failure(
                 row, self._safe_error_code(exc), permanent=False,
@@ -1404,7 +1429,6 @@ class SourceIngestionOutboxDispatcher:
                 row.claim_token,
                 completed_at=now,
                 evidence=evidence,
-                require_unexpired=commit_batches is not None,
             )
             if changed:
                 if commit_batches is not None:

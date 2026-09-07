@@ -162,6 +162,28 @@ Evidence: [ADR 0003](./adr/0003-external-await-transaction-boundary.md), the
 transaction, pool-occupancy, interruption and duplicate-delivery tests in
 `services/api/tests/test_model_invocations.py`.
 
+## 2026-09-07 — Durable Raw Selection Consumer
+
+**Scope:** connector standardization P3, local contribution; no publication.
+
+The raw ingestion dispatcher owns short claim, preparation, batch/audit and final
+transactions. The extraction adapter receives frozen metadata after preparation
+commits, then reads a bounded PostgreSQL repeatable-read snapshot and writes a
+content-addressed envelope outside Axis transactions. Each selection commits
+independently under its unexpired claim. This permits crash recovery without
+keeping an Axis transaction open across source or object-storage I/O.
+
+Operational retries reuse verified committed selections. Explicit requeues include
+their timestamp and idempotency key in a versioned generation identity. Unknown
+legacy checkpoint formats fail closed and require a new governed request. There
+is no schema migration, offset checkpoint, cross-selection snapshot or graph
+promotion. Object storage and PostgreSQL cannot commit atomically; pre-commit
+orphans remain detectable by reconciliation.
+
+Specification and evidence: [P3](connector-standardization/p3-durable-raw-batches.md),
+`services/api/tests/test_connector_raw_durability.py` and
+`services/api/tests/test_connector_raw_postgres.py`.
+
 ## 2026-08-29 — Separate Current Truth from Delivery History
 
 **Issue:** [#359](https://github.com/Limes-Labs/limes-axis/issues/359)

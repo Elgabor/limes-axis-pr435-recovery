@@ -1,9 +1,11 @@
 import hashlib
 import json
+import os
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path, PurePosixPath
+from tempfile import NamedTemporaryFile
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
@@ -45,14 +47,31 @@ class StoredObjectMetadata(BaseModel):
     size_bytes: int = Field(ge=0)
 
 
+def _verify_stream(stream, checksum: str, size: int) -> bool:
+    digest = hashlib.sha256()
+    remaining = size
+    while remaining:
+        chunk = stream.read(min(65536, remaining))
+        if not chunk:
+            return False
+        remaining -= len(chunk)
+        digest.update(chunk)
+    return not stream.read(1) and digest.hexdigest() == checksum
+
+
 class ObjectStore(Protocol):
     adapter_name: str
 
     def put_json(self, key: str, payload: dict) -> StoredObjectMetadata:
         ...
 
+    def verify_json(self, key: str, checksum: str, size: int) -> bool:
+        ...
+
 
 class S3PutObjectClient(Protocol):
+    def get_object(self, bucket_name: str, object_name: str) -> Any: ...
+
     def put_object(
         self,
         bucket_name: str,
@@ -142,8 +161,29 @@ class LocalObjectStore:
             separators=(",", ":"),
         ).encode("utf-8")
         destination = self.root / safe_key
+        missing_directories = []
+        directory = destination.parent
+        while not directory.exists():
+            missing_directories.append(directory)
+            directory = directory.parent
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(encoded)
+        with NamedTemporaryFile(
+            dir=destination.parent, prefix=".axis-write-", delete=False,
+        ) as staged:
+            staged_path = Path(staged.name)
+            try:
+                staged.write(encoded)
+                staged.flush()
+                os.fsync(staged.fileno())
+                os.replace(staged_path, destination)
+                for directory in [destination.parent, *(p.parent for p in missing_directories)]:
+                    directory_fd = os.open(directory, os.O_RDONLY)
+                    try:
+                        os.fsync(directory_fd)
+                    finally:
+                        os.close(directory_fd)
+            finally:
+                staged_path.unlink(missing_ok=True)
         checksum = hashlib.sha256(encoded).hexdigest()
         return StoredObjectMetadata(
             storage_adapter=self.adapter_name,
@@ -153,6 +193,10 @@ class LocalObjectStore:
             checksum_sha256=checksum,
             size_bytes=len(encoded),
         )
+
+    def verify_json(self, key: str, checksum: str, size: int) -> bool:
+        with (self.root / self._safe_key(key)).open("rb") as stream:
+            return _verify_stream(stream, checksum, size)
 
     def object_lock_capability(self) -> ObjectLockCapability:
         return ObjectLockCapability(
@@ -294,6 +338,14 @@ class S3CompatibleObjectStore:
             checksum_sha256=checksum,
             size_bytes=len(encoded),
         )
+
+    def verify_json(self, key: str, checksum: str, size: int) -> bool:
+        stream = self.client.get_object(self.bucket_name, LocalObjectStore._safe_key(key))
+        try:
+            return _verify_stream(stream, checksum, size)
+        finally:
+            stream.close()
+            stream.release_conn()
 
     def apply_legal_hold(self, key: str) -> None:
         """Place an S3 object-level legal hold on a stored export object."""

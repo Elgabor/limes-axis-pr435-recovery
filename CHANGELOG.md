@@ -137,6 +137,11 @@ release-bound behavior, not the complete commit history.
   indexes and scanned index entries belonging to every other tenant. Responses
   are unchanged ([#363](https://github.com/Limes-Labs/limes-axis/issues/363)).
 
+- Raw source ingestion commits each content-addressed selection under an unexpired
+  claim. Operational retries verify and reuse durable batches; explicit requeues
+  acquire a new snapshot generation. Legacy checkpoints require a new request
+  (connector standardization P3).
+
 - Source extraction revalidates current lease/binding/egress evidence before
   source access, preserves actual dial/read facts through failures and retries
   temporary source/storage errors within the existing attempt budget. The bounded
