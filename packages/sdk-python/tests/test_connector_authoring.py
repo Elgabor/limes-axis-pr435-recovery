@@ -98,7 +98,9 @@ def test_invalid_version_ranges_fail_closed(payload: dict) -> None:
 
 
 def test_unknown_capabilities_and_credentials_are_not_untyped_extension_bags() -> None:
-    assert set(get_args(Capability)) == {"discovery", "read", "health", "writeback"}
+    assert set(get_args(Capability)) == {
+        "discovery", "read", "health", "writeback", "event_ingress",
+    }
     with pytest.raises(ValidationError):
         SourceDescriptor(connector_id="example", capabilities=frozenset({"execute_arbitrary"}))
     with pytest.raises(ValidationError) as error:

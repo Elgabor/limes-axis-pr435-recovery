@@ -19,6 +19,23 @@ runtime dependency changes. Each entry should include:
 Small implementation increments that do not alter architecture belong in the
 normal release changelog or pull request, not here.
 
+## 2026-09-07 — Define Governed Event Ingress
+
+**Issue:** [#340](https://github.com/Limes-Labs/limes-axis/issues/340)
+
+**Boundary:** opt-in SDK event validation to future API/worker durable acceptance.
+
+The [event contract](connector-events.md) defines scoped identity, ordering,
+replay, admission limits and schema/dead-letter behavior. A signed offline
+webhook reference returns immutable candidates; the host must own fenced receipt,
+outbox, audit and watermark commits before transport acknowledgement.
+
+Compatibility: protocol 1.0 remains the default. No production route, broker,
+credential owner or dependency changes. SDK vectors and the executable reference
+cover local behavior; Kafka/MQTT wire behavior and distributed host adoption
+remain NOT RUN. [ADR 0014](adr/0014-governed-event-ingress-contract.md) records
+this additive boundary.
+
 ## 2026-09-07 — Prepare Reproducible Private OSS Candidates
 
 **Issue:** [#321](https://github.com/Limes-Labs/limes-axis/issues/321)

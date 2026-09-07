@@ -7,6 +7,11 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Opt-in connector event protocol 1.1 with scoped replay/ordering decisions,
+  bounded signed webhook validation and a tested offline reference. Kafka/MQTT
+  mappings define future host adoption; no event transport is enabled
+  ([#340](https://github.com/Limes-Labs/limes-axis/issues/340)).
+
 - Local files-only OSS candidate preparation with exact committed allowlists,
   capability/licence/content checks, reproducible provenance manifests and an
   explicit human release gate. Candidates remain private and publication-blocked

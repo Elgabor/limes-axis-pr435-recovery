@@ -13,6 +13,10 @@ The API's two live adapters retain their current ports. Adoption by an existing
 or new production adapter requires an explicit, reviewed host mapping into the
 existing discovery/live-sync/ingestion path; there is no dynamic plugin loader.
 
+The opt-in [event protocol 1.1](connector-events.md) adds `event_ingress` and a
+bounded signed webhook reference. It requires explicit host support; default
+read negotiation remains 1.0. Production event acceptance is not enabled.
+
 ## Typed surface
 
 The [contracts](../packages/sdk-python/src/axis_sdk/connector_authoring/contracts.py)

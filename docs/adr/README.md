@@ -30,3 +30,4 @@ sequence remains in [the architecture changelog](../architecture-changelog.md).
 - [`0011-connector-workspace-read-model.md`](./0011-connector-workspace-read-model.md) — Accepted
 - [`0012-prospect-sandbox-lifecycle.md`](./0012-prospect-sandbox-lifecycle.md) — Accepted
 - [`0013-oss-candidate-provenance-gate.md`](./0013-oss-candidate-provenance-gate.md) — Accepted
+- [`0014-governed-event-ingress-contract.md`](./0014-governed-event-ingress-contract.md) — Accepted

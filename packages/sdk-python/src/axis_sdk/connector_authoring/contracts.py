@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, model_v
 
 Identifier = Annotated[str, Field(min_length=1, max_length=200)]
 Digest = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
-Capability = Literal["discovery", "read", "health", "writeback"]
+Capability = Literal["discovery", "read", "health", "writeback", "event_ingress"]
 
 
 class ContractModel(BaseModel):
@@ -46,6 +46,16 @@ class SourceDescriptor(ContractModel):
     connector_id: Identifier
     protocol: ProtocolRange = Field(default_factory=ProtocolRange)
     capabilities: frozenset[Capability]
+
+    @model_validator(mode="after")
+    def versioned_event_capability(self) -> SourceDescriptor:
+        if (
+            "event_ingress" in self.capabilities
+            and self.protocol.major == 1
+            and self.protocol.min_minor < 1
+        ):
+            raise ValueError("Event ingress requires protocol 1.1 or later")
+        return self
 
 
 class ErrorCode(StrEnum):

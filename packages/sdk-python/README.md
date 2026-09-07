@@ -19,6 +19,10 @@ ports, host responsibilities, checkpoint handling and protocol compatibility.
 The [conformance and health guide](../../docs/connector-conformance.md) covers
 reusable fixture reports, operational metadata and release certification evidence.
 
+The [event ingress guide](../../docs/connector-events.md) covers opt-in protocol
+1.1, signed webhook validation and ordering/replay decisions. The offline
+`examples/event_ingress.py` does not acknowledge or persist messages.
+
 ## Development
 
 ```bash

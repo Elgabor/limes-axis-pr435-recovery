@@ -64,6 +64,10 @@ and explicit configuration gates.
   [authoring contract ADR](adr/0005-connector-authoring-contract.md). The same SDK
   owns [fixture conformance and operational health models](connector-conformance.md);
   host adoption and preview/supported certification require their own evidence.
+  The opt-in [event protocol 1.1](connector-events.md) adds signed webhook
+  validation and pure replay/ordering decisions. Production transport, durable
+  acceptance and Kafka/MQTT adapters remain unimplemented; existing host owners
+  must adopt the [ADR 0014](adr/0014-governed-event-ingress-contract.md) boundary.
 - **Control API.** `services/api` exposes the HTTP surface and currently composes
   most routes and dependencies in `axis_api.main.create_app`. Domain modules own
   behavior even where route registration still lives in that composition root.
