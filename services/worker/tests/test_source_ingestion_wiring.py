@@ -248,6 +248,33 @@ def test_extraction_runtime_built_only_when_both_gates_open(
     assert isinstance(captured["extraction_runtime"], SelfHostedPostgresExtractionRuntime)
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_s3_runtime_uses_explicit_gate_and_existing_payload_store(monkeypatch, enabled):
+    from axis_api.connector_s3_ingestion import S3IngestionRuntime
+
+    store = object()
+    calls = []
+
+    def build_store(settings):
+        calls.append(settings)
+        return store
+
+    monkeypatch.setattr(runtime_module, "build_connector_export_object_store", build_store)
+    monkeypatch.setattr(runtime_module, "create_session_factory", lambda settings: object())
+    settings = Settings(
+        source_ingestion_dispatch_enabled=True,
+        source_ingestion_extraction_enabled=True,
+        s3_source_ingestion_enabled=enabled,
+    )
+    dispatcher = optional_source_ingestion_dispatcher(settings)
+    assert len(calls) == 1
+    if enabled:
+        assert isinstance(dispatcher._s3_runtime, S3IngestionRuntime)
+        assert dispatcher._s3_runtime.object_store is store
+    else:
+        assert dispatcher._s3_runtime is None
+
+
 def test_worker_supervises_and_cancels_both_outbox_loops() -> None:
     approval = _BlockingDispatcher()
     ingestion = _BlockingDispatcher()

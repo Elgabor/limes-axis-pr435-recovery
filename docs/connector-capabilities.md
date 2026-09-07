@@ -8,13 +8,16 @@ not certify a deployment or enable a connector. The
 
 ## Source families actually wired
 
-| Live connector ID | Source | Implemented adapter boundary |
+| Connector ID | Source | Implemented adapter boundary |
 | --- | --- | --- |
 | `file_csv_manufacturing_assets` | CSV in an allowlisted local dropzone | Header validation, bounded file batches, checkpoints and review-only proposals |
 | `external_db_operational_mirror` | Postgres | Metadata preview, bounded verification/discovery, governed live-sync batches and activated-table extraction |
+| `s3_object_storage` | S3 / MinIO approved bucket prefix | Opt-in protocol 1.0 discovery and bounded incremental object extraction through the ingestion outbox |
 
-These are the two IDs dispatched by
+The CSV/Postgres IDs are dispatched by
 [`SelfHostedConnectorLiveSyncRuntime`](../services/api/src/axis_api/connector_execution.py).
+The [S3 host](s3-source-ingestion.md) uses the existing activated-source ingestion
+outbox, with binding checkpoints and current manifest/lease/policy checks.
 Tenant-scoped manifest registration can describe other sources, but does not
 install an adapter or make a new ID executable. The persisted registry and
 manifest lifecycle remain authoritative; there is no browser-local fallback.
@@ -35,7 +38,7 @@ boundaries in the next section; they are not new permissions or switches.
 | Auth | Axis identity, scopes and source-file restrictions; no remote source login | Executed/renewed lease evidence plus static DSN, or opt-in lease-scoped `env://` resolution for live read/discovery | G0, G1 where applicable, G2, G3. Vault/AWS/GCP/Azure secret material resolvers fail closed as not implemented. |
 | Incremental sync | Conditional: resume a governed batch run by offset from its committed checkpoint | Conditional: offset-based live-sync resume; extraction has within-request PK keyset pages and a recorded watermark | Live sync: G0–G7. Extraction: G0, G2–G7. No general cross-run change-feed or incremental watermark-consumption contract; mutable-source offsets are not snapshot isolation. |
 | CDC | Absent | Absent: no WAL/log-position consumer | Future source adapters must reuse G0–G7 and add durable source cursor/replay semantics. A sync checkpoint is not CDC. |
-| Files | Conditional: bounded CSV dropzone reads and preview; no document parsing | Not a file-source adapter; raw extraction envelopes can be written to the governed object store | CSV: G0–G7. Object output: G0, G2–G7. S3-compatible export storage is not S3/MinIO ingestion. |
+| Files | Conditional: bounded CSV dropzone reads and preview; no document parsing | Not a file-source adapter; raw extraction envelopes can be written to the governed object store | CSV: G0–G7. Object output: G0, G2–G7. The separately gated [S3 input](s3-source-ingestion.md) adds prefix listing, conditional object reads and cross-request hash checkpoints. |
 | Streams | Absent: batch file reader only | Absent: bounded pull reads only | [Event protocol 1.1](connector-events.md) defines webhook/queue/industrial semantics and an offline reference; production ingress remains absent and requires G0–G7 adoption. Temporal scheduling is not a stream source. |
 | Writeback | No external source writeback | Read-only source sessions; no external source writeback | Governed Axis ontology promotion exists separately: G0, G1, G7 plus the existing approval/workflow/policy/idempotency boundary. It does not authorize writes to the source. |
 | Retries | Conditional: failed-run resume from committed batches; duplicate completed execution replays | Same live-sync path; activated ingestion additionally has bounded jittered retries, fenced claims, dead-letter and governed requeue | G0–G7 for live sync; G0, G2–G7 for ingestion. No generic provider-specific retry adapter or cross-source delivery guarantee. |
@@ -45,8 +48,9 @@ boundaries in the next section; they are not new permissions or switches.
 
 The paths share boundaries, but do not all execute the same sequence. In
 particular, discovery and activated source ingestion use persisted lease,
-policy and binding evidence; do not assume they independently re-run the
-`active_live` manifest gate of the older live-sync route.
+policy and binding evidence. S3 operations also require a current `active_live`
+manifest and active unexpired grants; the older Postgres discovery/extraction
+path retains its existing contract.
 
 | Gate | Existing decision | Owner and evidence |
 | --- | --- | --- |
@@ -66,7 +70,7 @@ policy and binding evidence; do not assume they independently re-run the
   The Postgres adapter also requires `AXIS_EXTERNAL_DB_SYNC_EXECUTION_ENABLED`,
   `AXIS_EXTERNAL_DB_LIVE_QUERY_PREFLIGHT_ENABLED` and
   `AXIS_EXTERNAL_DB_LIVE_QUERY_EXECUTION_ENABLED`.
-- Discovery uses `AXIS_EXTERNAL_DB_DISCOVERY_ENABLED`. A configured DSN or
+- Postgres discovery uses `AXIS_EXTERNAL_DB_DISCOVERY_ENABLED`. A configured DSN or
   lease resolver does not override scopes, lease evidence or egress policy.
 - Lease-scoped material resolution and connect-time enforcement are separate
   opt-ins: `AXIS_EXTERNAL_DB_LEASE_SCOPED_SECRET_RESOLUTION_ENABLED` and
@@ -99,8 +103,8 @@ Remaining reusable gaps:
 
 - The [versioned authoring contract](connector-authoring.md) now defines source
   ports, negotiation and a typed health observation with an offline reference.
-  Production adapters retain their current ports until explicit governed
-  adoption. The [shared conformance suite and health model](connector-conformance.md)
+  CSV/Postgres retain their current ports; the S3 reader now explicitly adopts
+  protocol 1.0 through the existing ingestion host. The [shared conformance suite and health model](connector-conformance.md)
   now provide offline fixture reports and operational metadata semantics; actual
   source/host adoption and release certification remain explicit evidence gates.
 - Live-sync resume uses offsets, so source mutation can change the rows seen
@@ -109,7 +113,8 @@ Remaining reusable gaps:
 - Extraction materializes a bounded envelope in memory. Page limits do not
   imply end-to-end streaming, tenant fairness or measured memory/backpressure guarantees.
 - Provider-specific secret resolvers, document permission propagation, CDC,
-  inbound object/event sources and external writeback remain separate work.
+  event ingress and external writeback remain separate work. Bounded S3 object
+  input is implemented as an opt-in path.
 - Local reconciliation and batch-envelope retrieval do not certify every
   object-store adapter. An S3-configured reconciliation route returns an explicit
   unsupported-adapter error rather than constructing a cloud client.
@@ -124,7 +129,7 @@ users before committing a roadmap. “Next” rows are proposals, not shipped su
 | --- | --- | --- | --- |
 | CSV and Postgres | 1 — use and validate current paths | 1 — establish the governed reference | Existing adapters provide the reference for SDK and conformance work; keep runtime limits and operational evidence visible. |
 | MySQL/MariaDB | 2 — next relational family | 3 — after reference conformance | Reuse discovery, lease and egress boundaries; define engine-specific checkpoint semantics in [#337](https://github.com/Limes-Labs/limes-axis/issues/337). |
-| S3/MinIO input | 3 — batch/object exchange | 2 — governed data-lake input | Reuse the object-store port but add actual listing, read, checkpoint and ingestion permission contracts in [#335](https://github.com/Limes-Labs/limes-axis/issues/335). |
+| S3/MinIO input | 3 — batch/object exchange | 2 — governed data-lake input | Implemented as opt-in [governed object ingestion](s3-source-ingestion.md) in [#335](https://github.com/Limes-Labs/limes-axis/issues/335); production deployment certification remains separate. |
 | Generic REST pull | 4 — application integration | 4 — approved application endpoints | Needs bounded pagination, rate-limit/retry semantics and endpoint governance in [#336](https://github.com/Limes-Labs/limes-axis/issues/336). |
 | Microsoft 365 / Google Workspace documents | 5 — after source ACL contract | 5 — after source ACL contract | Identity/permission propagation, revocation, deletion and document parsing precede grounded retrieval; [#338](https://github.com/Limes-Labs/limes-axis/issues/338). |
 | Collaboration and engineering sources | 6 — reuse document/REST contracts | 6 — reuse document/REST contracts | Avoid a parallel auth and content pipeline; [#339](https://github.com/Limes-Labs/limes-axis/issues/339). |

@@ -40843,6 +40843,128 @@
         ]
       }
     },
+    "/operations/connectors/sources/discover": {
+      "post": {
+        "operationId": "manufacturing_connector_source_discovery_operations_connectors_sources_discover_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceDiscoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceDiscoveryOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source discovery scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Credential lease or egress policy not found"
+          },
+          "422": {
+            "description": "Source references do not match the connector"
+          }
+        },
+        "summary": "Manufacturing Connector Source Discovery",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
+    "/operations/connectors/sources/verify": {
+      "post": {
+        "operationId": "manufacturing_connector_source_verify_operations_connectors_sources_verify_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorSourceVerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceVerificationOutcome"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "OIDC authentication required"
+          },
+          "403": {
+            "description": "Source verification scope or tenant binding denied"
+          },
+          "404": {
+            "description": "Credential lease or egress policy not found"
+          },
+          "422": {
+            "description": "Source references do not match the connector"
+          }
+        },
+        "summary": "Manufacturing Connector Source Verify",
+        "tags": [
+          "connectors"
+        ]
+      }
+    },
     "/operations/connectors/workspace": {
       "get": {
         "operationId": "connector_workspace_summary_operations_connectors_workspace_get",

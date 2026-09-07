@@ -740,6 +740,10 @@ class ConnectorSourceBinding(Base):
     egress_policy_id: Mapped[str] = mapped_column(String(180), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
     ingestion_status: Mapped[str] = mapped_column(String(60), nullable=False)
+    source_checkpoint_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    source_checkpoint: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     activated_by: Mapped[str] = mapped_column(String(160), nullable=False)
     activation_reason: Mapped[str] = mapped_column(String(600), nullable=False)
     audit_event_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)

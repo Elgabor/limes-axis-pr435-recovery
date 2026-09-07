@@ -112,6 +112,34 @@ jobs:
           AXIS_MODEL_CONTRACT_POSTGRES_DSN: postgresql+psycopg://axis:axis@localhost:5432/axis
         run: make test-model-persistence-postgres
 
+      - name: Start MinIO source fixture
+        run: |
+          docker run -d --name axis-ci-s3-input -p 127.0.0.1:19335:9000 \
+            -e MINIO_ROOT_USER=axis335fixture \
+            -e MINIO_ROOT_PASSWORD=axis335fixturepassword \
+            minio/minio:RELEASE.2024-10-13T13-34-11Z@sha256:9535594ad4122b7a78c6632788a989b96d9199b483d3bd71a5ceae73a922cdfa server /data
+          for _ in $(seq 1 60); do
+            if curl -fsS --max-time 1 http://127.0.0.1:19335/minio/health/ready > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs axis-ci-s3-input
+          exit 1
+
+      - name: Test S3 input and checkpoint contracts
+        working-directory: services/api
+        env:
+          AXIS_RUN_S3_MINIO: "1"
+          AXIS_RUN_S3_POSTGRES: "1"
+          AXIS_MODEL_CONTRACT_BACKEND: postgresql
+          AXIS_MODEL_CONTRACT_POSTGRES_DSN: postgresql+psycopg://axis:axis@localhost:5432/axis
+        run: uv run pytest tests/integration/test_s3_source_minio.py tests/integration/test_s3_checkpoint_postgres.py -q
+
+      - name: Stop MinIO source fixture
+        if: always()
+        run: docker rm -f axis-ci-s3-input > /dev/null 2>&1 || true
+
       # Migrations are Postgres-only (JSONB columns), which is why this job cannot
       # fall back to SQLite the way local development can.
       - name: Migrate database

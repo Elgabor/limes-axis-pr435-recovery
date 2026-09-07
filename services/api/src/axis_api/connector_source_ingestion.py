@@ -27,12 +27,16 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import UUID
 
+from axis_sdk.connector_authoring.contracts import ConnectorError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from axis_api.audit import AuditEventCreate
 from axis_api.config import Settings
+from axis_api.connector_postgres_discovery import ConnectorSourceOperationError
+from axis_api.connector_s3_ingestion import S3IngestionRuntime
+from axis_api.connector_s3_source import S3ReadProgress
 from axis_api.connector_source_extraction import (
     EXTRACTION_ACTOR,
     EXTRACTION_STAGE,
@@ -45,6 +49,7 @@ from axis_api.persistence import (
     ConnectorSourceExtractionBatchCreate,
     ConnectorSourceIngestionRequestCreate,
 )
+from axis_api.s3_source_profile import S3_SOURCE_CONNECTOR_ID
 
 SOURCE_INGESTION_SCOPE = "connectors:source:ingest"
 SOURCE_INGESTION_READ_SCOPE = "connectors:source:ingest:read"
@@ -997,6 +1002,7 @@ class SourceIngestionOutboxDispatcher:
         session_factory: sessionmaker[Session],
         runtime: SourceIngestionRuntimePort,
         extraction_runtime: Any | None = None,
+        s3_runtime: S3IngestionRuntime | None = None,
         clock: Callable[[], datetime] | None = None,
         random_uniform: Callable[[float, float], float] | None = None,
     ) -> None:
@@ -1004,6 +1010,7 @@ class SourceIngestionOutboxDispatcher:
         self._session_factory = session_factory
         self._runtime = runtime
         self._extraction_runtime = extraction_runtime
+        self._s3_runtime = s3_runtime
         self._clock = clock or (lambda: datetime.now(UTC))
         self._random_uniform = random_uniform or random.uniform
 
@@ -1112,7 +1119,7 @@ class SourceIngestionOutboxDispatcher:
         if row.stage == EXTRACTION_STAGE:
             if (
                 not self.settings.source_ingestion_extraction_enabled
-                or self._extraction_runtime is None
+                or (self._extraction_runtime is None and self._s3_runtime is None)
             ):
                 return self._finalize_failure(
                     row,
@@ -1139,6 +1146,8 @@ class SourceIngestionOutboxDispatcher:
         operators reconcile by listing the tenant-scoped key prefix against
         recorded batches — documented behaviour, not silent atomicity.
         """
+        if row.connector_id == S3_SOURCE_CONNECTOR_ID:
+            return self._extract_s3_selections(row, evidence)
         batches_summary: list[dict] = []
         try:
             with session_scope(self._session_factory) as session:
@@ -1297,7 +1306,76 @@ class SourceIngestionOutboxDispatcher:
         }
         return self._finalize_success(row, completed_evidence)
 
-    def _finalize_success(self, row: _ClaimedIngestionRequest, evidence: dict) -> _ProcessOutcome:
+    def _extract_s3_selections(self, row, evidence):
+        """Prepare under SQL, read/store without a transaction, then atomically commit."""
+        if self._s3_runtime is None:
+            return self._finalize_failure(
+                row, "s3_source_disabled", permanent=True, evidence=evidence
+            )
+        completed = []
+        progress = S3ReadProgress()
+
+        def failure_evidence():
+            return {
+                **{key: value for key, value in evidence.items() if key != "batches"},
+                "source_dial_performed": progress.source_dial_performed,
+                "extraction_performed": progress.extraction_performed,
+            }
+
+        try:
+            for selection in sorted(row.selections, key=lambda item: item["binding_id"]):
+                with session_scope(self._session_factory) as session:
+                    prepared = self._s3_runtime.prepare_selection(
+                        AxisPersistenceRepository(session),
+                        tenant_id=row.tenant_id,
+                        connector_id=row.connector_id,
+                        request_id=row.request_id,
+                        binding_id=str(selection["binding_id"]),
+                        resource_name=str(selection["resource_name"]),
+                        pinned_schema_fingerprint=str(selection["schema_fingerprint"]),
+                        executed_by=EXTRACTION_ACTOR,
+                    )
+                completed.append(self._s3_runtime.extract_prepared(prepared, progress=progress))
+            evidence = {
+                **evidence,
+                "source_dial_performed": True,
+                "extraction_performed": True,
+                "batches": [
+                    {
+                        "batch_key": result.batch_key,
+                        "binding_id": result.prepared.binding_id,
+                        "resource_name": result.prepared.profile.resource_name,
+                        "row_count": result.outcome.row_count,
+                        "truncated": result.outcome.truncated,
+                        "digest_sha256": result.outcome.digest_sha256,
+                        "storage_uri": result.outcome.stored["storage_uri"],
+                    }
+                    for result in completed
+                ],
+            }
+
+            def commit_batches(repository):
+                for result in completed:
+                    self._s3_runtime.commit(repository, result)
+
+            return self._finalize_success(row, evidence, commit_batches=commit_batches)
+        except ConnectorError as exc:
+            return self._finalize_failure(
+                row, exc.code.value, permanent=not exc.retryable, evidence=failure_evidence()
+            )
+        except ConnectorSourceOperationError as exc:
+            return self._finalize_failure(
+                row, exc.reason, permanent=True, evidence=failure_evidence()
+            )
+        except Exception as exc:
+            return self._finalize_failure(
+                row, self._safe_error_code(exc), permanent=False, evidence=failure_evidence()
+            )
+
+    def _finalize_success(
+        self, row: _ClaimedIngestionRequest, evidence: dict, *,
+        commit_batches: Callable[[AxisPersistenceRepository], None] | None = None,
+    ) -> _ProcessOutcome:
         now = self._clock()
         with session_scope(self._session_factory) as session:
             repository = AxisPersistenceRepository(session)
@@ -1325,8 +1403,11 @@ class SourceIngestionOutboxDispatcher:
                 row.claim_token,
                 completed_at=now,
                 evidence=evidence,
+                require_unexpired=commit_batches is not None,
             )
             if changed:
+                if commit_batches is not None:
+                    commit_batches(repository)
                 repository.append_audit_event(
                     AuditEventCreate(
                         tenant_id=row.tenant_id,
@@ -1337,8 +1418,12 @@ class SourceIngestionOutboxDispatcher:
                             "connector_id": row.connector_id,
                             "attempt_count": row.attempt_count,
                             "validated_count": str(evidence["validated_count"]),
-                            "source_dial_performed": "false",
-                            "extraction_performed": "false",
+                            "source_dial_performed": str(
+                                bool(evidence.get("source_dial_performed"))
+                            ).lower(),
+                            "extraction_performed": str(
+                                bool(evidence.get("extraction_performed"))
+                            ).lower(),
                         },
                     )
                 )

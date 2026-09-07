@@ -33,3 +33,4 @@ sequence remains in [the architecture changelog](../architecture-changelog.md).
 - [`0014-governed-event-ingress-contract.md`](./0014-governed-event-ingress-contract.md) — Accepted
 - [`0015-layered-capability-ownership.md`](./0015-layered-capability-ownership.md) — Accepted
 - [`0016-performance-measurement-contract.md`](./0016-performance-measurement-contract.md) — Accepted
+- [`0017-s3-source-host-mapping.md`](./0017-s3-source-host-mapping.md) — Accepted

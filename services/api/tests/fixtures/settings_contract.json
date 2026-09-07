@@ -139,6 +139,8 @@
   "source_ingestion_retry_base_seconds": {"alias": "AXIS_SOURCE_INGESTION_RETRY_BASE_SECONDS", "default": 2, "probe": 3},
   "source_ingestion_retry_max_seconds": {"alias": "AXIS_SOURCE_INGESTION_RETRY_MAX_SECONDS", "default": 60, "probe": 61},
   "source_ingestion_max_attempts": {"alias": "AXIS_SOURCE_INGESTION_MAX_ATTEMPTS", "default": 3, "probe": 4},
+  "s3_source_ingestion_enabled": {"alias": "AXIS_S3_SOURCE_INGESTION_ENABLED", "default": false, "probe": true},
+  "s3_source_profiles": {"alias": "AXIS_S3_SOURCE_PROFILES", "default": [], "probe": [{"tenant_id":"fixture","profile_id":"fixture","endpoint":"https://minio.internal.example","bucket":"fixture-input","prefix":"approved/","allowed_suffixes":[".json",".jsonl",".csv"],"credential_secret_ref":"env://AXIS_S3_FIXTURE_CREDENTIALS","private_endpoint_ref":"fixture-endpoint","region":"us-east-1","max_objects":1000,"max_object_bytes":262144,"allow_insecure_local":false}]},
   "source_ingestion_extraction_enabled": {"alias": "AXIS_SOURCE_INGESTION_EXTRACTION_ENABLED", "default": false, "probe": true},
   "source_ingestion_extraction_max_rows": {"alias": "AXIS_SOURCE_INGESTION_EXTRACTION_MAX_ROWS", "default": 10000, "probe": 10001},
   "source_ingestion_extraction_max_bytes": {"alias": "AXIS_SOURCE_INGESTION_EXTRACTION_MAX_BYTES", "default": 5000000, "probe": 5000001},

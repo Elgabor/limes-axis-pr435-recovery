@@ -5,12 +5,13 @@ import re
 from pathlib import Path
 
 from axis_api import connector_execution
+from axis_api.connector_s3_source import S3ObjectSource
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MATRIX = REPO_ROOT / "docs/connector-capabilities.md"
 
 
-def test_capability_matrix_covers_the_wired_live_connector_ids() -> None:
+def test_capability_matrix_covers_the_wired_source_connector_ids() -> None:
     live_ids = {
         value for name, value in vars(connector_execution).items()
         if name.endswith("_LIVE_SYNC_CONNECTOR_ID")
@@ -18,7 +19,7 @@ def test_capability_matrix_covers_the_wired_live_connector_ids() -> None:
     inventory = MATRIX.read_text().split("## Source families actually wired\n", 1)[1]
     inventory = inventory.split("## Capability matrix\n", 1)[0]
     documented_ids = set(re.findall(r"^\| `([^`]+)` \|", inventory, re.MULTILINE))
-    assert documented_ids == live_ids
+    assert documented_ids == live_ids | {S3ObjectSource.descriptor.connector_id}
 
 
 def test_capability_evidence_selectors_still_resolve() -> None:

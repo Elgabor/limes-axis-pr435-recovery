@@ -9,9 +9,10 @@ published partner distribution.
 The [capability matrix](connector-capabilities.md) remains the inventory of
 enabled code paths. Importing this SDK, constructing a context or implementing
 a port does not register an adapter, activate a manifest or grant source access.
-The API's two live adapters retain their current ports. Adoption by an existing
-or new production adapter requires an explicit, reviewed host mapping into the
-existing discovery/live-sync/ingestion path; there is no dynamic plugin loader.
+CSV/Postgres retain their current ports. The opt-in [S3 input reader](s3-source-ingestion.md)
+adopts protocol 1.0 through an explicit mapping into the existing discovery,
+activation and ingestion host. Other adoption also requires a reviewed host
+mapping; there is no dynamic plugin loader.
 
 The opt-in [event protocol 1.1](connector-events.md) adds `event_ingress` and a
 bounded signed webhook reference. It requires explicit host support; default

@@ -8,6 +8,8 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 COPY services/api/pyproject.toml services/api/uv.lock ./
 COPY services/api/src ./src
+COPY packages/sdk-python/pyproject.toml /app/packages/sdk-python/pyproject.toml
+COPY packages/sdk-python/src /app/packages/sdk-python/src
 RUN uv sync --frozen --no-dev --no-editable
 
 COPY services/api/alembic.ini ./alembic.ini

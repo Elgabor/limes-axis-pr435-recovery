@@ -280,7 +280,6 @@ from axis_api.connector_postgres_discovery import (
     SourceDiscoveryOutcome,
     SourceScopeDenied,
     SourceVerificationOutcome,
-    connector_source_discovery_runtime_from_settings,
     record_connector_source_discovery,
     record_connector_source_verification,
 )
@@ -350,6 +349,7 @@ from axis_api.connector_runs import (
     release_connector_sync_checkpoint_claim,
     renew_connector_sync_checkpoint_claim,
 )
+from axis_api.connector_s3_ingestion import connector_source_discovery_runtime_from_settings
 from axis_api.connector_source_activation import (
     ConnectorSourceActivationConflict,
     ConnectorSourceActivationError,
@@ -7150,6 +7150,17 @@ def create_app(
                 },
             ) from exc
 
+    @app.post(
+        "/operations/connectors/sources/verify",
+        response_model=SourceVerificationOutcome,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source verification scope or tenant binding denied"},
+            404: {"description": "Credential lease or egress policy not found"},
+            422: {"description": "Source references do not match the connector"},
+        },
+        tags=["connectors"],
+    )
     @operations_router.post(
         "/connectors/external-db/verify-source",
         response_model=SourceVerificationOutcome,
@@ -7207,6 +7218,17 @@ def create_app(
                 },
             ) from exc
 
+    @app.post(
+        "/operations/connectors/sources/discover",
+        response_model=SourceDiscoveryOutcome,
+        responses={
+            401: {"description": "OIDC authentication required"},
+            403: {"description": "Source discovery scope or tenant binding denied"},
+            404: {"description": "Credential lease or egress policy not found"},
+            422: {"description": "Source references do not match the connector"},
+        },
+        tags=["connectors"],
+    )
     @operations_router.post(
         "/connectors/external-db/discover",
         response_model=SourceDiscoveryOutcome,

@@ -17,6 +17,7 @@ evidence through the existing resource observation seam; this module
 owns the source conversation end to end.
 """
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol
 
 import psycopg
@@ -47,6 +48,7 @@ from axis_api.persistence import (
     AuditEventCreate,
     AxisPersistenceRepository,
 )
+from axis_api.s3_source_profile import S3_SOURCE_CONNECTOR_ID
 
 SOURCE_DISCOVERY_SCOPE = "connectors:source:discover"
 VERIFY_AUDIT_EVENT_TYPE = "connector.source.verify"
@@ -537,7 +539,8 @@ def record_connector_source_discovery(
                 file_name=_resource_name_for_table(table),
                 columns=list(table.column_names),
                 observed_by=request.requested_by,
-                source_kind=OBSERVATION_SOURCE_KIND,
+                source_kind=("s3_object_discovery" if request.connector_id == S3_SOURCE_CONNECTOR_ID
+                             else OBSERVATION_SOURCE_KIND),
             )
             observations.append(
                 SourceDiscoveryObservation(
@@ -582,10 +585,13 @@ def _require_source_discovery_scope(principal_scopes: list[str]) -> None:
 def _resolve_operation_evidence(
     repository: AxisPersistenceRepository,
     request: ConnectorSourceVerifyRequest | ConnectorSourceDiscoveryRequest,
+    *,
+    for_update: bool = False,
 ):
     lease = repository.get_connector_credential_lease(
         request.tenant_id,
         request.credential_lease_id,
+        **({"for_update": True} if for_update else {}),
     )
     if lease is None or lease.connector_id != request.connector_id:
         raise ConnectorSourceOperationError(
@@ -611,6 +617,7 @@ def _resolve_operation_evidence(
     policy = repository.get_connector_egress_policy(
         request.tenant_id,
         request.egress_policy_id,
+        **({"for_update": True} if for_update else {}),
     )
     if policy is None:
         raise ConnectorSourceOperationError(
@@ -632,6 +639,48 @@ def _resolve_operation_evidence(
             "Egress policy must approve a private endpoint boundary.",
             "egress_policy_not_approved",
         )
+    if request.connector_id == S3_SOURCE_CONNECTOR_ID:
+        # New S3 I/O requires the existing live lifecycle and current credential
+        # posture, including revocation/expiry; a historical lease is insufficient.
+        manifest = repository.get_connector_manifest(
+            request.tenant_id, request.connector_id, for_update=for_update
+        )
+        runtime_policy = manifest.runtime_policy if manifest is not None else {}
+        required = {"live_query", "external_egress"}
+        if (
+            manifest is None or manifest.status != "active_live"
+            or not required <= set(runtime_policy.get("allowed_operations", []))
+            or required & set(runtime_policy.get("blocked_operations", []))
+        ):
+            raise ConnectorSourceOperationError(
+                "S3 source is not enabled for live reads.", "s3_source_inactive"
+            )
+        handle = repository.get_connector_credential_handle(
+            request.tenant_id, lease.handle_id, for_update=for_update
+        )
+        expiry = (
+            lease.expires_at.replace(tzinfo=UTC)
+            if lease.expires_at.tzinfo is None
+            else lease.expires_at
+        )
+        if (
+            lease.status != "active"
+            or lease.revoked_at is not None
+            or expiry <= datetime.now(UTC)
+            or lease.permission_decision.get("allowed") is not True
+            or handle is None
+            or handle.status != "active"
+            or handle.connector_id != request.connector_id
+            or handle.secret_ref != lease.secret_ref
+            or handle.secret_provider != lease.secret_provider
+        ):
+            raise ConnectorSourceOperationError(
+                "S3 credential lease is no longer active.", "s3_credential_inactive"
+            )
+        if policy.status != "active":
+            raise ConnectorSourceOperationError(
+                "S3 egress policy is no longer active.", "s3_egress_inactive"
+            )
     egress_evidence = {
         "egress_policy_evidence_status": "validated",
         "egress_policy_runtime_boundary": policy.runtime_boundary,
@@ -644,6 +693,8 @@ def _resolve_operation_evidence(
             policy.policy_document.get("approved_endpoint_target_sha256", "")
         ),
     }
+    if request.connector_id == S3_SOURCE_CONNECTOR_ID:
+        egress_evidence["credential_lease_expires_at"] = expiry.isoformat()
     return lease, egress_evidence
 
 

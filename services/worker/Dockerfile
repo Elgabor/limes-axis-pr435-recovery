@@ -10,6 +10,8 @@ ENV UV_COMPILE_BYTECODE=1 \
 # (tool.uv.sources), so the API sources must be present in the build context
 # for `uv sync` to resolve and install limes-axis-api.
 COPY services/api /app/services/api
+COPY packages/sdk-python/pyproject.toml /app/packages/sdk-python/pyproject.toml
+COPY packages/sdk-python/src /app/packages/sdk-python/src
 COPY services/worker/pyproject.toml services/worker/uv.lock ./
 COPY services/worker/src ./src
 RUN uv sync --frozen --no-dev --no-editable

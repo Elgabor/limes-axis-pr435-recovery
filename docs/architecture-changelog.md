@@ -19,6 +19,22 @@ runtime dependency changes. Each entry should include:
 Small implementation increments that do not alter architecture belong in the
 normal release changelog or pull request, not here.
 
+## 2026-09-07 — Map S3 Input into Governed Source Ingestion
+
+**Issue:** [#335](https://github.com/Limes-Labs/limes-axis/issues/335)
+
+The API adopts the Python SDK's protocol 1.0 for a bounded S3/MinIO reader.
+Existing discovery, activation, ingestion claims and evidence remain the host
+owners. Migration 0066 adds binding checkpoint state and a CAS revision; source
+and object-store I/O occur outside SQL, followed by a fenced metadata commit.
+API and worker containers include the SDK dependency. CSV/Postgres routes and
+ports remain compatible, and source-neutral discovery aliases are added.
+
+[ADR 0017](adr/0017-s3-source-host-mapping.md) and the
+[S3 contract](s3-source-ingestion.md) record authorization, limits and retry
+semantics. Unit/host tests, actual local MinIO and isolated PostgreSQL migration
+and concurrency contracts provide distinct evidence; hosted readiness is NOT RUN.
+
 ## 2026-09-07 — Assign Capability Layers and Guard Vertical Dependencies
 
 **Issue:** [#352](https://github.com/Limes-Labs/limes-axis/issues/352)

@@ -38,7 +38,7 @@ def test_every_existing_environment_name_is_loaded(
     encoded = value if isinstance(value, str) else json.dumps(value)
     monkeypatch.setenv(entry["alias"], encoded)
     settings = Settings(_env_file=None)
-    assert getattr(settings, name) == value
+    assert settings.model_dump()[name] == value
     assert value != entry["default"]
 
 
@@ -46,7 +46,9 @@ def test_every_existing_environment_name_is_loaded(
 def test_constructor_names_and_aliases_remain_compatible(name: str) -> None:
     entry = CONTRACT[name]
     for key in (name, entry["alias"]):
-        assert getattr(Settings(_env_file=None, **{key: entry["probe"]}), name) == entry["probe"]
+        assert (
+            Settings(_env_file=None, **{key: entry["probe"]}).model_dump()[name] == entry["probe"]
+        )
 
 
 def test_environment_source_precedence_and_json_lists(

@@ -460,7 +460,7 @@ class DataAssetStewardshipCreate(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
-ObservationSourceKind = Literal["csv_preview", "postgres_discovery"]
+ObservationSourceKind = Literal["csv_preview", "postgres_discovery", "s3_object_discovery"]
 """The governed boundary an observation was actually seen through.
 
 Extending this set is deliberate: each new kind is a distinct evidence
@@ -2601,6 +2601,8 @@ class AxisPersistenceRepository:
         self,
         tenant_id: str,
         connector_id: str,
+        *,
+        for_update: bool = False,
     ) -> ConnectorManifestRecord | None:
         statement = (
             select(ConnectorManifestRecord)
@@ -2611,6 +2613,8 @@ class AxisPersistenceRepository:
             )
             .order_by(ConnectorManifestRecord.revision_number.desc())
         )
+        if for_update:
+            statement = statement.with_for_update()
         return self.session.scalars(statement).first()
 
     def get_connector_manifest_by_revision_idempotency_key(
@@ -3154,11 +3158,15 @@ class AxisPersistenceRepository:
         self,
         tenant_id: str,
         binding_id: str,
+        *,
+        for_update: bool = False,
     ) -> ConnectorSourceBinding | None:
         statement = select(ConnectorSourceBinding).where(
             ConnectorSourceBinding.tenant_id == tenant_id,
             ConnectorSourceBinding.binding_id == binding_id,
         )
+        if for_update:
+            statement = statement.with_for_update()
         return self.session.scalars(statement).first()
 
     def get_active_connector_source_binding_for_resource(
@@ -3410,6 +3418,7 @@ class AxisPersistenceRepository:
         *,
         completed_at: datetime,
         evidence: dict,
+        require_unexpired: bool = False,
     ) -> bool:
         result = self.session.execute(
             update(ConnectorSourceIngestionRequest)
@@ -3417,6 +3426,8 @@ class AxisPersistenceRepository:
                 ConnectorSourceIngestionRequest.id == ingestion_request_id,
                 ConnectorSourceIngestionRequest.claim_token == claim_token,
                 ConnectorSourceIngestionRequest.status == "dispatching",
+                *((ConnectorSourceIngestionRequest.lease_expires_at > completed_at,)
+                  if require_unexpired else ()),
             )
             .values(
                 status="completed",
@@ -3831,6 +3842,25 @@ class AxisPersistenceRepository:
         )
         return int(self.session.scalar(statement))
 
+    def advance_connector_source_checkpoint(
+        self, *, tenant_id: str, connector_id: str, binding_id: str,
+        expected_revision: int, checkpoint: dict,
+    ) -> bool:
+        """CAS within the caller's batch/request transaction; no source I/O here."""
+        result = self.session.execute(
+            update(ConnectorSourceBinding)
+            .where(
+                ConnectorSourceBinding.tenant_id == tenant_id,
+                ConnectorSourceBinding.connector_id == connector_id,
+                ConnectorSourceBinding.binding_id == binding_id,
+                ConnectorSourceBinding.status == "active",
+                ConnectorSourceBinding.source_checkpoint_revision == expected_revision,
+            )
+            .values(source_checkpoint_revision=expected_revision + 1, source_checkpoint=checkpoint)
+            .execution_options(synchronize_session=False)
+        )
+        return result.rowcount == 1
+
     def get_connector_source_ingestion_request_batches(
         self,
         tenant_id: str,
@@ -3921,11 +3951,15 @@ class AxisPersistenceRepository:
         self,
         tenant_id: str,
         handle_id: str,
+        *,
+        for_update: bool = False,
     ) -> ConnectorCredentialHandle | None:
         statement = select(ConnectorCredentialHandle).where(
             ConnectorCredentialHandle.tenant_id == tenant_id,
             ConnectorCredentialHandle.handle_id == handle_id,
         )
+        if for_update:
+            statement = statement.with_for_update()
         return self.session.scalars(statement).first()
 
     def list_connector_credential_handles(
@@ -4038,11 +4072,15 @@ class AxisPersistenceRepository:
         self,
         tenant_id: str,
         lease_id: str,
+        *,
+        for_update: bool = False,
     ) -> ConnectorCredentialLease | None:
         statement = select(ConnectorCredentialLease).where(
             ConnectorCredentialLease.tenant_id == tenant_id,
             ConnectorCredentialLease.lease_id == lease_id,
         )
+        if for_update:
+            statement = statement.with_for_update()
         return self.session.scalars(statement).first()
 
     def list_connector_credential_leases(
@@ -4139,11 +4177,15 @@ class AxisPersistenceRepository:
         self,
         tenant_id: str,
         policy_id: str,
+        *,
+        for_update: bool = False,
     ) -> ConnectorEgressPolicy | None:
         statement = select(ConnectorEgressPolicy).where(
             ConnectorEgressPolicy.tenant_id == tenant_id,
             ConnectorEgressPolicy.policy_id == policy_id,
         )
+        if for_update:
+            statement = statement.with_for_update()
         return self.session.scalar(statement)
 
     def list_connector_egress_policies(

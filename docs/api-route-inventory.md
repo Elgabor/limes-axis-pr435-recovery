@@ -8,7 +8,7 @@ Handler ownership is derived from source declarations; domain labels are
 the extraction map, not a claim that every domain already has a router.
 See [route extraction](api-route-extraction.md) for boundaries and verification.
 
-**255 operations**, 105 deprecated aliases.
+**257 operations**, 105 deprecated aliases.
 
 | Domain | Operations |
 | --- | ---: |
@@ -16,7 +16,7 @@ See [route extraction](api-route-extraction.md) for boundaries and verification.
 | agents | 8 |
 | approvals | 6 |
 | audit | 18 |
-| connectors | 134 |
+| connectors | 136 |
 | data-assets | 8 |
 | identity | 10 |
 | models | 10 |
@@ -241,6 +241,8 @@ See [route extraction](api-route-extraction.md) for boundaries and verification.
 | POST | `/operations/connectors/runs/checkpoints/{checkpoint_id}/claims/{claim_id}/renew` | `manufacturing_connector_run_checkpoint_claim_renew` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
 | POST | `/operations/connectors/runs/{run_id}/dispatch` | `manufacturing_connector_run_dispatch` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
 | POST | `/operations/connectors/runs/{run_id}/execute-sync` | `manufacturing_connector_run_execute_sync` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
+| POST | `/operations/connectors/sources/discover` | `manufacturing_connector_source_discovery` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
+| POST | `/operations/connectors/sources/verify` | `manufacturing_connector_source_verify` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
 | GET | `/operations/connectors/workspace` | `connector_workspace_summary` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
 | GET | `/operations/connectors/workspace/detail` | `connector_workspace_detail` | [axis_api.main](../services/api/src/axis_api/main.py) | no |
 | GET | `/operations/demo-readiness` | `manufacturing_demo_readiness` | [axis_api.main](../services/api/src/axis_api/main.py) | no |

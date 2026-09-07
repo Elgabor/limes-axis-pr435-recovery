@@ -12,6 +12,10 @@ from axis_api.main import create_app
 CANONICAL_PREFIX = "/operations"
 LEGACY_PREFIX = "/demo/manufacturing"
 HTTP_METHODS = {"delete", "get", "patch", "post", "put"}
+SOURCE_ALIASES = {
+    ("/connectors/sources/verify", "POST"): ("/connectors/external-db/verify-source", "POST"),
+    ("/connectors/sources/discover", "POST"): ("/connectors/external-db/discover", "POST"),
+}
 
 
 class RouteView(Protocol):
@@ -48,7 +52,7 @@ def _request_path(route: RouteView) -> str:
     return re.sub(r"{[^}]+}", "alias-probe", route.path)
 
 
-def test_every_operations_route_has_an_equivalent_legacy_alias() -> None:
+def test_operations_preserve_legacy_aliases_and_scope_new_source_routes() -> None:
     app = create_app(
         Settings(
             postgres_dsn="sqlite+pysqlite://",
@@ -62,11 +66,14 @@ def test_every_operations_route_has_an_equivalent_legacy_alias() -> None:
 
     assert canonical_routes
     assert bootstrap_route.endpoint.__name__ == "manufacturing_demo_bootstrap"
-    assert canonical_routes.keys() == legacy_routes.keys()
+    # New source-neutral aliases reuse the governed handlers but do not grow
+    # the deprecated manufacturing namespace. Every older alias still exists.
+    assert canonical_routes.keys() == legacy_routes.keys() | SOURCE_ALIASES.keys()
+    assert not legacy_routes.keys() & SOURCE_ALIASES.keys()
 
     client = TestClient(app)
     for key, canonical_route in canonical_routes.items():
-        legacy_route = legacy_routes[key]
+        legacy_route = legacy_routes[SOURCE_ALIASES.get(key, key)]
         assert canonical_route.endpoint is legacy_route.endpoint
 
         canonical_response = client.request(

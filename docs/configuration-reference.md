@@ -97,6 +97,8 @@ operational profiles and secret injection.
 
 | Environment variable | Python field | Type | Default | Constraints |
 | --- | --- | --- | --- | --- |
+| `AXIS_S3_SOURCE_INGESTION_ENABLED` | `s3_source_ingestion_enabled` | boolean | `false` |  |
+| `AXIS_S3_SOURCE_PROFILES` | `s3_source_profiles` | array | `[]` |  |
 | `AXIS_CREDENTIAL_LEASE_EXECUTION_ENABLED` | `credential_lease_execution_enabled` | boolean | `false` |  |
 | `AXIS_CREDENTIAL_LEASE_PROVIDER_ADAPTERS_ENABLED` | `credential_lease_provider_adapters_enabled` | boolean | `false` |  |
 | `AXIS_CONNECTOR_SYNC_EXECUTION_ENABLED` | `connector_sync_execution_enabled` | boolean | `false` |  |

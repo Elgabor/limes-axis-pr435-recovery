@@ -66,8 +66,10 @@ and explicit configuration gates.
   records its audit, invalidation and compatibility rules.
 - **Connector authoring.** `axis_sdk.connector_authoring` owns versioned source
   ports and an offline reference in the existing Python SDK. Production adapters
-  retain their current API/worker ports and governance owners; SDK imports do
-  not register or enable sources. See the
+  retain their governance owners. The opt-in [S3 reader](s3-source-ingestion.md)
+  adopts protocol 1.0 through the existing ingestion host and binding checkpoint
+  CAS ([ADR 0017](adr/0017-s3-source-host-mapping.md)); CSV/Postgres retain their
+  current ports. SDK imports do not register or enable sources. See the
   [authoring contract ADR](adr/0005-connector-authoring-contract.md). The same SDK
   owns [fixture conformance and operational health models](connector-conformance.md);
   host adoption and preview/supported certification require their own evidence.

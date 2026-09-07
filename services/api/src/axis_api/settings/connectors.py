@@ -2,8 +2,18 @@
 
 from pydantic import BaseModel, Field
 
+from axis_api.s3_source_profile import S3SourceProfile
+
 
 class ConnectorsSettings(BaseModel):
+    s3_source_ingestion_enabled: bool = Field(
+        default=False,
+        alias="AXIS_S3_SOURCE_INGESTION_ENABLED",
+    )
+    s3_source_profiles: list[S3SourceProfile] = Field(
+        default_factory=list,
+        alias="AXIS_S3_SOURCE_PROFILES",
+    )
     credential_lease_execution_enabled: bool = Field(
         default=False,
         alias="AXIS_CREDENTIAL_LEASE_EXECUTION_ENABLED",
@@ -92,8 +102,7 @@ class ConnectorsSettings(BaseModel):
     )
     external_db_live_query_private_endpoint_ref: str = Field(
         default=(
-            "private-endpoint://tenant_demo_manufacturing/"
-            "persisted-operations-postgres-readonly"
+            "private-endpoint://tenant_demo_manufacturing/persisted-operations-postgres-readonly"
         ),
         alias="AXIS_EXTERNAL_DB_LIVE_QUERY_PRIVATE_ENDPOINT_REF",
     )

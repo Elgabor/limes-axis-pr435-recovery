@@ -7,6 +7,12 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Opt-in S3/MinIO prefix ingestion through the existing governed source outbox:
+  conditional bounded reads, cross-request hash checkpoints, absence observations,
+  fenced atomic metadata commits and source-neutral discovery aliases. Migration
+  0066 adds binding checkpoint state; API/worker runtime dependencies now include
+  the repository Python SDK ([#335](https://github.com/Limes-Labs/limes-axis/issues/335)).
+
 - Versioned SME/enterprise performance workloads, local load/soak and Python
   stack-profiling harnesses, query/pool/resource baseline evidence and a
   noise-aware regression policy. Real deployment SLOs and unimplemented search

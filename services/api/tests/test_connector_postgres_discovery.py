@@ -604,11 +604,15 @@ def build_client(factory: sessionmaker, runtime) -> TestClient:
     return TestClient(app)
 
 
-def test_verify_route_returns_outcome_contract(session_factory) -> None:
+@pytest.mark.parametrize(
+    "route",
+    ["/operations/connectors/external-db/verify-source", "/operations/connectors/sources/verify"],
+)
+def test_verify_route_returns_outcome_contract(session_factory, route) -> None:
     client = build_client(session_factory, StubDiscoveryRuntime())
 
     response = client.post(
-        "/operations/connectors/external-db/verify-source",
+        route,
         json={
             "tenant_id": TENANT_A,
             "connector_id": CONNECTOR_ID,
@@ -627,11 +631,15 @@ def test_verify_route_returns_outcome_contract(session_factory) -> None:
     assert body["correlation_ref"].startswith(f"source-verify://{TENANT_A}/")
 
 
-def test_discovery_route_rejects_missing_scope(session_factory) -> None:
+@pytest.mark.parametrize(
+    "route",
+    ["/operations/connectors/external-db/discover", "/operations/connectors/sources/discover"],
+)
+def test_discovery_route_rejects_missing_scope(session_factory, route) -> None:
     client = build_client(session_factory, StubDiscoveryRuntime())
 
     response = client.post(
-        "/operations/connectors/external-db/discover",
+        route,
         json={
             "tenant_id": TENANT_A,
             "connector_id": CONNECTOR_ID,
@@ -650,11 +658,15 @@ def test_discovery_route_rejects_missing_scope(session_factory) -> None:
     assert detail["reason"] == f"missing_scope:{SCOPE}"
 
 
-def test_discovery_route_maps_unknown_policy_to_404(session_factory) -> None:
+@pytest.mark.parametrize(
+    "route",
+    ["/operations/connectors/external-db/discover", "/operations/connectors/sources/discover"],
+)
+def test_discovery_route_maps_unknown_policy_to_404(session_factory, route) -> None:
     client = build_client(session_factory, StubDiscoveryRuntime())
 
     response = client.post(
-        "/operations/connectors/external-db/discover",
+        route,
         json={
             "tenant_id": TENANT_A,
             "connector_id": CONNECTOR_ID,
@@ -672,7 +684,11 @@ def test_discovery_route_maps_unknown_policy_to_404(session_factory) -> None:
     assert response.json()["detail"]["reason"] == "egress_policy_not_found"
 
 
-def test_discovery_route_rejects_cross_tenant_principal(session_factory) -> None:
+@pytest.mark.parametrize(
+    "route",
+    ["/operations/connectors/external-db/discover", "/operations/connectors/sources/discover"],
+)
+def test_discovery_route_rejects_cross_tenant_principal(session_factory, route) -> None:
     client = build_client(session_factory, StubDiscoveryRuntime())
     client.app.state.identity_verifier = StaticIdentityVerifier(
         OidcPrincipal(
@@ -683,7 +699,7 @@ def test_discovery_route_rejects_cross_tenant_principal(session_factory) -> None
     )
 
     response = client.post(
-        "/operations/connectors/external-db/discover",
+        route,
         json={
             "tenant_id": TENANT_A,
             "connector_id": CONNECTOR_ID,
