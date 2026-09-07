@@ -33,6 +33,11 @@ from axis_api.connector_postgres_discovery import (
     _classify_postgres_error,
     postgres_discovery_profile_from_settings,
 )
+from axis_api.connector_source_schema import (
+    MAX_SCHEMA_COLUMNS,
+    postgres_schema_fingerprint,
+    read_postgres_schema,
+)
 from axis_api.object_storage import ObjectStore
 from axis_api.persistence import (
     AxisPersistenceRepository,
@@ -162,6 +167,7 @@ class PreparedSourceExtraction(BaseModel):
     binding_id: str
     resource_name: str
     pinned_schema_fingerprint: str
+    schema_fingerprint_version: str = "column_names_v1"
     executed_by: str
     limits: ExtractionLimits
     hardening: dict[str, str]
@@ -319,13 +325,17 @@ class SelfHostedPostgresExtractionRuntime:
         ):
             return SourceExtractionOutcome(ok=False, reason="binding_selection_mismatch")
 
+        if binding.schema_fingerprint_version not in {"column_names_v1", "postgres_schema_v2"}:
+            return SourceExtractionOutcome(ok=False, reason="schema_version_incompatible")
+
         observation = repository.get_data_resource_observation(
             tenant_id, connector_id, resource_name
         )
         if observation is None:
             return SourceExtractionOutcome(ok=False, reason=OBSERVATION_MISSING)
         observed_fingerprint = observation.schema_fingerprint or ""
-        if observed_fingerprint != pinned_schema_fingerprint:
+        if (observed_fingerprint != pinned_schema_fingerprint
+            or observation.schema_fingerprint_version != binding.schema_fingerprint_version):
             return SourceExtractionOutcome(ok=False, reason=STALE_FINGERPRINT)
 
         lease_gate = self._verify_lease(
@@ -372,6 +382,7 @@ class SelfHostedPostgresExtractionRuntime:
             limits=limits,
             hardening=hardening,
             classification=classification,
+            schema_fingerprint_version=binding.schema_fingerprint_version,
         )
 
     def verify_stored_batch(self, adapter: str, key: str, digest: str, size: int) -> bool:
@@ -382,15 +393,25 @@ class SelfHostedPostgresExtractionRuntime:
     def read_selection(self, prepared: PreparedSourceExtraction) -> SourceExtractionOutcome:
         started = self._clock()
         try:
-            read = self._read_bounded(prepared.resource_name, prepared.limits, prepared.hardening)
+            read = self._read_bounded(
+                prepared.resource_name, prepared.limits, prepared.hardening,
+                pinned_schema_fingerprint=prepared.pinned_schema_fingerprint,
+                schema_fingerprint_version=prepared.schema_fingerprint_version,
+            )
         except _SourceReadFailure as exc:
             return exc.outcome
         except psycopg.Error as exc:
             return SourceExtractionOutcome(ok=False, reason=_classify_postgres_error(exc))
 
         duration_ms = int((self._clock() - started) * 1000)
+        if read.get("schema_drift"):
+            return SourceExtractionOutcome(
+                ok=False, reason="source_schema_drift", source_dial_performed=True,
+            )
+
         envelope = {
             "schema_version": ENVELOPE_SCHEMA_VERSION,
+            "schema_fingerprint_version": prepared.schema_fingerprint_version,
             "tenant_id": prepared.tenant_id,
             "connector_id": prepared.connector_id,
             "request_id": prepared.request_id,
@@ -519,6 +540,8 @@ class SelfHostedPostgresExtractionRuntime:
         resource_name: str,
         limits: ExtractionLimits,
         hardening: dict[str, str],
+        pinned_schema_fingerprint: str,
+        schema_fingerprint_version: str,
     ) -> dict:
         schema_name, table_name = resource_name.split(".")
         qualified = psycopg.sql.SQL("{}.{}").format(
@@ -544,6 +567,14 @@ class SelfHostedPostgresExtractionRuntime:
                     self._profile.statement_timeout_seconds * 1000
                 )
                 cursor.execute(f"SET LOCAL statement_timeout = {statement_timeout_ms}")
+                cursor.execute(
+                    psycopg.sql.SQL("LOCK TABLE {} IN ACCESS SHARE MODE").format(qualified),
+                )
+                columns = read_postgres_schema(cursor, schema_name, table_name)
+                if (not columns or len(columns) > MAX_SCHEMA_COLUMNS or
+                    postgres_schema_fingerprint(columns, schema_fingerprint_version)
+                    != pinned_schema_fingerprint):
+                    return {"schema_drift": True}
                 ordering_mode, pk_column = self._primary_key_probe(
                     cursor, schema_name, table_name
                 )

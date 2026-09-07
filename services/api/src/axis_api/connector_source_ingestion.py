@@ -131,6 +131,7 @@ class SourceIngestionSelectionView(BaseModel):
     binding_id: str
     resource_name: str
     schema_fingerprint: str
+    schema_fingerprint_version: str = "column_names_v1"
 
 
 class ConnectorSourceIngestionCancelRequest(BaseModel):
@@ -361,6 +362,7 @@ def _binding_is_currently_fresh(
     connector_id: str,
     resource_name: str,
     schema_fingerprint: str,
+    schema_fingerprint_version: str,
 ) -> bool:
     observation = repository.get_data_resource_observation(
         tenant_id,
@@ -369,7 +371,8 @@ def _binding_is_currently_fresh(
     )
     if observation is None:
         return False
-    return (observation.schema_fingerprint or "") == schema_fingerprint
+    return ((observation.schema_fingerprint or "") == schema_fingerprint
+            and observation.schema_fingerprint_version == schema_fingerprint_version)
 
 
 def preview_source_ingestion_eligibility(
@@ -395,6 +398,7 @@ def preview_source_ingestion_eligibility(
             connector_id=connector_id,
             resource_name=row.resource_name,
             schema_fingerprint=row.schema_fingerprint,
+            schema_fingerprint_version=row.schema_fingerprint_version,
         ):
             blocked_reason = "stale_fingerprint"
         eligibility.append(
@@ -494,6 +498,7 @@ def record_connector_source_ingestion_request(
             connector_id=submission.connector_id,
             resource_name=binding.resource_name,
             schema_fingerprint=binding.schema_fingerprint,
+            schema_fingerprint_version=binding.schema_fingerprint_version,
         ):
             raise ConnectorSourceIngestionError(
                 "A selected table's schema changed since it was activated; "
@@ -505,6 +510,7 @@ def record_connector_source_ingestion_request(
                 "binding_id": binding.binding_id,
                 "resource_name": binding.resource_name,
                 "schema_fingerprint": binding.schema_fingerprint,
+                "schema_fingerprint_version": binding.schema_fingerprint_version,
             }
         )
 
@@ -991,6 +997,8 @@ class ObservationFreshnessIngestionRuntime:
         binding = repository.get_connector_source_binding(tenant_id, binding_id)
         if binding is None or binding.status != BINDING_ACTIVE_STATUS:
             return SourceIngestionValidationOutcome(ok=False, reason="binding_inactive")
+        if observation.schema_fingerprint_version != binding.schema_fingerprint_version:
+            return SourceIngestionValidationOutcome(ok=False, reason="schema_version_incompatible")
         return SourceIngestionValidationOutcome(ok=True)
 
 
@@ -1177,6 +1185,9 @@ class SourceIngestionOutboxDispatcher:
                     identity = [row.tenant_id, row.connector_id, row.request_id,
                                 row.generation, binding_id, selection["resource_name"],
                                 selection["schema_fingerprint"]]
+                    version = selection.get("schema_fingerprint_version", "column_names_v1")
+                    if version != "column_names_v1":
+                        identity.append(version)
                     batch_key = "raw-v1:" + hashlib.sha256(
                         json.dumps(identity, separators=(",", ":")).encode()
                     ).hexdigest()
@@ -1196,6 +1207,11 @@ class SourceIngestionOutboxDispatcher:
                         resource_name=str(selection["resource_name"]),
                         pinned_schema_fingerprint=str(selection["schema_fingerprint"]),
                         executed_by=EXTRACTION_ACTOR,
+                    )
+                if (not isinstance(prepared, SourceExtractionOutcome)
+                    and prepared.schema_fingerprint_version != version):
+                    prepared = SourceExtractionOutcome(
+                        ok=False, reason="schema_version_incompatible",
                     )
                 if incompatible:
                     return self._finalize_failure(

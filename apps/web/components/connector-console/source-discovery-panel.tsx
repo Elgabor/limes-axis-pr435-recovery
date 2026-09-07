@@ -55,6 +55,7 @@ type PendingKind = "verify" | "discover" | null;
 type ActivationSelection = {
   resourceName: string;
   schemaFingerprint: string;
+  schemaFingerprintVersion?: "column_names_v1" | "postgres_schema_v2";
 };
 
 /** Operator copy per API failure class; unknown reasons stay honest. */
@@ -366,6 +367,7 @@ export function ConnectorSourceDiscoveryPanel({
                           <input
                             aria-label={`${activationCopy.selectColumn}: ${qualifiedName}`}
                             checked={isSelected}
+                            disabled={table.columns_truncated}
                             className="-m-2 size-4 cursor-pointer p-2 accent-[rgb(var(--signal))]"
                             onChange={(event) =>
                               setSelectedTables((current) => {
@@ -374,6 +376,7 @@ export function ConnectorSourceDiscoveryPanel({
                                   next.set(qualifiedName, {
                                     resourceName: qualifiedName,
                                     schemaFingerprint: table.column_fingerprint,
+                                    schemaFingerprintVersion: table.schema_fingerprint_version ?? "column_names_v1",
                                   });
                                 } else {
                                   next.delete(qualifiedName);

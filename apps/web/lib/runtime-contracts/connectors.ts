@@ -581,6 +581,7 @@ const sourceDiscoveryTable = z.object({
   table_name: z.string(),
   column_names: stringArraySchema,
   column_fingerprint: z.string(),
+  schema_fingerprint_version: z.enum(["column_names_v1", "postgres_schema_v2"]).optional(),
   columns_truncated: z.boolean(),
 });
 
@@ -638,6 +639,8 @@ const sourceBindingView = z.object({
   binding_id: z.string(),
   resource_name: z.string(),
   schema_fingerprint: z.string(),
+  schema_fingerprint_version: z.string().optional(),
+  supersedes_binding_id: z.string().nullable().optional(),
   status: z.string(),
   ingestion_status: z.string(),
   outcome: z.string(),

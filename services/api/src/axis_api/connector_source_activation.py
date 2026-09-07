@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from axis_api.connector_postgres_discovery import (
     _resolve_operation_evidence,
 )
+from axis_api.connector_source_schema import SchemaFingerprintVersion
 from axis_api.persistence import (
     AuditEventCreate,
     AxisPersistenceRepository,
@@ -99,6 +100,10 @@ class SourceBindingSelection(BaseModel):
         max_length=64,
         pattern=r"^[a-f0-9]{64}$",
     )
+    expected_schema_fingerprint_version: SchemaFingerprintVersion = "column_names_v1"
+    supersedes_binding_id: str | None = Field(
+        default=None, min_length=1, max_length=180, pattern=_BINDING_ID_PATTERN,
+    )
 
 
 class ConnectorSourceActivationRequest(BaseModel):
@@ -123,6 +128,8 @@ class SourceBindingView(BaseModel):
     binding_id: str = Field(min_length=1)
     resource_name: str = Field(min_length=1)
     schema_fingerprint: str = Field(min_length=64, max_length=64)
+    schema_fingerprint_version: str = "column_names_v1"
+    supersedes_binding_id: str | None = None
     status: str = Field(min_length=1)
     ingestion_status: str = Field(min_length=1)
     outcome: str = Field(pattern="^(activated|replayed)$")
@@ -155,6 +162,8 @@ def _binding_view(binding, *, outcome: str) -> SourceBindingView:
         resource_name=binding.resource_name,
         schema_fingerprint=binding.schema_fingerprint,
         status=binding.status,
+        schema_fingerprint_version=binding.schema_fingerprint_version,
+        supersedes_binding_id=binding.supersedes_binding_id,
         ingestion_status=binding.ingestion_status,
         outcome=outcome,
         connection_profile_id=binding.connection_profile_id,
@@ -217,6 +226,7 @@ def record_connector_source_activation(
     # Validate every selection against current truth before writing anything.
     validated: list[tuple[SourceBindingSelection, object]] = []
     replayed_bindings: list[SourceBindingView] = []
+    predecessors = []
     for index, selection in enumerate(request.selections):
         observation = repository.get_data_resource_observation(
             request.tenant_id,
@@ -246,18 +256,30 @@ def record_connector_source_activation(
                 existing_for_resource.binding_id == selection.binding_id
                 and existing_for_resource.schema_fingerprint
                 == selection.expected_schema_fingerprint
+                and existing_for_resource.schema_fingerprint_version
+                == selection.expected_schema_fingerprint_version
+                and existing_for_resource.supersedes_binding_id == selection.supersedes_binding_id
             ):
                 replayed_bindings.append(
                     _binding_view(existing_for_resource, outcome="replayed")
                 )
                 validated.append((selection, existing_for_resource))
                 continue
+            if selection.supersedes_binding_id != existing_for_resource.binding_id:
+                raise ConnectorSourceActivationConflict(
+                    "Name the active predecessor to replace this table binding.",
+                    "binding_already_active",
+                )
+            predecessors.append(existing_for_resource)
+        elif selection.supersedes_binding_id is not None:
             raise ConnectorSourceActivationConflict(
-                "An active binding already exists for that table.",
-                "binding_already_active",
+                "The named predecessor is not the active binding for this resource.",
+                "binding_predecessor_conflict",
             )
         current_fingerprint = observation.schema_fingerprint or ""
-        if current_fingerprint != selection.expected_schema_fingerprint:
+        if (current_fingerprint != selection.expected_schema_fingerprint or
+            observation.schema_fingerprint_version
+            != selection.expected_schema_fingerprint_version):
             raise ConnectorSourceActivationError(
                 "The table's schema changed since it was discovered; run discovery again.",
                 "schema_fingerprint_stale",
@@ -301,6 +323,10 @@ def record_connector_source_activation(
                             "resource_name": selection.resource_name,
                             "schema_fingerprint": selection.expected_schema_fingerprint,
                             "outcome": "activated",
+                            "schema_fingerprint_version": (
+                                selection.expected_schema_fingerprint_version
+                            ),
+                            "supersedes_binding_id": selection.supersedes_binding_id,
                         }
                         for selection, _existing in new_selections
                     ],
@@ -311,6 +337,11 @@ def record_connector_source_activation(
                 },
             )
         )
+    for predecessor in predecessors:
+        predecessor.status = "superseded"
+    # Release the partial unique resource index before inserting successors.
+    if predecessors:
+        repository.session.flush()
     created_views: list[SourceBindingView] = []
     for selection, _existing in new_selections:
         binding = repository.create_connector_source_binding(
@@ -323,6 +354,8 @@ def record_connector_source_activation(
                 resource_name=selection.resource_name,
                 schema_fingerprint=selection.expected_schema_fingerprint,
                 credential_lease_id=request.credential_lease_id,
+                schema_fingerprint_version=selection.expected_schema_fingerprint_version,
+                supersedes_binding_id=selection.supersedes_binding_id,
                 egress_policy_id=request.egress_policy_id,
                 ingestion_status=BINDING_PENDING_INGESTION_STATUS,
                 activated_by=request.requested_by,

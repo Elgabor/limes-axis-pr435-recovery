@@ -13185,6 +13185,11 @@
               }
             ],
             "title": "Schema Fingerprint"
+          },
+          "schema_fingerprint_version": {
+            "default": "column_names_v1",
+            "title": "Schema Fingerprint Version",
+            "type": "string"
           }
         },
         "required": [
@@ -14029,6 +14034,15 @@
           "columns_truncated": {
             "title": "Columns Truncated",
             "type": "boolean"
+          },
+          "schema_fingerprint_version": {
+            "default": "column_names_v1",
+            "enum": [
+              "column_names_v1",
+              "postgres_schema_v2"
+            ],
+            "title": "Schema Fingerprint Version",
+            "type": "string"
           },
           "schema_name": {
             "minLength": 1,
@@ -21053,11 +21067,34 @@
             "title": "Expected Schema Fingerprint",
             "type": "string"
           },
+          "expected_schema_fingerprint_version": {
+            "default": "column_names_v1",
+            "enum": [
+              "column_names_v1",
+              "postgres_schema_v2"
+            ],
+            "title": "Expected Schema Fingerprint Version",
+            "type": "string"
+          },
           "resource_name": {
             "maxLength": 240,
             "minLength": 1,
             "title": "Resource Name",
             "type": "string"
+          },
+          "supersedes_binding_id": {
+            "anyOf": [
+              {
+                "maxLength": 180,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9_][A-Za-z0-9._:-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Binding Id"
           }
         },
         "required": [
@@ -21111,10 +21148,26 @@
             "title": "Schema Fingerprint",
             "type": "string"
           },
+          "schema_fingerprint_version": {
+            "default": "column_names_v1",
+            "title": "Schema Fingerprint Version",
+            "type": "string"
+          },
           "status": {
             "minLength": 1,
             "title": "Status",
             "type": "string"
+          },
+          "supersedes_binding_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Binding Id"
           }
         },
         "required": [
@@ -21889,6 +21942,11 @@
           },
           "schema_fingerprint": {
             "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "schema_fingerprint_version": {
+            "default": "column_names_v1",
+            "title": "Schema Fingerprint Version",
             "type": "string"
           }
         },

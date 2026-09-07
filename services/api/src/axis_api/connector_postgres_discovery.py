@@ -2,7 +2,7 @@
 
 Discovery is the second real source boundary after the allowlisted live
 read: it verifies connectivity and enumerates base tables plus their
-column fingerprints through ``information_schema``, never reading row
+versioned column fingerprints through the PostgreSQL catalogs, never reading row
 data. Every operation is bounded (schema allowlist, table and column
 caps, statement timeouts), classified on failure without leaking driver
 or database internals, and secret-safe: credentials resolve through the
@@ -39,7 +39,12 @@ from axis_api.connector_execution import (
     runtime_egress_target_block_reason,
 )
 from axis_api.connector_secret_resolution import SecretResolutionError
-from axis_api.connectors import csv_header_fingerprint
+from axis_api.connector_source_schema import (
+    POSTGRES_SCHEMA_VERSION,
+    SchemaFingerprintVersion,
+    postgres_schema_fingerprint,
+    read_postgres_schema,
+)
 from axis_api.data_asset_discovery import (
     DataAssetResourceObservationView,
     record_data_resource_observation,
@@ -193,6 +198,7 @@ class DiscoveredSourceTable(BaseModel):
     column_names: list[str] = Field(default_factory=list)
     column_fingerprint: str = Field(min_length=64, max_length=64)
     columns_truncated: bool
+    schema_fingerprint_version: SchemaFingerprintVersion = "column_names_v1"
 
 
 class ConnectorSourceDiscoveryResult(BaseModel):
@@ -353,8 +359,8 @@ class SelfHostedPostgresDiscoveryRuntime:
                 "requested_schema": request.schema_name,
             },
             notes=[
-                "Schema discovery enumerated base tables and column names only.",
-                "No row data was read; fingerprints cover column names alone.",
+                "Schema discovery enumerated base tables and bounded column metadata.",
+                "No row data was read; v2 fingerprints cover names, types, nullability and keys.",
             ],
         )
 
@@ -541,6 +547,9 @@ def record_connector_source_discovery(
                 observed_by=request.requested_by,
                 source_kind=("s3_object_discovery" if request.connector_id == S3_SOURCE_CONNECTOR_ID
                              else OBSERVATION_SOURCE_KIND),
+                schema_fingerprint=table.column_fingerprint,
+                schema_fingerprint_version=table.schema_fingerprint_version,
+                schema_complete=not table.columns_truncated,
             )
             observations.append(
                 SourceDiscoveryObservation(
@@ -598,6 +607,14 @@ def _resolve_operation_evidence(
             "Credential lease was not found for this connector.",
             "credential_lease_not_found",
         )
+    expires_at = lease.expires_at
+    if expires_at is not None and expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    if (lease.status != "active" or expires_at is None or expires_at <= datetime.now(UTC)
+        or lease.permission_decision.get("allowed") not in (True, "true")):
+        raise ConnectorSourceOperationError(
+            "Credential lease is not currently authorized.", "credential_lease_inactive",
+        )
     # Lease posture parity with the live-read preflight: only an executed or
     # renewed lease whose result proves no secret material was returned may
     # authorize a source operation. A merely persisted/deferred lease is not
@@ -634,7 +651,7 @@ def _resolve_operation_evidence(
             "Egress policy does not belong to this connection profile.",
             "egress_policy_profile_mismatch",
         )
-    if policy.policy_mode != "approved_private_endpoint":
+    if policy.status != "active" or policy.policy_mode != "approved_private_endpoint":
         raise ConnectorSourceOperationError(
             "Egress policy must approve a private endpoint boundary.",
             "egress_policy_not_approved",
@@ -789,11 +806,6 @@ def _discover_tables(
         "WHERE table_schema = %s AND table_type = 'BASE TABLE' "
         "ORDER BY table_name LIMIT %s"
     )
-    columns_query = (
-        "SELECT column_name FROM information_schema.columns "
-        "WHERE table_schema = %s AND table_name = %s "
-        "ORDER BY ordinal_position LIMIT %s"
-    )
     discovered: list[DiscoveredSourceTable] = []
     truncated_overall = False
     with (
@@ -807,18 +819,16 @@ def _discover_tables(
         ) as connection,
         connection.cursor() as cursor,
     ):
-        cursor.execute("SET TRANSACTION READ ONLY")
+        cursor.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
         cursor.execute(tables_query, (schema_name, profile.max_tables + 1))
         table_names = [str(row[0]) for row in cursor.fetchall()]
         if len(table_names) > profile.max_tables:
             truncated_overall = True
             table_names = table_names[: profile.max_tables]
         for table_name in table_names:
-            cursor.execute(
-                columns_query,
-                (schema_name, table_name, profile.max_columns_per_table + 1),
+            column_rows = read_postgres_schema(
+                cursor, schema_name, table_name, profile.max_columns_per_table,
             )
-            column_rows = cursor.fetchall()
             columns_truncated = len(column_rows) > profile.max_columns_per_table
             column_names = [str(row[0]) for row in column_rows[: profile.max_columns_per_table]]
             discovered.append(
@@ -826,7 +836,8 @@ def _discover_tables(
                     schema_name=schema_name,
                     table_name=table_name,
                     column_names=column_names,
-                    column_fingerprint=csv_header_fingerprint(column_names),
+                    column_fingerprint=postgres_schema_fingerprint(column_rows),
+                    schema_fingerprint_version=POSTGRES_SCHEMA_VERSION,
                     columns_truncated=columns_truncated,
                 )
             )

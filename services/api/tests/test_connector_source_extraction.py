@@ -33,6 +33,7 @@ from axis_api.connector_source_ingestion import (
     ObservationFreshnessIngestionRuntime,
     SourceIngestionOutboxDispatcher,
 )
+from axis_api.connectors import csv_header_fingerprint
 from axis_api.db import session_scope
 from axis_api.models import (
     AuditEvent,
@@ -53,7 +54,8 @@ TENANT_A = "tenant_demo_manufacturing"
 TENANT_B = "tenant_other_plant"
 CONNECTOR_ID = "external_db_operational_mirror"
 PROFILE_ID = "profile_postgres_discovery_readonly"
-FINGERPRINT = "a" * 64
+
+FINGERPRINT = csv_header_fingerprint(["id"])
 DRIFTED = "b" * 64
 RESOURCE = "operations.production_orders"
 LEASE_ID = "lease_extract_unit_001"
@@ -327,7 +329,7 @@ def test_mismatched_egress_hash_blocks_before_dial(session_factory) -> None:
 
 
 def stub_read(runtime, read_result):
-    runtime._read_bounded = lambda resource_name, limits, hardening: read_result  # type: ignore[method-assign]
+    runtime._read_bounded = lambda *args, **kwargs: read_result  # type: ignore[method-assign]
     return runtime
 
 

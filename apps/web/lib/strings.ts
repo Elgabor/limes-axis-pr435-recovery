@@ -766,6 +766,8 @@ const connectors = {
     selectedCount: (count: number) =>
       `${count} ${count === 1 ? "table" : "tables"} selected`,
     reasonLabel: "Activation reason",
+    predecessorLabel: "Existing binding to replace (optional)",
+    predecessorHint: "Enter the current binding ID to replace it with this reviewed schema. Its history is preserved.",
     reasonPlaceholder: "Why are these tables being activated?",
     action: (count: number) => `Activate ${count} ${count === 1 ? "table" : "tables"}`,
     activating: "Activating…",
@@ -781,7 +783,9 @@ const connectors = {
       schema_fingerprint_stale:
         "A selected table's schema changed since it was discovered. Run discovery again, review the new schema, then activate.",
       binding_already_active:
-        "One of the selected tables already has an active binding. Reload the bindings list to see it.",
+        "A selected table already has an active binding. Enter its ID to replace it after reviewing the discovered schema.",
+      binding_predecessor_conflict:
+        "The binding to replace is no longer active for this table. Reload the bindings and review the current selection.",
       binding_id_in_use:
         "A binding ID in this submission already names a different table. Retry to generate fresh IDs.",
       resource_not_observed:

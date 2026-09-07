@@ -86,6 +86,7 @@ const discoveryOutcome = {
         table_name: "production_orders",
         column_names: ["order_id", "asset_id"],
         column_fingerprint: "a".repeat(64),
+        schema_fingerprint_version: "postgres_schema_v2",
         columns_truncated: false,
       },
     ],
@@ -302,6 +303,7 @@ describe("ConnectorSourceDiscoveryPanel", () => {
       table_name: "quality_checks",
       column_names: ["check_id"],
       column_fingerprint: "b".repeat(64),
+      schema_fingerprint_version: "postgres_schema_v2",
       columns_truncated: false,
     });
     twoTableOutcome.observations.push({
@@ -357,6 +359,10 @@ describe("ConnectorSourceDiscoveryPanel", () => {
       "Bind for governed ingestion",
     );
 
+    await user.type(
+      screen.getByLabelText(/Existing binding to replace/),
+      "binding_reviewed_predecessor",
+    );
     const activationOutcome = {
       tenant_id: TENANT_ID,
       connector_id: "external_db_operational_mirror",
@@ -394,6 +400,8 @@ describe("ConnectorSourceDiscoveryPanel", () => {
         binding_id: expect.stringMatching(/^binding_console_[0-9a-f]+$/),
         resource_name: "operations.production_orders",
         expected_schema_fingerprint: "a".repeat(64),
+        expected_schema_fingerprint_version: "postgres_schema_v2",
+        supersedes_binding_id: "binding_reviewed_predecessor",
       },
     ]);
     // Success resets the journey and refreshes persisted views.

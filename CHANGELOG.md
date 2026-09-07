@@ -137,6 +137,11 @@ release-bound behavior, not the complete commit history.
   indexes and scanned index entries belonging to every other tenant. Responses
   are unchanged ([#363](https://github.com/Limes-Labs/limes-axis/issues/363)).
 
+- PostgreSQL source discovery records versioned type/key/nullability metadata;
+  extraction refuses live schema drift before reading rows. The console and API
+  support explicit binding replacement with preserved history. Migration 0067
+  keeps legacy fingerprints and refuses lossy downgrades (P4).
+
 - Raw source ingestion commits each content-addressed selection under an unexpired
   claim. Operational retries verify and reuse durable batches; explicit requeues
   acquire a new snapshot generation. Legacy checkpoints require a new request

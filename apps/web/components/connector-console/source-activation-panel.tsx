@@ -6,7 +6,7 @@ import { Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { InlineOperatorError } from "@/components/ui/inline-operator-error";
-import { Textarea } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import {
   AxisApiDecodeError,
@@ -46,6 +46,7 @@ const ACTIVATION_ENDPOINT = `${OPERATIONS_API_PREFIX}/connectors/external-db/sou
 export type ActivationSelection = {
   resourceName: string;
   schemaFingerprint: string;
+  schemaFingerprintVersion?: "column_names_v1" | "postgres_schema_v2";
 };
 
 function activationErrorCopy(error: AxisOperatorError): string | null {
@@ -97,6 +98,7 @@ export function ConnectorSourceActivationPanel({
     "connector-console-operator",
   );
   const [reason, setReason] = useState("");
+  const [predecessors, setPredecessors] = useState<Record<string, string>>({});
   const [pending, setPending] = useState(false);
   const [activated, setActivated] = useState<SourceBindingView[] | null>(null);
   const [error, setError] = useState<AxisOperatorError | null>(null);
@@ -124,6 +126,8 @@ export function ConnectorSourceActivationPanel({
         bindingId: `binding_console_${safeRandomUuid().replaceAll("-", "")}`,
         resourceName: selection.resourceName,
         expectedSchemaFingerprint: selection.schemaFingerprint,
+        expectedSchemaFingerprintVersion: selection.schemaFingerprintVersion,
+        supersedesBindingId: predecessors[selection.resourceName]?.trim() || undefined,
       })),
     });
     try {
@@ -205,6 +209,19 @@ export function ConnectorSourceActivationPanel({
             >
               {selection.schemaFingerprint.slice(0, 12)}
             </span>
+            <label className="grid w-full gap-1 text-xs text-muted">
+              {copy.predecessorLabel}: {selection.resourceName}
+              <Input
+                value={predecessors[selection.resourceName] ?? ""}
+                maxLength={180}
+                disabled={pending}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setPredecessors((current) => ({ ...current, [selection.resourceName]: value }));
+                }}
+              />
+              <span>{copy.predecessorHint}</span>
+            </label>
           </li>
         ))}
       </ul>

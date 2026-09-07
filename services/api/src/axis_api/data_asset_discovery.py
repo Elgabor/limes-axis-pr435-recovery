@@ -31,6 +31,7 @@ DRIFT_UNCHANGED = "unchanged"
 class DataAssetResourceObservationView(BaseModel):
     resource_name: str = Field(min_length=1)
     schema_fingerprint: str | None
+    schema_fingerprint_version: str = "column_names_v1"
     previous_fingerprint: str | None
     drift_state: str = Field(pattern="^(added|changed|unchanged)$")
     last_source_kind: str = Field(min_length=1)
@@ -52,6 +53,7 @@ def _observation_view(record) -> DataAssetResourceObservationView:
         resource_name=record.resource_name,
         schema_fingerprint=record.schema_fingerprint,
         previous_fingerprint=record.previous_fingerprint,
+        schema_fingerprint_version=record.schema_fingerprint_version,
         drift_state=record.drift_state,
         last_source_kind=record.last_source_kind,
         first_seen_at=record.first_seen_at,
@@ -70,6 +72,9 @@ def record_data_resource_observation(
     columns: list[str],
     observed_by: str,
     source_kind: ObservationSourceKind = "csv_preview",
+    schema_fingerprint: str | None = None,
+    schema_fingerprint_version: str = "column_names_v1",
+    schema_complete: bool = True,
 ) -> tuple[DataAssetResourceObservationView, str]:
     """Upsert one observation for an observed source resource.
 
@@ -85,7 +90,9 @@ def record_data_resource_observation(
         resource_name=file_name,
     )
 
-    fingerprint = csv_header_fingerprint(columns)
+    fingerprint = (
+        (schema_fingerprint or csv_header_fingerprint(columns)) if schema_complete else None
+    )
     existing = repository.get_data_resource_observation(
         tenant_id,
         connector_id,
@@ -99,6 +106,7 @@ def record_data_resource_observation(
                 asset_id=data_asset_id_for_connector(connector_id),
                 resource_name=file_name,
                 schema_fingerprint=fingerprint,
+                schema_fingerprint_version=schema_fingerprint_version,
                 drift_state=DRIFT_ADDED,
                 observed_by=observed_by,
                 source_kind=source_kind,
@@ -108,12 +116,14 @@ def record_data_resource_observation(
     else:
         drift_state = (
             DRIFT_UNCHANGED
-            if existing.schema_fingerprint == fingerprint
+            if (existing.schema_fingerprint == fingerprint
+                and existing.schema_fingerprint_version == schema_fingerprint_version)
             else DRIFT_CHANGED
         )
         record = repository.record_repeat_data_resource_observation(
             existing,
             schema_fingerprint=fingerprint,
+                schema_fingerprint_version=schema_fingerprint_version,
             drift_state=drift_state,
             observed_by=observed_by,
         )

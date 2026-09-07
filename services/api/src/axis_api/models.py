@@ -736,6 +736,10 @@ class ConnectorSourceBinding(Base):
     connection_profile_id: Mapped[str] = mapped_column(String(180), nullable=False)
     resource_name: Mapped[str] = mapped_column(String(240), nullable=False)
     schema_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    schema_fingerprint_version: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="column_names_v1", server_default="column_names_v1",
+    )
+    supersedes_binding_id: Mapped[str | None] = mapped_column(String(180), nullable=True)
     credential_lease_id: Mapped[str] = mapped_column(String(180), nullable=False)
     egress_policy_id: Mapped[str] = mapped_column(String(180), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
@@ -755,7 +759,9 @@ class ConnectorSourceBinding(Base):
     )
 
     __table_args__ = (
-        CheckConstraint("status IN ('active')", name="ck_connector_source_bindings_status"),
+        CheckConstraint(
+            "status IN ('active', 'superseded')", name="ck_connector_source_bindings_status",
+        ),
         CheckConstraint(
             "ingestion_status IN ('pending_ingestion')",
             name="ck_connector_source_bindings_ingestion_status",
@@ -1213,6 +1219,9 @@ class DataAssetResourceObservation(Base):
     asset_id: Mapped[str] = mapped_column(String(220), nullable=False, index=True)
     resource_name: Mapped[str] = mapped_column(String(240), nullable=False)
     schema_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    schema_fingerprint_version: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="column_names_v1", server_default="column_names_v1",
+    )
     previous_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     drift_state: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     first_seen_at: Mapped[datetime] = mapped_column(

@@ -36,7 +36,9 @@ class SourceDriver:
     def execute(self, query, params=None):
         statement = query if isinstance(query, str) else query.as_string()
         self.statements.append(statement)
-        if "information_schema.table_constraints" in statement:
+        if "pg_catalog.pg_attribute" in statement:
+            self.pending = [("id", "integer", True, self.primary_key, "", "")]
+        elif "information_schema.table_constraints" in statement:
             self.pending = [("id",)] if self.primary_key else []
         elif statement.startswith("SELECT"):
             candidates = self.rows

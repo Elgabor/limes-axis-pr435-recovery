@@ -771,8 +771,9 @@ def test_expired_lease_is_recovered_by_the_next_claim(session_factory) -> None:
 def test_validation_stage_runtime_port_contract() -> None:
     fresh = SimpleNamespace(
         schema_fingerprint=FINGERPRINT_A,
+        schema_fingerprint_version="column_names_v1",
     )
-    active_binding = SimpleNamespace(status="active")
+    active_binding = SimpleNamespace(status="active", schema_fingerprint_version="column_names_v1")
 
     class StubRepository:
         def __init__(self, observation, binding):

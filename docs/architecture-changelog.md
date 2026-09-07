@@ -162,6 +162,22 @@ Evidence: [ADR 0003](./adr/0003-external-await-transaction-boundary.md), the
 transaction, pool-occupancy, interruption and duplicate-delivery tests in
 `services/api/tests/test_model_invocations.py`.
 
+## 2026-09-07 — Versioned Source Selection Revisions
+
+**Scope:** connector standardization P4, local contribution.
+
+Discovery and the raw reader share bounded PostgreSQL schema fingerprints.
+Activation owns the governed successor/predecessor relationship under the existing
+connector activation lock; immutable raw history keeps its original binding IDs.
+Migration 0067 stores schema versions and predecessor IDs and allows superseded
+bindings. Legacy name-only fingerprints retain their meaning; newly discovered
+PostgreSQL schemas use v2 types/nullability/key evidence. The console carries this
+version through the selection and can explicitly name a predecessor.
+
+See [P4](connector-standardization/p4-schema-selection.md), schema-version tests,
+the console discovery/activation regression and the PostgreSQL migration rehearsal.
+No mapping or graph ownership moves into the connector.
+
 ## 2026-09-07 — Durable Raw Selection Consumer
 
 **Scope:** connector standardization P3, local contribution; no publication.

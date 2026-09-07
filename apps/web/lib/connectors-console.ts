@@ -568,6 +568,8 @@ export type SourceActivationSelection = {
   bindingId: string;
   resourceName: string;
   expectedSchemaFingerprint: string;
+  expectedSchemaFingerprintVersion?: "column_names_v1" | "postgres_schema_v2";
+  supersedesBindingId?: string;
 };
 
 export function buildSourceActivationRequest(input: {
@@ -597,6 +599,8 @@ export function buildSourceActivationRequest(input: {
       binding_id: selection.bindingId,
       resource_name: selection.resourceName,
       expected_schema_fingerprint: selection.expectedSchemaFingerprint,
+      expected_schema_fingerprint_version: selection.expectedSchemaFingerprintVersion ?? "column_names_v1",
+      ...(selection.supersedesBindingId ? { supersedes_binding_id: selection.supersedesBindingId } : {}),
     })),
     actor_scopes: [SOURCE_ACTIVATION_SCOPE],
   };
