@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "dataset_version": "axis-performance-v1",
+  "seed_sources": {
+    "connectors": {
+      "path": "services/api/migrations/versions/0023_connector_registry_reference.py",
+      "sha256": "8eca7797863cfb300bab315c52260dcd320b48d85d0068374522a43770ff33bd",
+      "symbol": "CONNECTOR_REGISTRY_PAYLOAD",
+      "surface": "connectors",
+      "reference_id": "manufacturing-connector-registry"
+    },
+    "actions": {
+      "path": "services/api/migrations/versions/0025_action_registry_reference.py",
+      "sha256": "37b6b779bd2e699d2d67afc3ec96b5636d658e8fdea10b1a011c6f6702a96843",
+      "symbol": "ACTION_REGISTRY_PAYLOAD",
+      "surface": "actions",
+      "reference_id": "manufacturing-action-registry"
+    },
+    "ontology": {
+      "path": "services/api/migrations/versions/0030_ontology_reference.py",
+      "sha256": "769b398116d6606b86f7208a58b725d63feac3c9ea851b9eca410ab86728425a",
+      "symbol": "ONTOLOGY_PAYLOAD",
+      "surface": "ontology",
+      "reference_id": "manufacturing-ontology"
+    }
+  },
+  "profiles": {
+    "sme-single-node": {
+      "tenants": 2,
+      "connectors_per_tenant": 25,
+      "csv_rows": 100,
+      "concurrency": 4,
+      "warmup_requests": 3,
+      "load_seconds": 60,
+      "soak_seconds": 300,
+      "model_delay_ms": 50,
+      "workflow_delay_ms": 20,
+      "request_timeout_seconds": 5,
+      "journeys": {
+        "console": {
+          "rps": 10,
+          "p95_ms": 500,
+          "p99_ms": 1000,
+          "max_sql_statements": 60,
+          "max_response_bytes": 65536
+        },
+        "ingestion-preview": {
+          "rps": 2,
+          "p95_ms": 1000,
+          "p99_ms": 2000,
+          "max_sql_statements": 20,
+          "max_response_bytes": 1000000
+        },
+        "workflow-signal": {
+          "rps": 2,
+          "p95_ms": 500,
+          "p99_ms": 1000,
+          "max_sql_statements": 50,
+          "max_response_bytes": 32000
+        },
+        "model-invocation": {
+          "rps": 2,
+          "p95_ms": 1000,
+          "p99_ms": 2000,
+          "max_sql_statements": 80,
+          "max_response_bytes": 32000
+        }
+      },
+      "resource_budgets": {
+        "process_rss_mb": 1024,
+        "cpu_cores": 4,
+        "max_pool_connections": 4,
+        "max_database_growth_mb_per_minute": 100
+      },
+      "runs_per_tenant": 50,
+      "proposals_per_tenant": 20,
+      "planned_search": {
+        "status": "NOT RUN: permission-safe full-text indexing is tracked in #343",
+        "corpus_documents": 10000,
+        "rps": 10,
+        "p95_ms": 500,
+        "p99_ms": 1000,
+        "max_response_bytes": 65536,
+        "max_results": 20,
+        "freshness_seconds": 60
+      }
+    },
+    "enterprise": {
+      "tenants": 20,
+      "connectors_per_tenant": 200,
+      "csv_rows": 500,
+      "concurrency": 8,
+      "warmup_requests": 3,
+      "load_seconds": 60,
+      "soak_seconds": 300,
+      "model_delay_ms": 50,
+      "workflow_delay_ms": 20,
+      "request_timeout_seconds": 5,
+      "journeys": {
+        "console": {
+          "rps": 20,
+          "p95_ms": 500,
+          "p99_ms": 1000,
+          "max_sql_statements": 60,
+          "max_response_bytes": 65536
+        },
+        "ingestion-preview": {
+          "rps": 4,
+          "p95_ms": 1000,
+          "p99_ms": 2000,
+          "max_sql_statements": 20,
+          "max_response_bytes": 1000000
+        },
+        "workflow-signal": {
+          "rps": 4,
+          "p95_ms": 500,
+          "p99_ms": 1000,
+          "max_sql_statements": 50,
+          "max_response_bytes": 32000
+        },
+        "model-invocation": {
+          "rps": 4,
+          "p95_ms": 1000,
+          "p99_ms": 2000,
+          "max_sql_statements": 80,
+          "max_response_bytes": 32000
+        }
+      },
+      "resource_budgets": {
+        "process_rss_mb": 1024,
+        "cpu_cores": 8,
+        "max_pool_connections": 8,
+        "max_database_growth_mb_per_minute": 100
+      },
+      "runs_per_tenant": 250,
+      "proposals_per_tenant": 150,
+      "planned_search": {
+        "status": "NOT RUN: permission-safe full-text indexing is tracked in #343",
+        "corpus_documents": 1000000,
+        "rps": 25,
+        "p95_ms": 500,
+        "p99_ms": 1000,
+        "max_response_bytes": 65536,
+        "max_results": 20,
+        "freshness_seconds": 60
+      }
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "artifacts": [
+    {
+      "path": "after-enterprise.json.gz",
+      "bytes": 296346,
+      "sha256": "d987064dc4339ca320a7794603642708c60337217354b32b02d1b887f81ded4d"
+    },
+    {
+      "path": "after-sme.json.gz",
+      "bytes": 159105,
+      "sha256": "f12b9d9544f3e2961a0d1660b2772306a3d2c6ac5b9b79a7597480bc84fdccf1"
+    },
+    {
+      "path": "before-enterprise.json.gz",
+      "bytes": 294598,
+      "sha256": "e70f10bc92f459ba70731482ab4ce2350662064c8f543a2d3051f46875f31db3"
+    },
+    {
+      "path": "before-sme.json.gz",
+      "bytes": 157007,
+      "sha256": "8dec5acc82f43b0db05e48ac2fe35b13272bf0a9336fda1686a36e4732d21bad"
+    },
+    {
+      "path": "comparison-enterprise.json",
+      "bytes": 131,
+      "sha256": "d7fa8af8eaf44839adb5839d6ffc0e756e3bb10e8169c141b05eb3ef267d3d9a"
+    },
+    {
+      "path": "comparison-sme.json",
+      "bytes": 131,
+      "sha256": "d7fa8af8eaf44839adb5839d6ffc0e756e3bb10e8169c141b05eb3ef267d3d9a"
+    },
+    {
+      "path": "console-enterprise.svg",
+      "bytes": 84953,
+      "sha256": "cd228fe2b2755a106a884ab8f008b0a3b82c75334498f209d408a481a675351f"
+    },
+    {
+      "path": "console-sme.svg",
+      "bytes": 88659,
+      "sha256": "92b70f744f4b5c58e3033c09d4c3d40dcc45cb05f21efc6712c9397896126856"
+    },
+    {
+      "path": "profile-enterprise.json.gz",
+      "bytes": 21638,
+      "sha256": "fbcbc69fcf22f255df9d62296a6b49cc86667d4bbcf78e2311e5d5475ddfb972"
+    },
+    {
+      "path": "profile-sme.json.gz",
+      "bytes": 13562,
+      "sha256": "555b2114c67f1996ca150352937eb695fc6ee5bf7aa5c6b5d0646c8d9c29b342"
+    },
+    {
+      "path": "profiles-enterprise.tar.gz",
+      "bytes": 19750,
+      "sha256": "10e9d02e9585cafbca2e9bb2c57f12559623b50564e0eab95381af898473c1a9"
+    },
+    {
+      "path": "profiles-sme.tar.gz",
+      "bytes": 17698,
+      "sha256": "0bc7a0858dfef0b5f7924ddf1bb75d984956ef251664db7f96e29ae393c81ade"
+    },
+    {
+      "path": "soak-enterprise-model.json.gz",
+      "bytes": 60497,
+      "sha256": "a1e116502320b8f21c75649eab0cadaf3ae37b0e77fbd4feb659ef2fa771f32f"
+    },
+    {
+      "path": "soak-sme-console.json.gz",
+      "bytes": 147747,
+      "sha256": "98df2d9b445117a7ef9fc7ada37abd6977a6d99f0cfebbcd8d0bdf684844ea20"
+    }
+  ]
+}

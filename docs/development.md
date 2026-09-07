@@ -156,6 +156,13 @@ records and can leave append-only evidence, so use a disposable database.
 
 ## Performance measurement
 
+The [workload and baseline contract](performance-baseline.md) defines SME and
+enterprise fixture shapes, bounded load/soak runs, SQL/resource measurements,
+Python stack profiles and a comparison policy. Run `make benchmark-performance`
+with `BENCHMARK_ARGS='run --profile sme-single-node --output /tmp/axis-baseline'`;
+use three trials for regression comparisons. Local ASGI/SQLite results remain
+separate from deployment capacity and browser rendering.
+
 ```sh
 make benchmark-lineage
 make benchmark-lineage BENCHMARK_ARGS='--proposals 1 --repeat 25'

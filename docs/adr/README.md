@@ -32,3 +32,4 @@ sequence remains in [the architecture changelog](../architecture-changelog.md).
 - [`0013-oss-candidate-provenance-gate.md`](./0013-oss-candidate-provenance-gate.md) — Accepted
 - [`0014-governed-event-ingress-contract.md`](./0014-governed-event-ingress-contract.md) — Accepted
 - [`0015-layered-capability-ownership.md`](./0015-layered-capability-ownership.md) — Accepted
+- [`0016-performance-measurement-contract.md`](./0016-performance-measurement-contract.md) — Accepted

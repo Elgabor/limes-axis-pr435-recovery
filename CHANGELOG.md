@@ -7,6 +7,11 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Versioned SME/enterprise performance workloads, local load/soak and Python
+  stack-profiling harnesses, query/pool/resource baseline evidence and a
+  noise-aware regression policy. Real deployment SLOs and unimplemented search
+  remain separate evidence ([#361](https://github.com/Limes-Labs/limes-axis/issues/361)).
+
 - Seven-layer architecture contract with component/issue ownership, public port
   and backend adoption decisions, plus an offline guard against new core-to-vertical
   imports. Existing reference coupling remains explicitly inventoried

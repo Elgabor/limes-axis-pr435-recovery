@@ -1,0 +1,773 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650">
+<rect width="100%" height="100%" fill="white"/>
+<text x="10" y="20" font-family="sans-serif" font-size="14">Axis Python wall-stack samples — hover for frames (not CPU utilization)</text>
+<text x="10" y="40" font-family="sans-serif" font-size="12">76 collected stacks; waiting without API frames excluded</text>
+<g><title>threading.py:_bootstrap:1032 (76 samples)</title><rect x="0.000" y="630" width="1200.000" height="19" fill="rgb(245,140,80)" stroke="white" stroke-width="0.3"/>
+<text x="3.000" y="644" font-family="monospace" font-size="11">_bootstrap</text>
+</g>
+<g><title>threading.py:_bootstrap_inner:1075 (76 samples)</title><rect x="0.000" y="610" width="1200.000" height="19" fill="rgb(245,242,80)" stroke="white" stroke-width="0.3"/>
+<text x="3.000" y="624" font-family="monospace" font-size="11">_bootstrap_inner</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:run:1029 (76 samples)</title><rect x="0.000" y="590" width="1200.000" height="19" fill="rgb(245,190,80)" stroke="white" stroke-width="0.3"/>
+<text x="3.000" y="604" font-family="monospace" font-size="11">run</text>
+</g>
+<g><title>contextlib.py:__exit__:144 (1 samples)</title><rect x="0.000" y="570" width="15.789" height="19" fill="rgb(245,189,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/main.py:persistence_repository:771 (1 samples)</title><rect x="0.000" y="550" width="15.789" height="19" fill="rgb(245,160,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>contextlib.py:__exit__:144 (1 samples)</title><rect x="0.000" y="530" width="15.789" height="19" fill="rgb(245,189,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/db.py:session_scope:29 (1 samples)</title><rect x="0.000" y="510" width="15.789" height="19" fill="rgb(245,224,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:commit:2035 (1 samples)</title><rect x="0.000" y="490" width="15.789" height="19" fill="rgb(245,188,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>&lt;string&gt;:commit:2 (1 samples)</title><rect x="0.000" y="470" width="15.789" height="19" fill="rgb(245,139,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/state_changes.py:_go:137 (1 samples)</title><rect x="0.000" y="450" width="15.789" height="19" fill="rgb(245,182,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:commit:1323 (1 samples)</title><rect x="0.000" y="430" width="15.789" height="19" fill="rgb(245,217,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:commit:2642 (1 samples)</title><rect x="0.000" y="410" width="15.789" height="19" fill="rgb(245,193,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_do_commit:2747 (1 samples)</title><rect x="0.000" y="390" width="15.789" height="19" fill="rgb(245,212,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_connection_commit_impl:2718 (1 samples)</title><rect x="0.000" y="370" width="15.789" height="19" fill="rgb(245,207,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_commit_impl:1147 (1 samples)</title><rect x="0.000" y="350" width="15.789" height="19" fill="rgb(245,142,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_commit:715 (1 samples)</title><rect x="0.000" y="330" width="15.789" height="19" fill="rgb(245,220,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/main.py:connector_workspace_summary:4403 (75 samples)</title><rect x="15.789" y="570" width="1184.211" height="19" fill="rgb(245,188,80)" stroke="white" stroke-width="0.3"/>
+<text x="18.789" y="584" font-family="monospace" font-size="11">connector_workspace_summary</text>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:read_connector_workspace_summary:123 (25 samples)</title><rect x="15.789" y="550" width="394.737" height="19" fill="rgb(245,183,80)" stroke="white" stroke-width="0.3"/>
+<text x="18.789" y="564" font-family="monospace" font-size="11">read_connector_workspace_summary</text>
+</g>
+<g><title>services/api/src/axis_api/connector_reference.py:get_persisted_manufacturing_connector_registry:149 (4 samples)</title><rect x="15.789" y="530" width="63.158" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/manufacturing_metadata.py:get_manufacturing_tenant_metadata:31 (4 samples)</title><rect x="15.789" y="510" width="63.158" height="19" fill="rgb(245,174,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:get_tenant:5102 (4 samples)</title><rect x="15.789" y="490" width="63.158" height="19" fill="rgb(245,236,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:get:3702 (4 samples)</title><rect x="15.789" y="470" width="63.158" height="19" fill="rgb(245,153,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_get_impl:3881 (4 samples)</title><rect x="15.789" y="450" width="63.158" height="19" fill="rgb(245,190,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py:load_on_pk_identity:695 (3 samples)</title><rect x="15.789" y="430" width="47.368" height="19" fill="rgb(245,199,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:execute:2373 (3 samples)</title><rect x="15.789" y="410" width="47.368" height="19" fill="rgb(245,131,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (3 samples)</title><rect x="15.789" y="390" width="47.368" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (3 samples)</title><rect x="15.789" y="370" width="47.368" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (3 samples)</title><rect x="15.789" y="350" width="47.368" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (3 samples)</title><rect x="15.789" y="330" width="47.368" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (3 samples)</title><rect x="15.789" y="310" width="47.368" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (3 samples)</title><rect x="15.789" y="290" width="47.368" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (3 samples)</title><rect x="15.789" y="270" width="47.368" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (3 samples)</title><rect x="15.789" y="250" width="47.368" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py:load_on_pk_identity:706 (1 samples)</title><rect x="63.158" y="430" width="15.789" height="19" fill="rgb(245,190,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/result.py:one:1867 (1 samples)</title><rect x="63.158" y="410" width="15.789" height="19" fill="rgb(245,191,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/result.py:_only_one_row:796 (1 samples)</title><rect x="63.158" y="390" width="15.789" height="19" fill="rgb(245,243,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/result.py:_fetchone_impl:1730 (1 samples)</title><rect x="63.158" y="370" width="15.789" height="19" fill="rgb(245,225,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/result.py:_fetchone_impl:2326 (1 samples)</title><rect x="63.158" y="350" width="15.789" height="19" fill="rgb(245,163,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py:chunks:220 (1 samples)</title><rect x="63.158" y="330" width="15.789" height="19" fill="rgb(245,176,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/result.py:_raw_all_rows:579 (1 samples)</title><rect x="63.158" y="310" width="15.789" height="19" fill="rgb(245,148,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py:_fetchall_impl:2261 (1 samples)</title><rect x="63.158" y="290" width="15.789" height="19" fill="rgb(245,166,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py:fetchall:1201 (1 samples)</title><rect x="63.158" y="270" width="15.789" height="19" fill="rgb(245,150,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_reference.py:get_persisted_manufacturing_connector_registry:150 (7 samples)</title><rect x="78.947" y="530" width="110.526" height="19" fill="rgb(245,219,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="544" font-family="monospace" font-size="11">get_persisted_m</text>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:get_demo_reference_record:2137 (7 samples)</title><rect x="78.947" y="510" width="110.526" height="19" fill="rgb(245,137,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="524" font-family="monospace" font-size="11">get_demo_refere</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:scalars:2481 (7 samples)</title><rect x="78.947" y="490" width="110.526" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="504" font-family="monospace" font-size="11">scalars</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (7 samples)</title><rect x="78.947" y="470" width="110.526" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="484" font-family="monospace" font-size="11">_execute_intern</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (7 samples)</title><rect x="78.947" y="450" width="110.526" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="464" font-family="monospace" font-size="11">orm_execute_sta</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (7 samples)</title><rect x="78.947" y="430" width="110.526" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="444" font-family="monospace" font-size="11">execute</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (7 samples)</title><rect x="78.947" y="410" width="110.526" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="424" font-family="monospace" font-size="11">_execute_on_con</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (7 samples)</title><rect x="78.947" y="390" width="110.526" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="404" font-family="monospace" font-size="11">_execute_clause</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (7 samples)</title><rect x="78.947" y="370" width="110.526" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="384" font-family="monospace" font-size="11">_execute_contex</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (7 samples)</title><rect x="78.947" y="350" width="110.526" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="364" font-family="monospace" font-size="11">_exec_single_co</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (7 samples)</title><rect x="78.947" y="330" width="110.526" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+<text x="81.947" y="344" font-family="monospace" font-size="11">do_execute</text>
+</g>
+<g><title>services/api/src/axis_api/connector_reference.py:get_persisted_manufacturing_connector_registry:173 (10 samples)</title><rect x="189.474" y="530" width="157.895" height="19" fill="rgb(245,132,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="544" font-family="monospace" font-size="11">get_persisted_manufact</text>
+</g>
+<g><title>services/api/src/axis_api/connector_reference.py:_with_registered_connector_manifests:40 (10 samples)</title><rect x="189.474" y="510" width="157.895" height="19" fill="rgb(245,215,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="524" font-family="monospace" font-size="11">_with_registered_conne</text>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:list_all_current_connector_manifests:3006 (10 samples)</title><rect x="189.474" y="490" width="157.895" height="19" fill="rgb(245,170,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="504" font-family="monospace" font-size="11">list_all_current_conne</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:scalars:2481 (10 samples)</title><rect x="189.474" y="470" width="157.895" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="484" font-family="monospace" font-size="11">scalars</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (10 samples)</title><rect x="189.474" y="450" width="157.895" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="464" font-family="monospace" font-size="11">_execute_internal</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (10 samples)</title><rect x="189.474" y="430" width="157.895" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="444" font-family="monospace" font-size="11">orm_execute_statement</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (10 samples)</title><rect x="189.474" y="410" width="157.895" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="424" font-family="monospace" font-size="11">execute</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (10 samples)</title><rect x="189.474" y="390" width="157.895" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="404" font-family="monospace" font-size="11">_execute_on_connection</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (10 samples)</title><rect x="189.474" y="370" width="157.895" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="384" font-family="monospace" font-size="11">_execute_clauseelement</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (10 samples)</title><rect x="189.474" y="350" width="157.895" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="364" font-family="monospace" font-size="11">_execute_context</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (10 samples)</title><rect x="189.474" y="330" width="157.895" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="344" font-family="monospace" font-size="11">_exec_single_context</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (10 samples)</title><rect x="189.474" y="310" width="157.895" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+<text x="192.474" y="324" font-family="monospace" font-size="11">do_execute</text>
+</g>
+<g><title>services/api/src/axis_api/connector_reference.py:get_persisted_manufacturing_connector_registry:174 (4 samples)</title><rect x="347.368" y="530" width="63.158" height="19" fill="rgb(245,164,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_reference.py:_with_last_successful_sync_observations:116 (4 samples)</title><rect x="347.368" y="510" width="63.158" height="19" fill="rgb(245,163,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:list_latest_connector_runs_by_connector:4276 (4 samples)</title><rect x="347.368" y="490" width="63.158" height="19" fill="rgb(245,140,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:scalars:2481 (4 samples)</title><rect x="347.368" y="470" width="63.158" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (4 samples)</title><rect x="347.368" y="450" width="63.158" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (4 samples)</title><rect x="347.368" y="430" width="63.158" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (4 samples)</title><rect x="347.368" y="410" width="63.158" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (4 samples)</title><rect x="347.368" y="390" width="63.158" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (4 samples)</title><rect x="347.368" y="370" width="63.158" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (4 samples)</title><rect x="347.368" y="350" width="63.158" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (4 samples)</title><rect x="347.368" y="330" width="63.158" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (4 samples)</title><rect x="347.368" y="310" width="63.158" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:read_connector_workspace_summary:135 (10 samples)</title><rect x="410.526" y="550" width="157.895" height="19" fill="rgb(245,156,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="564" font-family="monospace" font-size="11">read_connector_workspa</text>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:append_audit_event:1236 (10 samples)</title><rect x="410.526" y="530" width="157.895" height="19" fill="rgb(245,227,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="544" font-family="monospace" font-size="11">append_audit_event</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:flush:4353 (10 samples)</title><rect x="410.526" y="510" width="157.895" height="19" fill="rgb(245,221,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="524" font-family="monospace" font-size="11">flush</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_flush:4449 (10 samples)</title><rect x="410.526" y="490" width="157.895" height="19" fill="rgb(245,175,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="504" font-family="monospace" font-size="11">_flush</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py:execute:465 (10 samples)</title><rect x="410.526" y="470" width="157.895" height="19" fill="rgb(245,126,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="484" font-family="monospace" font-size="11">execute</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py:execute:641 (10 samples)</title><rect x="410.526" y="450" width="157.895" height="19" fill="rgb(245,210,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="464" font-family="monospace" font-size="11">execute</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py:save_obj:94 (10 samples)</title><rect x="410.526" y="430" width="157.895" height="19" fill="rgb(245,180,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="444" font-family="monospace" font-size="11">save_obj</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py:_emit_insert_statements:1234 (10 samples)</title><rect x="410.526" y="410" width="157.895" height="19" fill="rgb(245,127,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="424" font-family="monospace" font-size="11">_emit_insert_statement</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (10 samples)</title><rect x="410.526" y="390" width="157.895" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="404" font-family="monospace" font-size="11">execute</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (10 samples)</title><rect x="410.526" y="370" width="157.895" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="384" font-family="monospace" font-size="11">_execute_on_connection</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (10 samples)</title><rect x="410.526" y="350" width="157.895" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+<text x="413.526" y="364" font-family="monospace" font-size="11">_execute_clauseelement</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1817 (3 samples)</title><rect x="410.526" y="330" width="47.368" height="19" fill="rgb(245,165,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:_init_compiled:1441 (3 samples)</title><rect x="410.526" y="310" width="47.368" height="19" fill="rgb(245,225,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:_process_execute_defaults:2385 (3 samples)</title><rect x="410.526" y="290" width="47.368" height="19" fill="rgb(245,135,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/schema.py:&lt;lambda&gt;:3633 (3 samples)</title><rect x="410.526" y="270" width="47.368" height="19" fill="rgb(245,247,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>uuid.py:uuid4:725 (3 samples)</title><rect x="410.526" y="250" width="47.368" height="19" fill="rgb(245,139,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (7 samples)</title><rect x="457.895" y="330" width="110.526" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+<text x="460.895" y="344" font-family="monospace" font-size="11">_execute_contex</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (7 samples)</title><rect x="457.895" y="310" width="110.526" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+<text x="460.895" y="324" font-family="monospace" font-size="11">_exec_single_co</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (7 samples)</title><rect x="457.895" y="290" width="110.526" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+<text x="460.895" y="304" font-family="monospace" font-size="11">do_execute</text>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:read_connector_workspace_summary:149 (7 samples)</title><rect x="568.421" y="550" width="110.526" height="19" fill="rgb(245,185,80)" stroke="white" stroke-width="0.3"/>
+<text x="571.421" y="564" font-family="monospace" font-size="11">read_connector_</text>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:_count:106 (1 samples)</title><rect x="568.421" y="530" width="15.789" height="19" fill="rgb(245,230,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/util.py:__exit__:145 (1 samples)</title><rect x="568.421" y="510" width="15.789" height="19" fill="rgb(245,145,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>&lt;string&gt;:commit:2 (1 samples)</title><rect x="568.421" y="490" width="15.789" height="19" fill="rgb(245,139,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/state_changes.py:_go:137 (1 samples)</title><rect x="568.421" y="470" width="15.789" height="19" fill="rgb(245,182,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:commit:1323 (1 samples)</title><rect x="568.421" y="450" width="15.789" height="19" fill="rgb(245,217,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:commit:2642 (1 samples)</title><rect x="568.421" y="430" width="15.789" height="19" fill="rgb(245,193,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_do_commit:2867 (1 samples)</title><rect x="568.421" y="410" width="15.789" height="19" fill="rgb(245,226,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_release_savepoint_impl:1172 (1 samples)</title><rect x="568.421" y="390" width="15.789" height="19" fill="rgb(245,225,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_release_savepoint:774 (1 samples)</title><rect x="568.421" y="370" width="15.789" height="19" fill="rgb(245,232,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (1 samples)</title><rect x="568.421" y="350" width="15.789" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (1 samples)</title><rect x="568.421" y="330" width="15.789" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (1 samples)</title><rect x="568.421" y="310" width="15.789" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (1 samples)</title><rect x="568.421" y="290" width="15.789" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (1 samples)</title><rect x="568.421" y="270" width="15.789" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (1 samples)</title><rect x="568.421" y="250" width="15.789" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:_count:107 (6 samples)</title><rect x="584.211" y="530" width="94.737" height="19" fill="rgb(245,157,80)" stroke="white" stroke-width="0.3"/>
+<text x="587.211" y="544" font-family="monospace" font-size="11">_count</text>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:&lt;lambda&gt;:153 (6 samples)</title><rect x="584.211" y="510" width="94.737" height="19" fill="rgb(245,220,80)" stroke="white" stroke-width="0.3"/>
+<text x="587.211" y="524" font-family="monospace" font-size="11">&lt;lambda&gt;</text>
+</g>
+<g><title>services/api/src/axis_api/connector_runs.py:build_connector_run_registry:496 (2 samples)</title><rect x="584.211" y="490" width="31.579" height="19" fill="rgb(245,216,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/manufacturing_metadata.py:find_manufacturing_tenant_metadata:54 (2 samples)</title><rect x="584.211" y="470" width="31.579" height="19" fill="rgb(245,138,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:get_tenant:5102 (2 samples)</title><rect x="584.211" y="450" width="31.579" height="19" fill="rgb(245,236,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:get:3702 (2 samples)</title><rect x="584.211" y="430" width="31.579" height="19" fill="rgb(245,153,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_get_impl:3881 (2 samples)</title><rect x="584.211" y="410" width="31.579" height="19" fill="rgb(245,190,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py:load_on_pk_identity:695 (2 samples)</title><rect x="584.211" y="390" width="31.579" height="19" fill="rgb(245,199,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:execute:2373 (2 samples)</title><rect x="584.211" y="370" width="31.579" height="19" fill="rgb(245,131,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (2 samples)</title><rect x="584.211" y="350" width="31.579" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (2 samples)</title><rect x="584.211" y="330" width="31.579" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (2 samples)</title><rect x="584.211" y="310" width="31.579" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (2 samples)</title><rect x="584.211" y="290" width="31.579" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (2 samples)</title><rect x="584.211" y="270" width="31.579" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (2 samples)</title><rect x="584.211" y="250" width="31.579" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (2 samples)</title><rect x="584.211" y="230" width="31.579" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (2 samples)</title><rect x="584.211" y="210" width="31.579" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_runs.py:build_connector_run_registry:497 (4 samples)</title><rect x="615.789" y="490" width="63.158" height="19" fill="rgb(245,229,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:list_connector_runs:4212 (4 samples)</title><rect x="615.789" y="470" width="63.158" height="19" fill="rgb(245,220,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:scalars:2481 (4 samples)</title><rect x="615.789" y="450" width="63.158" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (4 samples)</title><rect x="615.789" y="430" width="63.158" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (4 samples)</title><rect x="615.789" y="410" width="63.158" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (4 samples)</title><rect x="615.789" y="390" width="63.158" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (4 samples)</title><rect x="615.789" y="370" width="63.158" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (4 samples)</title><rect x="615.789" y="350" width="63.158" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (4 samples)</title><rect x="615.789" y="330" width="63.158" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (4 samples)</title><rect x="615.789" y="310" width="63.158" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (4 samples)</title><rect x="615.789" y="290" width="63.158" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:read_connector_workspace_summary:158 (11 samples)</title><rect x="678.947" y="550" width="173.684" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+<text x="681.947" y="564" font-family="monospace" font-size="11">read_connector_workspace</text>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:_count:107 (11 samples)</title><rect x="678.947" y="530" width="173.684" height="19" fill="rgb(245,157,80)" stroke="white" stroke-width="0.3"/>
+<text x="681.947" y="544" font-family="monospace" font-size="11">_count</text>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:&lt;lambda&gt;:163 (11 samples)</title><rect x="678.947" y="510" width="173.684" height="19" fill="rgb(245,224,80)" stroke="white" stroke-width="0.3"/>
+<text x="681.947" y="524" font-family="monospace" font-size="11">&lt;lambda&gt;</text>
+</g>
+<g><title>services/api/src/axis_api/connector_ontology_proposals.py:build_connector_ontology_proposal_registry:117 (7 samples)</title><rect x="678.947" y="490" width="110.526" height="19" fill="rgb(245,188,80)" stroke="white" stroke-width="0.3"/>
+<text x="681.947" y="504" font-family="monospace" font-size="11">build_connector</text>
+</g>
+<g><title>services/api/src/axis_api/manufacturing_metadata.py:find_manufacturing_tenant_metadata:54 (7 samples)</title><rect x="678.947" y="470" width="110.526" height="19" fill="rgb(245,138,80)" stroke="white" stroke-width="0.3"/>
+<text x="681.947" y="484" font-family="monospace" font-size="11">find_manufactur</text>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:get_tenant:5102 (7 samples)</title><rect x="678.947" y="450" width="110.526" height="19" fill="rgb(245,236,80)" stroke="white" stroke-width="0.3"/>
+<text x="681.947" y="464" font-family="monospace" font-size="11">get_tenant</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:get:3702 (7 samples)</title><rect x="678.947" y="430" width="110.526" height="19" fill="rgb(245,153,80)" stroke="white" stroke-width="0.3"/>
+<text x="681.947" y="444" font-family="monospace" font-size="11">get</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_get_impl:3881 (7 samples)</title><rect x="678.947" y="410" width="110.526" height="19" fill="rgb(245,190,80)" stroke="white" stroke-width="0.3"/>
+<text x="681.947" y="424" font-family="monospace" font-size="11">_get_impl</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py:load_on_pk_identity:695 (7 samples)</title><rect x="678.947" y="390" width="110.526" height="19" fill="rgb(245,199,80)" stroke="white" stroke-width="0.3"/>
+<text x="681.947" y="404" font-family="monospace" font-size="11">load_on_pk_iden</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:execute:2373 (7 samples)</title><rect x="678.947" y="370" width="110.526" height="19" fill="rgb(245,131,80)" stroke="white" stroke-width="0.3"/>
+<text x="681.947" y="384" font-family="monospace" font-size="11">execute</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2261 (1 samples)</title><rect x="678.947" y="350" width="15.789" height="19" fill="rgb(245,135,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_connection_for_bind:2113 (1 samples)</title><rect x="678.947" y="330" width="15.789" height="19" fill="rgb(245,134,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>&lt;string&gt;:_connection_for_bind:2 (1 samples)</title><rect x="678.947" y="310" width="15.789" height="19" fill="rgb(245,171,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/state_changes.py:_go:137 (1 samples)</title><rect x="678.947" y="290" width="15.789" height="19" fill="rgb(245,182,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_connection_for_bind:1206 (1 samples)</title><rect x="678.947" y="270" width="15.789" height="19" fill="rgb(245,196,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:begin_nested:943 (1 samples)</title><rect x="678.947" y="250" width="15.789" height="19" fill="rgb(245,161,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:__init__:2812 (1 samples)</title><rect x="678.947" y="230" width="15.789" height="19" fill="rgb(245,181,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_savepoint_impl:1158 (1 samples)</title><rect x="678.947" y="210" width="15.789" height="19" fill="rgb(245,147,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_savepoint:768 (1 samples)</title><rect x="678.947" y="190" width="15.789" height="19" fill="rgb(245,157,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (1 samples)</title><rect x="678.947" y="170" width="15.789" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (1 samples)</title><rect x="678.947" y="150" width="15.789" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (1 samples)</title><rect x="678.947" y="130" width="15.789" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (1 samples)</title><rect x="678.947" y="110" width="15.789" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (1 samples)</title><rect x="678.947" y="90" width="15.789" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (1 samples)</title><rect x="678.947" y="70" width="15.789" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (6 samples)</title><rect x="694.737" y="350" width="94.737" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+<text x="697.737" y="364" font-family="monospace" font-size="11">_execute_inte</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (6 samples)</title><rect x="694.737" y="330" width="94.737" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+<text x="697.737" y="344" font-family="monospace" font-size="11">orm_execute_s</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (6 samples)</title><rect x="694.737" y="310" width="94.737" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+<text x="697.737" y="324" font-family="monospace" font-size="11">execute</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (6 samples)</title><rect x="694.737" y="290" width="94.737" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+<text x="697.737" y="304" font-family="monospace" font-size="11">_execute_on_c</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (6 samples)</title><rect x="694.737" y="270" width="94.737" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+<text x="697.737" y="284" font-family="monospace" font-size="11">_execute_clau</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (6 samples)</title><rect x="694.737" y="250" width="94.737" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+<text x="697.737" y="264" font-family="monospace" font-size="11">_execute_cont</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (6 samples)</title><rect x="694.737" y="230" width="94.737" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+<text x="697.737" y="244" font-family="monospace" font-size="11">_exec_single_</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (6 samples)</title><rect x="694.737" y="210" width="94.737" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+<text x="697.737" y="224" font-family="monospace" font-size="11">do_execute</text>
+</g>
+<g><title>services/api/src/axis_api/connector_ontology_proposals.py:build_connector_ontology_proposal_registry:118 (4 samples)</title><rect x="789.474" y="490" width="63.158" height="19" fill="rgb(245,139,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:list_connector_ontology_proposals:4695 (4 samples)</title><rect x="789.474" y="470" width="63.158" height="19" fill="rgb(245,214,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:scalars:2481 (4 samples)</title><rect x="789.474" y="450" width="63.158" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (4 samples)</title><rect x="789.474" y="430" width="63.158" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (4 samples)</title><rect x="789.474" y="410" width="63.158" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (4 samples)</title><rect x="789.474" y="390" width="63.158" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (4 samples)</title><rect x="789.474" y="370" width="63.158" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (4 samples)</title><rect x="789.474" y="350" width="63.158" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (4 samples)</title><rect x="789.474" y="330" width="63.158" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (4 samples)</title><rect x="789.474" y="310" width="63.158" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (4 samples)</title><rect x="789.474" y="290" width="63.158" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:read_connector_workspace_summary:169 (10 samples)</title><rect x="852.632" y="550" width="157.895" height="19" fill="rgb(245,222,80)" stroke="white" stroke-width="0.3"/>
+<text x="855.632" y="564" font-family="monospace" font-size="11">read_connector_workspa</text>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:_count:107 (10 samples)</title><rect x="852.632" y="530" width="157.895" height="19" fill="rgb(245,157,80)" stroke="white" stroke-width="0.3"/>
+<text x="855.632" y="544" font-family="monospace" font-size="11">_count</text>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:&lt;lambda&gt;:173 (10 samples)</title><rect x="852.632" y="510" width="157.895" height="19" fill="rgb(245,228,80)" stroke="white" stroke-width="0.3"/>
+<text x="855.632" y="524" font-family="monospace" font-size="11">&lt;lambda&gt;</text>
+</g>
+<g><title>services/api/src/axis_api/connector_egress_policies.py:read_connector_egress_policy_registry:181 (7 samples)</title><rect x="852.632" y="490" width="110.526" height="19" fill="rgb(245,185,80)" stroke="white" stroke-width="0.3"/>
+<text x="855.632" y="504" font-family="monospace" font-size="11">read_connector_</text>
+</g>
+<g><title>services/api/src/axis_api/connector_egress_policies.py:build_connector_egress_policy_registry:115 (2 samples)</title><rect x="852.632" y="470" width="31.579" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/manufacturing_metadata.py:find_manufacturing_tenant_metadata:54 (2 samples)</title><rect x="852.632" y="450" width="31.579" height="19" fill="rgb(245,138,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:get_tenant:5102 (2 samples)</title><rect x="852.632" y="430" width="31.579" height="19" fill="rgb(245,236,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:get:3702 (2 samples)</title><rect x="852.632" y="410" width="31.579" height="19" fill="rgb(245,153,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_get_impl:3881 (2 samples)</title><rect x="852.632" y="390" width="31.579" height="19" fill="rgb(245,190,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py:load_on_pk_identity:695 (2 samples)</title><rect x="852.632" y="370" width="31.579" height="19" fill="rgb(245,199,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:execute:2373 (2 samples)</title><rect x="852.632" y="350" width="31.579" height="19" fill="rgb(245,131,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (2 samples)</title><rect x="852.632" y="330" width="31.579" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (2 samples)</title><rect x="852.632" y="310" width="31.579" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (2 samples)</title><rect x="852.632" y="290" width="31.579" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (2 samples)</title><rect x="852.632" y="270" width="31.579" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (2 samples)</title><rect x="852.632" y="250" width="31.579" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (2 samples)</title><rect x="852.632" y="230" width="31.579" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (2 samples)</title><rect x="852.632" y="210" width="31.579" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (2 samples)</title><rect x="852.632" y="190" width="31.579" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_egress_policies.py:build_connector_egress_policy_registry:116 (5 samples)</title><rect x="884.211" y="470" width="78.947" height="19" fill="rgb(245,183,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="484" font-family="monospace" font-size="11">build_conne</text>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:list_connector_egress_policies:4168 (5 samples)</title><rect x="884.211" y="450" width="78.947" height="19" fill="rgb(245,207,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="464" font-family="monospace" font-size="11">list_connec</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:scalars:2481 (5 samples)</title><rect x="884.211" y="430" width="78.947" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="444" font-family="monospace" font-size="11">scalars</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (5 samples)</title><rect x="884.211" y="410" width="78.947" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="424" font-family="monospace" font-size="11">_execute_in</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (5 samples)</title><rect x="884.211" y="390" width="78.947" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="404" font-family="monospace" font-size="11">orm_execute</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (5 samples)</title><rect x="884.211" y="370" width="78.947" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="384" font-family="monospace" font-size="11">execute</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (5 samples)</title><rect x="884.211" y="350" width="78.947" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="364" font-family="monospace" font-size="11">_execute_on</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (5 samples)</title><rect x="884.211" y="330" width="78.947" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="344" font-family="monospace" font-size="11">_execute_cl</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (5 samples)</title><rect x="884.211" y="310" width="78.947" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="324" font-family="monospace" font-size="11">_execute_co</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (5 samples)</title><rect x="884.211" y="290" width="78.947" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="304" font-family="monospace" font-size="11">_exec_singl</text>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (5 samples)</title><rect x="884.211" y="270" width="78.947" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+<text x="887.211" y="284" font-family="monospace" font-size="11">do_execute</text>
+</g>
+<g><title>services/api/src/axis_api/connector_egress_policies.py:read_connector_egress_policy_registry:182 (3 samples)</title><rect x="963.158" y="490" width="47.368" height="19" fill="rgb(245,125,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:append_audit_event:1236 (3 samples)</title><rect x="963.158" y="470" width="47.368" height="19" fill="rgb(245,227,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:flush:4353 (3 samples)</title><rect x="963.158" y="450" width="47.368" height="19" fill="rgb(245,221,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_flush:4449 (3 samples)</title><rect x="963.158" y="430" width="47.368" height="19" fill="rgb(245,175,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py:execute:465 (3 samples)</title><rect x="963.158" y="410" width="47.368" height="19" fill="rgb(245,126,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py:execute:641 (3 samples)</title><rect x="963.158" y="390" width="47.368" height="19" fill="rgb(245,210,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py:save_obj:94 (3 samples)</title><rect x="963.158" y="370" width="47.368" height="19" fill="rgb(245,180,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py:_emit_insert_statements:1234 (3 samples)</title><rect x="963.158" y="350" width="47.368" height="19" fill="rgb(245,127,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (3 samples)</title><rect x="963.158" y="330" width="47.368" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (3 samples)</title><rect x="963.158" y="310" width="47.368" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (3 samples)</title><rect x="963.158" y="290" width="47.368" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1817 (2 samples)</title><rect x="963.158" y="270" width="31.579" height="19" fill="rgb(245,165,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:_init_compiled:1441 (2 samples)</title><rect x="963.158" y="250" width="31.579" height="19" fill="rgb(245,225,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:_process_execute_defaults:2385 (2 samples)</title><rect x="963.158" y="230" width="31.579" height="19" fill="rgb(245,135,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/schema.py:&lt;lambda&gt;:3633 (2 samples)</title><rect x="963.158" y="210" width="31.579" height="19" fill="rgb(245,247,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>uuid.py:uuid4:725 (2 samples)</title><rect x="963.158" y="190" width="31.579" height="19" fill="rgb(245,139,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (1 samples)</title><rect x="994.737" y="270" width="15.789" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (1 samples)</title><rect x="994.737" y="250" width="15.789" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (1 samples)</title><rect x="994.737" y="230" width="15.789" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:read_connector_workspace_summary:180 (12 samples)</title><rect x="1010.526" y="550" width="189.474" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+<text x="1013.526" y="564" font-family="monospace" font-size="11">read_connector_workspace_su</text>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:_count:107 (12 samples)</title><rect x="1010.526" y="530" width="189.474" height="19" fill="rgb(245,157,80)" stroke="white" stroke-width="0.3"/>
+<text x="1013.526" y="544" font-family="monospace" font-size="11">_count</text>
+</g>
+<g><title>services/api/src/axis_api/connector_workspace.py:&lt;lambda&gt;:184 (12 samples)</title><rect x="1010.526" y="510" width="189.474" height="19" fill="rgb(245,150,80)" stroke="white" stroke-width="0.3"/>
+<text x="1013.526" y="524" font-family="monospace" font-size="11">&lt;lambda&gt;</text>
+</g>
+<g><title>services/api/src/axis_api/connector_evidence_invariants.py:read_connector_evidence_invariant_report:1006 (10 samples)</title><rect x="1010.526" y="490" width="157.895" height="19" fill="rgb(245,144,80)" stroke="white" stroke-width="0.3"/>
+<text x="1013.526" y="504" font-family="monospace" font-size="11">read_connector_evidenc</text>
+</g>
+<g><title>services/api/src/axis_api/connector_evidence_invariants.py:build_connector_evidence_invariant_report:406 (1 samples)</title><rect x="1010.526" y="470" width="15.789" height="19" fill="rgb(245,174,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_runs.py:build_connector_sync_checkpoint_registry:547 (1 samples)</title><rect x="1010.526" y="450" width="15.789" height="19" fill="rgb(245,210,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:list_connector_sync_checkpoints:4536 (1 samples)</title><rect x="1010.526" y="430" width="15.789" height="19" fill="rgb(245,162,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:scalars:2481 (1 samples)</title><rect x="1010.526" y="410" width="15.789" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (1 samples)</title><rect x="1010.526" y="390" width="15.789" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (1 samples)</title><rect x="1010.526" y="370" width="15.789" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (1 samples)</title><rect x="1010.526" y="350" width="15.789" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (1 samples)</title><rect x="1010.526" y="330" width="15.789" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (1 samples)</title><rect x="1010.526" y="310" width="15.789" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (1 samples)</title><rect x="1010.526" y="290" width="15.789" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (1 samples)</title><rect x="1010.526" y="270" width="15.789" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (1 samples)</title><rect x="1010.526" y="250" width="15.789" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_evidence_invariants.py:build_connector_evidence_invariant_report:414 (2 samples)</title><rect x="1026.316" y="470" width="31.579" height="19" fill="rgb(245,184,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_runs.py:build_connector_sync_checkpoint_claim_registry:649 (1 samples)</title><rect x="1026.316" y="450" width="15.789" height="19" fill="rgb(245,181,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/manufacturing_metadata.py:find_manufacturing_tenant_metadata:54 (1 samples)</title><rect x="1026.316" y="430" width="15.789" height="19" fill="rgb(245,138,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:get_tenant:5102 (1 samples)</title><rect x="1026.316" y="410" width="15.789" height="19" fill="rgb(245,236,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:get:3702 (1 samples)</title><rect x="1026.316" y="390" width="15.789" height="19" fill="rgb(245,153,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_get_impl:3881 (1 samples)</title><rect x="1026.316" y="370" width="15.789" height="19" fill="rgb(245,190,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py:load_on_pk_identity:706 (1 samples)</title><rect x="1026.316" y="350" width="15.789" height="19" fill="rgb(245,190,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/result.py:one:1867 (1 samples)</title><rect x="1026.316" y="330" width="15.789" height="19" fill="rgb(245,191,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/result.py:_only_one_row:796 (1 samples)</title><rect x="1026.316" y="310" width="15.789" height="19" fill="rgb(245,243,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/result.py:_fetchone_impl:1730 (1 samples)</title><rect x="1026.316" y="290" width="15.789" height="19" fill="rgb(245,225,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/result.py:_fetchone_impl:2326 (1 samples)</title><rect x="1026.316" y="270" width="15.789" height="19" fill="rgb(245,163,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py:chunks:220 (1 samples)</title><rect x="1026.316" y="250" width="15.789" height="19" fill="rgb(245,176,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/result.py:_raw_all_rows:579 (1 samples)</title><rect x="1026.316" y="230" width="15.789" height="19" fill="rgb(245,148,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py:_fetchall_impl:2261 (1 samples)</title><rect x="1026.316" y="210" width="15.789" height="19" fill="rgb(245,166,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/cursor.py:fetchall:1201 (1 samples)</title><rect x="1026.316" y="190" width="15.789" height="19" fill="rgb(245,150,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_runs.py:build_connector_sync_checkpoint_claim_registry:652 (1 samples)</title><rect x="1042.105" y="450" width="15.789" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:list_connector_sync_checkpoint_claims:4413 (1 samples)</title><rect x="1042.105" y="430" width="15.789" height="19" fill="rgb(245,230,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:scalars:2481 (1 samples)</title><rect x="1042.105" y="410" width="15.789" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (1 samples)</title><rect x="1042.105" y="390" width="15.789" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (1 samples)</title><rect x="1042.105" y="370" width="15.789" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (1 samples)</title><rect x="1042.105" y="350" width="15.789" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (1 samples)</title><rect x="1042.105" y="330" width="15.789" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (1 samples)</title><rect x="1042.105" y="310" width="15.789" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (1 samples)</title><rect x="1042.105" y="290" width="15.789" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (1 samples)</title><rect x="1042.105" y="270" width="15.789" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (1 samples)</title><rect x="1042.105" y="250" width="15.789" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_evidence_invariants.py:build_connector_evidence_invariant_report:422 (3 samples)</title><rect x="1057.895" y="470" width="47.368" height="19" fill="rgb(245,202,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_credential_leases.py:build_connector_credential_lease_registry:394 (1 samples)</title><rect x="1057.895" y="450" width="15.789" height="19" fill="rgb(245,122,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/manufacturing_metadata.py:get_manufacturing_tenant_metadata:31 (1 samples)</title><rect x="1057.895" y="430" width="15.789" height="19" fill="rgb(245,174,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:get_tenant:5102 (1 samples)</title><rect x="1057.895" y="410" width="15.789" height="19" fill="rgb(245,236,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:get:3702 (1 samples)</title><rect x="1057.895" y="390" width="15.789" height="19" fill="rgb(245,153,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_get_impl:3881 (1 samples)</title><rect x="1057.895" y="370" width="15.789" height="19" fill="rgb(245,190,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py:load_on_pk_identity:695 (1 samples)</title><rect x="1057.895" y="350" width="15.789" height="19" fill="rgb(245,199,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:execute:2373 (1 samples)</title><rect x="1057.895" y="330" width="15.789" height="19" fill="rgb(245,131,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (1 samples)</title><rect x="1057.895" y="310" width="15.789" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (1 samples)</title><rect x="1057.895" y="290" width="15.789" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (1 samples)</title><rect x="1057.895" y="270" width="15.789" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (1 samples)</title><rect x="1057.895" y="250" width="15.789" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (1 samples)</title><rect x="1057.895" y="230" width="15.789" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (1 samples)</title><rect x="1057.895" y="210" width="15.789" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (1 samples)</title><rect x="1057.895" y="190" width="15.789" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (1 samples)</title><rect x="1057.895" y="170" width="15.789" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_credential_leases.py:build_connector_credential_lease_registry:395 (2 samples)</title><rect x="1073.684" y="450" width="31.579" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:list_connector_credential_leases:4070 (2 samples)</title><rect x="1073.684" y="430" width="31.579" height="19" fill="rgb(245,135,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:scalars:2481 (2 samples)</title><rect x="1073.684" y="410" width="31.579" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (2 samples)</title><rect x="1073.684" y="390" width="31.579" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (2 samples)</title><rect x="1073.684" y="370" width="31.579" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (2 samples)</title><rect x="1073.684" y="350" width="31.579" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (2 samples)</title><rect x="1073.684" y="330" width="31.579" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (2 samples)</title><rect x="1073.684" y="310" width="31.579" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (2 samples)</title><rect x="1073.684" y="290" width="31.579" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (2 samples)</title><rect x="1073.684" y="270" width="31.579" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (2 samples)</title><rect x="1073.684" y="250" width="31.579" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_evidence_invariants.py:build_connector_evidence_invariant_report:430 (4 samples)</title><rect x="1105.263" y="470" width="63.158" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_egress_policies.py:build_connector_egress_policy_registry:115 (1 samples)</title><rect x="1105.263" y="450" width="15.789" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/manufacturing_metadata.py:find_manufacturing_tenant_metadata:54 (1 samples)</title><rect x="1105.263" y="430" width="15.789" height="19" fill="rgb(245,138,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:get_tenant:5102 (1 samples)</title><rect x="1105.263" y="410" width="15.789" height="19" fill="rgb(245,236,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:get:3702 (1 samples)</title><rect x="1105.263" y="390" width="15.789" height="19" fill="rgb(245,153,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_get_impl:3881 (1 samples)</title><rect x="1105.263" y="370" width="15.789" height="19" fill="rgb(245,190,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/loading.py:load_on_pk_identity:695 (1 samples)</title><rect x="1105.263" y="350" width="15.789" height="19" fill="rgb(245,199,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:execute:2373 (1 samples)</title><rect x="1105.263" y="330" width="15.789" height="19" fill="rgb(245,131,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (1 samples)</title><rect x="1105.263" y="310" width="15.789" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (1 samples)</title><rect x="1105.263" y="290" width="15.789" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (1 samples)</title><rect x="1105.263" y="270" width="15.789" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (1 samples)</title><rect x="1105.263" y="250" width="15.789" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (1 samples)</title><rect x="1105.263" y="230" width="15.789" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (1 samples)</title><rect x="1105.263" y="210" width="15.789" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (1 samples)</title><rect x="1105.263" y="190" width="15.789" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (1 samples)</title><rect x="1105.263" y="170" width="15.789" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_egress_policies.py:build_connector_egress_policy_registry:116 (3 samples)</title><rect x="1121.053" y="450" width="47.368" height="19" fill="rgb(245,183,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:list_connector_egress_policies:4168 (3 samples)</title><rect x="1121.053" y="430" width="47.368" height="19" fill="rgb(245,207,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:scalars:2481 (3 samples)</title><rect x="1121.053" y="410" width="47.368" height="19" fill="rgb(245,198,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_execute_internal:2271 (3 samples)</title><rect x="1121.053" y="390" width="47.368" height="19" fill="rgb(245,235,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/context.py:orm_execute_statement:306 (3 samples)</title><rect x="1121.053" y="370" width="47.368" height="19" fill="rgb(245,168,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (3 samples)</title><rect x="1121.053" y="350" width="47.368" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (3 samples)</title><rect x="1121.053" y="330" width="47.368" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (3 samples)</title><rect x="1121.053" y="310" width="47.368" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (3 samples)</title><rect x="1121.053" y="290" width="47.368" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (3 samples)</title><rect x="1121.053" y="270" width="47.368" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (3 samples)</title><rect x="1121.053" y="250" width="47.368" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/connector_evidence_invariants.py:read_connector_evidence_invariant_report:1007 (2 samples)</title><rect x="1168.421" y="490" width="31.579" height="19" fill="rgb(245,193,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/src/axis_api/persistence.py:append_audit_event:1236 (2 samples)</title><rect x="1168.421" y="470" width="31.579" height="19" fill="rgb(245,227,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:flush:4353 (2 samples)</title><rect x="1168.421" y="450" width="31.579" height="19" fill="rgb(245,221,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/session.py:_flush:4449 (2 samples)</title><rect x="1168.421" y="430" width="31.579" height="19" fill="rgb(245,175,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py:execute:465 (2 samples)</title><rect x="1168.421" y="410" width="31.579" height="19" fill="rgb(245,126,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/unitofwork.py:execute:641 (2 samples)</title><rect x="1168.421" y="390" width="31.579" height="19" fill="rgb(245,210,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py:save_obj:94 (2 samples)</title><rect x="1168.421" y="370" width="31.579" height="19" fill="rgb(245,180,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/orm/persistence.py:_emit_insert_statements:1234 (2 samples)</title><rect x="1168.421" y="350" width="31.579" height="19" fill="rgb(245,127,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:execute:1421 (2 samples)</title><rect x="1168.421" y="330" width="31.579" height="19" fill="rgb(245,159,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/sql/elements.py:_execute_on_connection:526 (2 samples)</title><rect x="1168.421" y="310" width="31.579" height="19" fill="rgb(245,206,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_clauseelement:1643 (2 samples)</title><rect x="1168.421" y="290" width="31.579" height="19" fill="rgb(245,130,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_execute_context:1848 (2 samples)</title><rect x="1168.421" y="270" width="31.579" height="19" fill="rgb(245,173,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/base.py:_exec_single_context:1969 (2 samples)</title><rect x="1168.421" y="250" width="31.579" height="19" fill="rgb(245,155,80)" stroke="white" stroke-width="0.3"/>
+</g>
+<g><title>services/api/.venv/lib/python3.12/site-packages/sqlalchemy/engine/default.py:do_execute:952 (2 samples)</title><rect x="1168.421" y="230" width="31.579" height="19" fill="rgb(245,120,80)" stroke="white" stroke-width="0.3"/>
+</g>
+</svg>
