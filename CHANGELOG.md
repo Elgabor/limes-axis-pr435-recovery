@@ -7,6 +7,12 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Reproducible ingestion strategy benchmarks for REST, database, object and
+  document fixtures, with peak memory, queue delay, bounded admission, tenant
+  turn scheduling and checkpoint/replay checks. The experiments evaluate
+  candidates locally; production scheduling and connector contracts retain
+  their existing behavior ([#365](https://github.com/Limes-Labs/limes-axis/issues/365)).
+
 - Opt-in S3/MinIO prefix ingestion through the existing governed source outbox:
   conditional bounded reads, cross-request hash checkpoints, absence observations,
   fenced atomic metadata commits and source-neutral discovery aliases. Migration

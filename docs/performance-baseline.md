@@ -1,5 +1,10 @@
 # Performance workloads and baseline
 
+The separate [ingestion strategy experiment](ingestion-performance.md) evaluates
+batch retention, bounded parallelism, queue admission and tenant turns. It reuses
+the three-trial screening principle below with explicit source fixtures; its
+results are not measurements of the production ingestion outbox.
+
 Issue [#361](https://github.com/Limes-Labs/limes-axis/issues/361) establishes
 versioned workloads, measurement artifacts and a regression policy. The
 [initial report](benchmarks/performance-v1/README.md) records the measured

@@ -75,6 +75,45 @@ then run `python3 scripts/check_architecture_layers.py --write` to regenerate
 its Markdown. The checker never refreshes the legacy import budget;
 new vertical dependencies need redesign, and removed edges need budget removal.
 
+## Temporary self-hosted CI
+
+When the GitHub-hosted allowance is exhausted, the existing `CI` jobs can run
+on operator-provided Linux runners. This requires repository administration and
+explicit approval of the code to execute; see [ADR 0018](adr/0018-temporary-ci-runners.md).
+GitHub Actions execution on self-hosted runners is
+[free](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+Machine resources remain the operator's responsibility.
+
+1. Review the PR's complete head and workflow, then provision a disposable Linux
+   VM with no personal-directory mounts, forwarded SSH agent, host Docker socket
+   or production credentials. Install Docker, Git, curl, make, Helm and build tools;
+   the workflow installs its pinned Python/Node dependencies and browsers.
+2. Choose a fresh, unique runner label. Set repository Actions variable
+   `AXIS_CI_SELF_HOSTED_LABELS` to a JSON array such as
+   `["self-hosted", "Linux", "axis-ci-<unique-run>"]`. Set
+   `AXIS_CI_SELF_HOSTED_SHA` to the exact reviewed PR **head** SHA, not its temporary
+   merge SHA. Both variables are required. Fork PRs and push events use hosted CI.
+3. Register repository-scoped just-in-time runners with that label, one job per
+   registration, and rerun CI for that head. Three jobs execute the same Web,
+   Python and live-API steps; the integration runner needs Docker for its isolated
+   PostgreSQL and MinIO fixtures. A single VM may run the three reviewed jobs
+   sequentially with separate runner work directories. Keep job logs on GitHub.
+4. Check every job conclusion and its actual runner. Confirm the PR head and
+   base have not changed before merging. Clear both variables, remove any unused
+   runner registrations and stop the VM after the run. Preserve verification logs.
+
+A changed PR head requires a fresh review and explicit variable update. Labels
+and SHA routing are scheduling controls, not a security boundary against another
+repository writer who can modify workflows. VM isolation and short-lived runner
+credentials remain mandatory. Do not reuse a runner that processed untrusted
+code. No GitHub credential file is copied into the VM; its runner registration
+uses an ephemeral configuration and jobs retain `contents: read` permission.
+
+Self-hosted jobs disable dependency cache uploads and do not upload artifacts.
+Existing hosted jobs retain their dependency caches. Billing settings, required
+checks and their names are unchanged. Local commands alone do not create a
+successful GitHub Actions check; all three jobs must actually finish.
+
 ## Runtime and worktrees
 
 Create a worktree from the intended Git revision and run `make install` there.
@@ -155,6 +194,13 @@ the stack/project you started; it retains volumes. Live tests use namespaced
 records and can leave append-only evidence, so use a disposable database.
 
 ## Performance measurement
+
+The [ingestion experiments](ingestion-performance.md) compare batch streaming,
+materialization, bounded parallelism and tenant turns on four explicit source
+fixtures. Run `make benchmark-ingestion` with
+`BENCHMARK_ARGS='run --profile representative --trials 3 --output /tmp/axis-ingestion'`.
+This evaluates local strategies; production scheduling and live-provider capacity
+remain separate evidence.
 
 The [workload and baseline contract](performance-baseline.md) defines SME and
 enterprise fixture shapes, bounded load/soak runs, SQL/resource measurements,

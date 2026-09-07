@@ -12,7 +12,13 @@ permissions:
 jobs:
   web:
     name: Web
-    runs-on: ubuntu-latest
+    # An administrator may route one reviewed same-repository PR head to an
+    # isolated, temporary runner. Missing/mismatched variables retain hosted CI.
+    runs-on: >-
+      ${{ fromJSON(github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.head.sha == vars.AXIS_CI_SELF_HOSTED_SHA &&
+          vars.AXIS_CI_SELF_HOSTED_LABELS || '["ubuntu-latest"]') }}
 
     steps:
       - name: Checkout
@@ -27,7 +33,8 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ runner.environment != 'self-hosted' && 'pnpm' || '' }}
+          package-manager-cache: ${{ runner.environment != 'self-hosted' }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -63,7 +70,13 @@ jobs:
   # stay parallel; shared-state writes run once in Chromium with one worker.
   integration:
     name: Integration (live API)
-    runs-on: ubuntu-latest
+    # An administrator may route one reviewed same-repository PR head to an
+    # isolated, temporary runner. Missing/mismatched variables retain hosted CI.
+    runs-on: >-
+      ${{ fromJSON(github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.head.sha == vars.AXIS_CI_SELF_HOSTED_SHA &&
+          vars.AXIS_CI_SELF_HOSTED_LABELS || '["ubuntu-latest"]') }}
 
     services:
       postgres:
@@ -102,6 +115,8 @@ jobs:
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: ${{ runner.environment != 'self-hosted' }}
 
       - name: Install API dependencies
         working-directory: services/api
@@ -179,7 +194,8 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ runner.environment != 'self-hosted' && 'pnpm' || '' }}
+          package-manager-cache: ${{ runner.environment != 'self-hosted' }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -219,7 +235,13 @@ jobs:
 
   python:
     name: Python
-    runs-on: ubuntu-latest
+    # An administrator may route one reviewed same-repository PR head to an
+    # isolated, temporary runner. Missing/mismatched variables retain hosted CI.
+    runs-on: >-
+      ${{ fromJSON(github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.head.sha == vars.AXIS_CI_SELF_HOSTED_SHA &&
+          vars.AXIS_CI_SELF_HOSTED_LABELS || '["ubuntu-latest"]') }}
 
     steps:
       - name: Checkout
@@ -232,6 +254,8 @@ jobs:
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: ${{ runner.environment != 'self-hosted' }}
 
       - name: Check documentation paths
         run: make docs-check
