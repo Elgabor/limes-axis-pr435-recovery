@@ -1149,6 +1149,20 @@ class SourceIngestionOutboxDispatcher:
         if row.connector_id == S3_SOURCE_CONNECTOR_ID:
             return self._extract_s3_selections(row, evidence)
         batches_summary: list[dict] = []
+        source_dial_performed = False
+        extraction_performed = False
+
+        def attempt_evidence(*, failed: bool = False) -> dict:
+            result = {
+                **evidence,
+                "source_dial_performed": source_dial_performed,
+                "extraction_performed": extraction_performed,
+                "batches": batches_summary,
+            }
+            if failed:
+                result["failed_stage"] = EXTRACTION_STAGE
+            return result
+
         try:
             with session_scope(self._session_factory) as session:
                 repository = AxisPersistenceRepository(session)
@@ -1178,17 +1192,13 @@ class SourceIngestionOutboxDispatcher:
                         pinned_schema_fingerprint=str(selection["schema_fingerprint"]),
                         executed_by=EXTRACTION_ACTOR,
                     )
+                    source_dial_performed |= outcome.source_dial_performed
+                    extraction_performed |= outcome.extraction_performed
                     if not outcome.ok or outcome.stored is None:
                         reason = (outcome.reason or "extraction_failed")[:80]
-                        failure_evidence = {
-                            **evidence,
-                            "source_dial_performed": True,
-                            "extraction_performed": True,
-                            "batches": batches_summary,
-                            "failed_stage": EXTRACTION_STAGE,
-                        }
+                        failure_evidence = attempt_evidence(failed=True)
                         return self._finalize_failure(
-                            row, reason, permanent=True, evidence=failure_evidence
+                            row, reason, permanent=not outcome.retryable, evidence=failure_evidence
                         )
                     existing = repository.get_connector_source_extraction_batch_by_key(
                         row.tenant_id, batch_key
@@ -1207,13 +1217,7 @@ class SourceIngestionOutboxDispatcher:
                                 row,
                                 "batch_key_conflict",
                                 permanent=True,
-                                evidence={
-                                    **evidence,
-                                    "source_dial_performed": True,
-                                    "extraction_performed": True,
-                                    "failed_stage": EXTRACTION_STAGE,
-                                    "batches": batches_summary,
-                                },
+                                evidence=attempt_evidence(failed=True),
                             )
                         batches_summary.append(
                             {
@@ -1297,14 +1301,11 @@ class SourceIngestionOutboxDispatcher:
                         }
                     )
         except Exception as exc:
-            return self._finalize_failure(row, self._safe_error_code(exc), permanent=False)
-        completed_evidence = {
-            **evidence,
-            "source_dial_performed": True,
-            "extraction_performed": True,
-            "batches": batches_summary,
-        }
-        return self._finalize_success(row, completed_evidence)
+            return self._finalize_failure(
+                row, self._safe_error_code(exc), permanent=False,
+                evidence=attempt_evidence(failed=True),
+            )
+        return self._finalize_success(row, attempt_evidence())
 
     def _extract_s3_selections(self, row, evidence):
         """Prepare under SQL, read/store without a transaction, then atomically commit."""

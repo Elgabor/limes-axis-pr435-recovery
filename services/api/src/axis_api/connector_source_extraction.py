@@ -20,7 +20,8 @@ import hashlib
 import json
 import time
 from collections.abc import Callable
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Protocol
 from urllib.parse import urlparse
 
 import psycopg
@@ -131,6 +132,7 @@ class SourceExtractionOutcome(BaseModel):
     """One selection's extraction result, true to what actually ran."""
 
     ok: bool
+    retryable: bool = False
     source_dial_performed: bool = False
     extraction_performed: bool = False
     reason: str | None = None
@@ -147,6 +149,47 @@ class SourceExtractionOutcome(BaseModel):
     # returned over HTTP, or persisted in Postgres.
     payload_envelope: dict | None = None
     stored: dict | None = None
+
+
+class _SourceReadFailure(Exception):
+    def __init__(self, error: psycopg.Error, *, extraction_performed: bool):
+        if (error.sqlstate or "").startswith("28"):
+            reason = "auth_denied"
+        elif error.sqlstate == "57014":
+            reason = "source_timeout"
+        else:
+            reason = _classify_postgres_error(error)
+        self.outcome = SourceExtractionOutcome(
+            ok=False,
+            reason=reason,
+            retryable=reason in {"source_unreachable", "source_timeout"},
+            source_dial_performed=True,
+            extraction_performed=extraction_performed,
+        )
+        super().__init__(reason)
+
+
+class SourceExtractionRuntimePort(Protocol):
+    """The seam a real extraction runtime implements.
+
+    Implementations must stay truthful: flags ``source_dial_performed`` and
+    ``extraction_performed`` are true only when a source was dialed and rows
+    were read, and payloads travel only through ``payload_envelope``.
+    """
+
+    def extract_selection(
+        self,
+        *,
+        repository: AxisPersistenceRepository,
+        tenant_id: str,
+        connector_id: str,
+        request_id: str,
+        batch_key: str,
+        binding_id: str,
+        resource_name: str,
+        pinned_schema_fingerprint: str,
+        executed_by: str,
+    ) -> SourceExtractionOutcome: ...
 
 
 def _qualified_name_is_safe(resource_name: str) -> bool:
@@ -195,12 +238,23 @@ class SelfHostedPostgresExtractionRuntime:
         pinned_schema_fingerprint: str,
         executed_by: str,
     ) -> SourceExtractionOutcome:
+        if not (
+            self.settings.source_ingestion_dispatch_enabled
+            and self.settings.source_ingestion_extraction_enabled
+        ):
+            return SourceExtractionOutcome(ok=False, reason="extraction_disabled")
         if not _qualified_name_is_safe(resource_name):
             return SourceExtractionOutcome(ok=False, reason="unsafe_resource_name")
 
         binding = repository.get_connector_source_binding(tenant_id, binding_id)
         if binding is None or binding.status != "active":
             return SourceExtractionOutcome(ok=False, reason="binding_inactive")
+        if (
+            binding.connector_id != connector_id
+            or binding.resource_name != resource_name
+            or binding.schema_fingerprint != pinned_schema_fingerprint
+        ):
+            return SourceExtractionOutcome(ok=False, reason="binding_selection_mismatch")
 
         observation = repository.get_data_resource_observation(
             tenant_id, connector_id, resource_name
@@ -211,12 +265,15 @@ class SelfHostedPostgresExtractionRuntime:
         if observed_fingerprint != pinned_schema_fingerprint:
             return SourceExtractionOutcome(ok=False, reason=STALE_FINGERPRINT)
 
-        lease_gate = self._verify_lease(repository, tenant_id, binding.credential_lease_id)
+        lease_gate = self._verify_lease(
+            repository, tenant_id, connector_id, binding.credential_lease_id
+        )
         if lease_gate is not None:
             return SourceExtractionOutcome(ok=False, reason=lease_gate)
 
         policy_gate = self._verify_egress_policy(
-            repository, tenant_id, binding.egress_policy_id, binding.connection_profile_id
+            repository, tenant_id, connector_id,
+            binding.egress_policy_id, binding.connection_profile_id,
         )
         if policy_gate is not None:
             return SourceExtractionOutcome(ok=False, reason=policy_gate)
@@ -243,6 +300,8 @@ class SelfHostedPostgresExtractionRuntime:
         started = self._clock()
         try:
             read = self._read_bounded(resource_name, limits, hardening)
+        except _SourceReadFailure as exc:
+            return exc.outcome
         except psycopg.Error as exc:
             return SourceExtractionOutcome(ok=False, reason=_classify_postgres_error(exc))
 
@@ -270,7 +329,18 @@ class SelfHostedPostgresExtractionRuntime:
         storage_key = (
             f"tenants/{tenant_id}/source-ingestion/{request_id}/{binding_id}/{batch_key}.json"
         )
-        stored_meta = self._object_store.put_json(storage_key, json.loads(encoded.decode()))
+        try:
+            stored_meta = self._object_store.put_json(storage_key, json.loads(encoded.decode()))
+        except Exception:
+            # The read happened even when its payload could not be persisted.
+            # Storage diagnostics and raw rows must not enter attempt evidence.
+            return SourceExtractionOutcome(
+                ok=False,
+                reason="object_store_unavailable",
+                retryable=True,
+                source_dial_performed=True,
+                extraction_performed=True,
+            )
 
         return SourceExtractionOutcome(
             ok=True,
@@ -300,9 +370,21 @@ class SelfHostedPostgresExtractionRuntime:
         )
 
     @staticmethod
-    def _verify_lease(repository, tenant_id: str, lease_id: str) -> str | None:
+    def _verify_lease(
+        repository, tenant_id: str, connector_id: str, lease_id: str,
+    ) -> str | None:
         lease = repository.get_connector_credential_lease(tenant_id, lease_id)
-        if lease is None:
+        if lease is None or lease.connector_id != connector_id or lease.status != "active":
+            return CREDENTIAL_LEASE_NOT_EXECUTED
+        expires_at = lease.expires_at
+        if expires_at is None:
+            return CREDENTIAL_LEASE_NOT_EXECUTED
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at <= datetime.now(UTC):
+            return CREDENTIAL_LEASE_NOT_EXECUTED
+        allowed = (lease.permission_decision or {}).get("allowed")
+        if allowed is not True and allowed != "true":
             return CREDENTIAL_LEASE_NOT_EXECUTED
         result = lease.lease_result or {}
         executed = result.get("status") in {"lease_executed", "lease_renewed"}
@@ -313,7 +395,7 @@ class SelfHostedPostgresExtractionRuntime:
             secret_flag is False
             or (isinstance(secret_flag, str) and secret_flag.lower() == "false")
         )
-        if not executed or not no_secret:
+        if not executed or not no_secret or not result.get("provider_lease_ref"):
             return CREDENTIAL_LEASE_NOT_EXECUTED
         return None
 
@@ -321,11 +403,12 @@ class SelfHostedPostgresExtractionRuntime:
         self,
         repository,
         tenant_id: str,
+        connector_id: str,
         policy_id: str,
         connection_profile_id: str,
     ) -> str | None:
         policy = repository.get_connector_egress_policy(tenant_id, policy_id)
-        if policy is None or policy.status != "active":
+        if policy is None or policy.status != "active" or policy.connector_id != connector_id:
             return EGRESS_POLICY_NOT_APPROVED
         if policy.policy_mode != "approved_private_endpoint":
             return EGRESS_POLICY_NOT_APPROVED
@@ -356,113 +439,121 @@ class SelfHostedPostgresExtractionRuntime:
         limit_reason: str | None = None
         deadline = self._clock() + limits.time_budget_seconds
 
-        with psycopg.connect(
-            dsn,
-            connect_timeout=self._profile.connect_timeout_seconds,
-            **hardening,
-        ) as connection, connection.cursor() as cursor:
-            cursor.execute("SET TRANSACTION READ ONLY")
-            statement_timeout_ms = self._profile.statement_timeout_seconds * 1000
-            cursor.execute(f"SET LOCAL statement_timeout = {statement_timeout_ms}")
-            ordering_mode, pk_column = self._primary_key_probe(
-                cursor, schema_name, table_name
-            )
-            watermark: dict | None = None
-            if ordering_mode == "primary_key":
-                # Keyset paging over a verified single-column primary key:
-                # deterministic order, honest watermark, resumable later.
-                while True:
-                    if watermark is not None:
-                        cursor.execute(
-                            psycopg.sql.SQL(
-                                "SELECT * FROM {} WHERE {} > %s ORDER BY {} LIMIT %s"
-                            ).format(
-                                qualified,
-                                psycopg.sql.Identifier(pk_column),
-                                psycopg.sql.Identifier(pk_column),
-                            ),
-                            (watermark[pk_column], limits.page_size),
-                        )
-                    else:
-                        cursor.execute(
-                            psycopg.sql.SQL("SELECT * FROM {} ORDER BY {} LIMIT %s").format(
-                                qualified, psycopg.sql.Identifier(pk_column)
-                            ),
-                            (limits.page_size,),
-                        )
+        extraction_performed = False
+        try:
+            with psycopg.connect(
+                dsn,
+                connect_timeout=self._profile.connect_timeout_seconds,
+                **hardening,
+            ) as connection, connection.cursor() as cursor:
+                cursor.execute("SET TRANSACTION READ ONLY")
+                statement_timeout_ms = (
+                    self._profile.statement_timeout_seconds * 1000
+                )
+                cursor.execute(f"SET LOCAL statement_timeout = {statement_timeout_ms}")
+                ordering_mode, pk_column = self._primary_key_probe(
+                    cursor, schema_name, table_name
+                )
+                watermark: dict | None = None
+                if ordering_mode == "primary_key":
+                    # Keyset paging over a verified single-column primary key:
+                    # deterministic order, honest watermark, resumable later.
+                    while True:
+                        if watermark is not None:
+                            cursor.execute(
+                                psycopg.sql.SQL(
+                                    "SELECT * FROM {} WHERE {} > %s ORDER BY {} LIMIT %s"
+                                ).format(
+                                    qualified,
+                                    psycopg.sql.Identifier(pk_column),
+                                    psycopg.sql.Identifier(pk_column),
+                                ),
+                                (watermark[pk_column], limits.page_size),
+                            )
+                        else:
+                            cursor.execute(
+                                psycopg.sql.SQL("SELECT * FROM {} ORDER BY {} LIMIT %s").format(
+                                    qualified, psycopg.sql.Identifier(pk_column)
+                                ),
+                                (limits.page_size,),
+                            )
+                        columns = [desc.name for desc in cursor.description]
+                        fetched = cursor.fetchmany(limits.page_size)
+                        extraction_performed = True
+                        if not fetched:
+                            break
+                        stop = False
+                        for raw_row in fetched:
+                            row = _row_to_dict(columns, raw_row)
+                            row_bytes = len(json.dumps(row, sort_keys=True).encode())
+                            gate = _cap_gate(
+                                row_bytes,
+                                rows,
+                                byte_size,
+                                limits,
+                                deadline,
+                                self._clock,
+                            )
+                            if gate is not None:
+                                truncated = True
+                                limit_reason = gate
+                                stop = True
+                                break
+                            rows.append(row)
+                            byte_size += row_bytes
+                            watermark = {pk_column: row[pk_column]}
+                        if stop or len(fetched) < limits.page_size:
+                            break
+                    if not truncated and len(rows) >= limits.max_rows:
+                        # Exact-fit final page: probe once so truncation truth is exact.
+                        has_more = self._probe_more_pk(cursor, qualified, pk_column, watermark)
+                        if has_more:
+                            truncated = True
+                            limit_reason = "row_limit"
+                else:
+                    # No stable ordering key: one single bounded pass, no cursor,
+                    # no resume claim. LIMIT max_rows+1 makes truncation truth
+                    # structural; the watermark stays null by construction.
+                    cursor.execute(
+                        psycopg.sql.SQL("SELECT * FROM {} LIMIT %s").format(qualified),
+                        (limits.max_rows + 1,),
+                    )
                     columns = [desc.name for desc in cursor.description]
-                    fetched = cursor.fetchmany(limits.page_size)
-                    if not fetched:
-                        break
-                    stop = False
-                    for raw_row in fetched:
-                        row = _row_to_dict(columns, raw_row)
-                        row_bytes = len(json.dumps(row, sort_keys=True).encode())
-                        gate = _cap_gate(
-                            row_bytes,
-                            rows,
-                            byte_size,
-                            limits,
-                            deadline,
-                            self._clock,
-                        )
-                        if gate is not None:
-                            truncated = True
-                            limit_reason = gate
-                            stop = True
+                    while True:
+                        fetched = cursor.fetchmany(limits.page_size)
+                        extraction_performed = True
+                        if not fetched:
                             break
-                        rows.append(row)
-                        byte_size += row_bytes
-                        watermark = {pk_column: row[pk_column]}
-                    if stop or len(fetched) < limits.page_size:
-                        break
-                if not truncated and len(rows) >= limits.max_rows:
-                    # Exact-fit final page: probe once so truncation truth is exact.
-                    has_more = self._probe_more_pk(cursor, qualified, pk_column, watermark)
-                    if has_more:
-                        truncated = True
-                        limit_reason = "row_limit"
-            else:
-                # No stable ordering key: one single bounded pass, no cursor,
-                # no resume claim. LIMIT max_rows+1 makes truncation truth
-                # structural; the watermark stays null by construction.
-                cursor.execute(
-                    psycopg.sql.SQL("SELECT * FROM {} LIMIT %s").format(qualified),
-                    (limits.max_rows + 1,),
-                )
-                columns = [desc.name for desc in cursor.description]
-                while True:
-                    fetched = cursor.fetchmany(limits.page_size)
-                    if not fetched:
-                        break
-                    stop = False
-                    for raw_row in fetched:
-                        row = _row_to_dict(columns, raw_row)
-                        row_bytes = len(json.dumps(row, sort_keys=True).encode())
-                        gate = _cap_gate(
-                            row_bytes,
-                            rows,
-                            byte_size,
-                            limits,
-                            deadline,
-                            self._clock,
-                        )
-                        if gate is not None:
-                            truncated = True
-                            limit_reason = gate
-                            stop = True
+                        stop = False
+                        for raw_row in fetched:
+                            row = _row_to_dict(columns, raw_row)
+                            row_bytes = len(json.dumps(row, sort_keys=True).encode())
+                            gate = _cap_gate(
+                                row_bytes,
+                                rows,
+                                byte_size,
+                                limits,
+                                deadline,
+                                self._clock,
+                            )
+                            if gate is not None:
+                                truncated = True
+                                limit_reason = gate
+                                stop = True
+                                break
+                            rows.append(row)
+                            byte_size += row_bytes
+                        if stop or len(fetched) < limits.page_size:
                             break
-                        rows.append(row)
-                        byte_size += row_bytes
-                    if stop or len(fetched) < limits.page_size:
-                        break
 
-            if truncated:
-                limit_reason = limit_reason or (
-                    "time_budget"
-                    if self._clock() >= deadline
-                    else ("byte_limit" if byte_size >= limits.max_bytes else "row_limit")
-                )
+                if truncated:
+                    limit_reason = limit_reason or (
+                        "time_budget"
+                        if self._clock() >= deadline
+                        else ("byte_limit" if byte_size >= limits.max_bytes else "row_limit")
+                    )
+        except psycopg.Error as exc:
+            raise _SourceReadFailure(exc, extraction_performed=extraction_performed) from None
 
         return {
             "ordering_mode": ordering_mode,
