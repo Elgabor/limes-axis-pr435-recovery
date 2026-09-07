@@ -1,13 +1,15 @@
 import csv
 import hashlib
 import re
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 from urllib.parse import urlparse
 
 import psycopg
 from psycopg import sql
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from axis_api.connector_secret_resolution import (
     SECRET_RESOLUTION_RESOLVER_NOT_CONFIGURED as _RESOLVER_NOT_CONFIGURED_REASON,
@@ -213,7 +215,51 @@ class ConnectorLiveSyncFieldMapping(BaseModel):
     ontology_target: str = Field(min_length=1)
 
 
+class ConnectorLiveSyncContractRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    versions: tuple[str, ...] = ("0.1",)
+    read_mode: str = "snapshot_bounded"
+    output_shape: str = "legacy_proposals"
+    required_extensions: tuple[str, ...] = ()
+    optional_extensions: tuple[str, ...] = ()
+
+
+class ConnectorLiveSyncDescriptor(BaseModel):
+    """Internal host capabilities, independent of manifest and SDK versions."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_kind: Literal["csv_dropzone", "postgresql"]
+    contract_versions: tuple[Literal["0.1"], ...] = ("0.1",)
+    read_modes: tuple[Literal["snapshot_bounded"], ...] = ("snapshot_bounded",)
+    output_shape: Literal["legacy_proposals"] = "legacy_proposals"
+    incremental: Literal[False] = False
+    cdc: Literal[False] = False
+    source_writeback: Literal[False] = False
+    delete_capture: Literal[False] = False
+    resume: Literal["legacy_offset_within_run"] = "legacy_offset_within_run"
+    durable_resume: Literal["not_verified"] = "not_verified"
+    consistency: Literal["source_may_change_between_batches"] = "source_may_change_between_batches"
+    completion_evidence: Literal["bounded_or_unknown"] = "bounded_or_unknown"
+
+    def incompatibility(self, request: ConnectorLiveSyncContractRequest) -> str | None:
+        if not set(self.contract_versions).intersection(request.versions):
+            return "contract_version_unsupported"
+        if request.read_mode not in self.read_modes:
+            return "unsupported_mode"
+        if request.output_shape != self.output_shape:
+            return "unsupported_output_shape"
+        # Neither production reader implements extensions in host contract 0.1.
+        if request.required_extensions:
+            return "required_extension_unsupported"
+        return None
+
+
 class ConnectorLiveSyncPlanRequest(BaseModel):
+    contract: ConnectorLiveSyncContractRequest = Field(
+        default_factory=ConnectorLiveSyncContractRequest
+    )
     tenant_id: str = Field(min_length=1)
     connector_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
@@ -229,6 +275,8 @@ class ConnectorLiveSyncPlanRequest(BaseModel):
 class ConnectorLiveSyncPlan(BaseModel):
     adapter: str = Field(min_length=1)
     status: str = Field(min_length=1)
+    descriptor: ConnectorLiveSyncDescriptor | None = None
+    contract_version: Literal["0.1"] | None = None
     source_mode: str = Field(default="", min_length=0)
     source_ref: str = Field(default="", min_length=0)
     block_reason: str = Field(default="", min_length=0)
@@ -240,6 +288,9 @@ class ConnectorLiveSyncPlan(BaseModel):
 
 
 class ConnectorLiveSyncBatchRequest(BaseModel):
+    contract: ConnectorLiveSyncContractRequest = Field(
+        default_factory=ConnectorLiveSyncContractRequest
+    )
     tenant_id: str = Field(min_length=1)
     connector_id: str = Field(min_length=1)
     run_id: str = Field(min_length=1)
@@ -264,6 +315,9 @@ class ConnectorLiveSyncRecord(BaseModel):
 class ConnectorLiveSyncBatchResult(BaseModel):
     adapter: str = Field(min_length=1)
     status: str = Field(min_length=1)
+    output_shape: Literal["legacy_proposals"] = "legacy_proposals"
+    completion_evidence: Literal["bounded_or_unknown"] = "bounded_or_unknown"
+    completion_reason: Literal["unknown_legacy", "row_limit", "failed"] = "unknown_legacy"
     records: list[ConnectorLiveSyncRecord] = Field(default_factory=list)
     records_rejected: int = Field(default=0, ge=0)
     next_offset: int = Field(default=0, ge=0)
@@ -282,6 +336,13 @@ class ConnectorLiveSyncRuntime(Protocol):
         self,
         request: ConnectorLiveSyncBatchRequest,
     ) -> ConnectorLiveSyncBatchResult: ...
+
+
+@dataclass(frozen=True)
+class _LiveSyncAdapter:
+    descriptor: ConnectorLiveSyncDescriptor
+    plan: Callable[[ConnectorLiveSyncPlanRequest], ConnectorLiveSyncPlan]
+    read_batch: Callable[[ConnectorLiveSyncBatchRequest], ConnectorLiveSyncBatchResult]
 
 
 class DeferredConnectorExecutionRuntime:
@@ -834,6 +895,18 @@ class SelfHostedConnectorLiveSyncRuntime:
         self.lease_scoped_secret_resolution_enabled = lease_scoped_secret_resolution_enabled
         self.runtime_egress_enforcement_enabled = runtime_egress_enforcement_enabled
         self.secret_resolver = secret_resolver
+        self._adapters = {
+            FILE_CSV_LIVE_SYNC_CONNECTOR_ID: _LiveSyncAdapter(
+                ConnectorLiveSyncDescriptor(source_kind="csv_dropzone"),
+                self._plan_file_csv,
+                self._read_file_csv_batch,
+            ),
+            EXTERNAL_DB_LIVE_SYNC_CONNECTOR_ID: _LiveSyncAdapter(
+                ConnectorLiveSyncDescriptor(source_kind="postgresql"),
+                self._plan_external_db,
+                self._read_external_db_batch,
+            ),
+        }
 
     def plan(self, request: ConnectorLiveSyncPlanRequest) -> ConnectorLiveSyncPlan:
         if not request.field_mappings:
@@ -841,27 +914,39 @@ class SelfHostedConnectorLiveSyncRuntime:
                 adapter=self.adapter_name,
                 reason="field_mappings_missing",
             )
-        if request.connector_id == FILE_CSV_LIVE_SYNC_CONNECTOR_ID:
-            return self._plan_file_csv(request)
-        if request.connector_id == EXTERNAL_DB_LIVE_SYNC_CONNECTOR_ID:
-            return self._plan_external_db(request)
-        return self._blocked_plan(
-            adapter=self.adapter_name,
-            reason="live_sync_unsupported_connector",
-        )
+        adapter = self._adapters.get(request.connector_id)
+        if adapter is None:
+            return self._blocked_plan(
+                adapter=self.adapter_name,
+                reason="live_sync_unsupported_connector",
+            )
+        reason = adapter.descriptor.incompatibility(request.contract)
+        if reason is not None:
+            return self._blocked_plan(adapter=self.adapter_name, reason=reason)
+        return adapter.plan(request).model_copy(update={
+            "descriptor": adapter.descriptor,
+            "contract_version": adapter.descriptor.contract_versions[0],
+        })
 
     def read_batch(
         self,
         request: ConnectorLiveSyncBatchRequest,
     ) -> ConnectorLiveSyncBatchResult:
-        if request.connector_id == FILE_CSV_LIVE_SYNC_CONNECTOR_ID:
-            return self._read_file_csv_batch(request)
-        if request.connector_id == EXTERNAL_DB_LIVE_SYNC_CONNECTOR_ID:
-            return self._read_external_db_batch(request)
+        adapter = self._adapters.get(request.connector_id)
+        if adapter is not None:
+            reason = adapter.descriptor.incompatibility(request.contract)
+            if reason is None:
+                batch = adapter.read_batch(request)
+                if batch.status != LIVE_SYNC_BATCH_READ_STATUS:
+                    return batch.model_copy(update={"completion_reason": "failed"})
+                return batch
+        else:
+            reason = "live_sync_unsupported_connector"
         return ConnectorLiveSyncBatchResult(
             adapter=self.adapter_name,
             status=LIVE_SYNC_BATCH_FAILED_STATUS,
-            error_code="live_sync_unsupported_connector",
+            error_code=reason,
+            completion_reason="failed",
         )
 
     def _plan_file_csv(self, request: ConnectorLiveSyncPlanRequest) -> ConnectorLiveSyncPlan:
@@ -1015,6 +1100,7 @@ class SelfHostedConnectorLiveSyncRuntime:
             records_rejected=records_rejected,
             next_offset=next_offset,
             source_exhausted=not window.has_more,
+            completion_reason="row_limit" if next_offset >= profile.max_rows else "unknown_legacy",
             notes=["File CSV batch read from the allowlisted local dropzone."],
         )
 
@@ -1035,6 +1121,7 @@ class SelfHostedConnectorLiveSyncRuntime:
                 status=LIVE_SYNC_BATCH_READ_STATUS,
                 next_offset=request.offset,
                 source_exhausted=True,
+                completion_reason="row_limit",
             )
         selected_columns = _requested_or_default_columns(
             request.input_summary.get("selected_columns", ""),
@@ -1112,6 +1199,7 @@ class SelfHostedConnectorLiveSyncRuntime:
             records_rejected=records_rejected,
             next_offset=next_offset,
             source_exhausted=len(rows) < batch_size or next_offset >= profile.row_limit,
+            completion_reason="row_limit" if next_offset >= profile.row_limit else "unknown_legacy",
             evidence_summary=evidence_summary,
             notes=["Postgres batch read through the allowlisted profile boundary."],
         )
