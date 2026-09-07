@@ -1,6 +1,6 @@
 .PHONY: install lint test typecheck build-web docs-check edition-matrix-check edition-export-readiness openapi openapi-check route-inventory route-inventory-check test-sdk security-check deployment-check deployment-profile-render-check deployment-rollout-rehearsal-plan deployment-rollout-rehearsal deployment-ha-rehearsal-plan deployment-ha-rehearsal deployment-load-rehearsal-plan deployment-load-rehearsal deployment-tls-readiness-plan deployment-tls-readiness deployment-backup-rehearsal-plan deployment-backup-rehearsal deployment-restore-rehearsal-plan deployment-restore-rehearsal deployment-typedb-recovery-rehearsal-plan deployment-typedb-recovery-rehearsal deployment-object-storage-recovery-rehearsal-plan deployment-object-storage-recovery-rehearsal deployment-temporal-recovery-rehearsal-plan deployment-temporal-recovery-rehearsal deployment-secret-rotation-rehearsal-plan deployment-secret-rotation-rehearsal container-check container-release-check container-security-check vulnerability-management-check container-build-api container-build-web container-build-worker container-build container-scan-local worker test-api test-model-persistence-postgres test-worker test-web test-integration test-e2e-connectors-source dev-stack-up dev-stack-down demo-stack-up demo-stack-down demo-db-upgrade demo-api demo-api-sso demo-web demo-keycloak-check demo-keycloak-bootstrap-check demo-check demo-check-live demo-verify demo-backup-plan demo-backup-local demo-restore-local
 
-.PHONY: verify test-schemas test-e2e-smoke benchmark-lineage settings-reference settings-reference-check
+.PHONY: verify test-schemas test-e2e-smoke benchmark-lineage settings-reference settings-reference-check architecture-check
 
 PYTEST_ARGS ?=
 WEB_TEST_ARGS ?=
@@ -21,7 +21,7 @@ install:
 
 lint:
 	pnpm lint
-	cd services/api && uv run ruff check --config pyproject.toml . ../../scripts/prepare_oss_export.py
+	cd services/api && uv run ruff check --config pyproject.toml . ../../scripts/prepare_oss_export.py ../../scripts/check_architecture_layers.py
 	cd services/worker && uv run ruff check .
 	cd packages/sdk-python && uv run ruff check .
 
@@ -73,8 +73,11 @@ test-integration:
 build-web:
 	pnpm --filter @limes-axis/web build
 
-docs-check: edition-matrix-check
+docs-check: edition-matrix-check architecture-check
 	python3 scripts/check_documentation_paths.py
+
+architecture-check:
+	python3 scripts/check_architecture_layers.py
 
 edition-matrix-check:
 	python3 scripts/check_edition_matrix.py

@@ -68,6 +68,13 @@ The [OSS candidate contract](oss-export.md) documents the offline file allowlist
 manifest checks and separate release review. Its synthetic repository tests run
 in the API suite; no publication or production export is part of `make verify`.
 
+The [layer ownership contract](layered-architecture.md) is checked by
+`make architecture-check`, also included in `make docs-check` and CI. Update
+`docs/architecture-layers.json` when service/issue ownership or public ports change,
+then run `python3 scripts/check_architecture_layers.py --write` to regenerate
+its Markdown. The checker never refreshes the legacy import budget;
+new vertical dependencies need redesign, and removed edges need budget removal.
+
 ## Runtime and worktrees
 
 Create a worktree from the intended Git revision and run `make install` there.

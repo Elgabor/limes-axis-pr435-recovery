@@ -13,6 +13,13 @@ with a provenance manifest; there is no OSS repository or publisher. The
 [edition capability matrix](./editions.md) classifies product scope without
 treating mixed top-level directories as release units.
 
+The [seven-layer capability contract](layered-architecture.md) assigns one
+accountable owner and explicit dependencies to current services and the recorded
+open-issue snapshot. Its [generated inventory](architecture-layers-inventory.md)
+also exposes existing manufacturing-reference import debt. The offline guard
+rejects new core-to-vertical imports; it does not claim legacy decoupling or add
+runtime services. See [ADR 0015](adr/0015-layered-capability-ownership.md).
+
 ## Current Component and Data Flow
 
 ```mermaid

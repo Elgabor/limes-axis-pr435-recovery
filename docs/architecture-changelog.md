@@ -19,6 +19,23 @@ runtime dependency changes. Each entry should include:
 Small implementation increments that do not alter architecture belong in the
 normal release changelog or pull request, not here.
 
+## 2026-09-07 — Assign Capability Layers and Guard Vertical Dependencies
+
+**Issue:** [#352](https://github.com/Limes-Labs/limes-axis/issues/352)
+
+**Boundary:** ownership across the existing product, public ports and future
+vertical extensions, without a runtime service split.
+
+The [layer contract](layered-architecture.md) assigns one owner plus dependencies
+to current components and a dated open-issue snapshot. It records failure, tenant,
+deployment and build-versus-adopt decisions. A source-parsing guard rejects new
+core-to-vertical imports and tracks exact historical symbol/count debt.
+
+Compatibility: existing DTOs, routes, IDs and runtime gates remain unchanged;
+manufacturing-reference coupling is inventoried, not declared removed. Registry,
+import and generated-document tests run in the API suite, and docs-check runs
+the guard. [ADR 0015](adr/0015-layered-capability-ownership.md) records the decision.
+
 ## 2026-09-07 — Define Governed Event Ingress
 
 **Issue:** [#340](https://github.com/Limes-Labs/limes-axis/issues/340)

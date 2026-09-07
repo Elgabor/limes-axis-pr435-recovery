@@ -7,6 +7,11 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Seven-layer architecture contract with component/issue ownership, public port
+  and backend adoption decisions, plus an offline guard against new core-to-vertical
+  imports. Existing reference coupling remains explicitly inventoried
+  ([#352](https://github.com/Limes-Labs/limes-axis/issues/352)).
+
 - Opt-in connector event protocol 1.1 with scoped replay/ordering decisions,
   bounded signed webhook validation and a tested offline reference. Kafka/MQTT
   mappings define future host adoption; no event transport is enabled
