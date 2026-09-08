@@ -426,10 +426,13 @@ def test_bounded_reader_uses_profile_timeout_and_reports_ordering(
 ) -> None:
     """Exercise the real read loop with only the database driver substituted."""
 
+    from axis_api.connector_source_schema import postgres_schema_fingerprint
+
+    schema_columns = [("order_id", "integer", True, has_primary_key, "", "")]
     connect = MagicMock()
     cursor = connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value
     cursor.description = [SimpleNamespace(name="order_id")]
-    cursor.fetchall.return_value = [("order_id",)] if has_primary_key else []
+    cursor.fetchall.return_value = schema_columns
     cursor.fetchmany.side_effect = [[(i,) for i in range(1, source_rows + 1)], []]
     monkeypatch.setattr("axis_api.connector_source_extraction.psycopg.connect", connect)
 
@@ -438,11 +441,13 @@ def test_bounded_reader_uses_profile_timeout_and_reports_ordering(
         RESOURCE,
         ExtractionLimits(max_rows=max_rows, max_bytes=1024, page_size=5, time_budget_seconds=30),
         {},
+        postgres_schema_fingerprint(schema_columns),
+        "postgres_schema_v2",
     )
 
     statements = [call.args[0] for call in cursor.execute.call_args_list]
     assert statements[:2] == [
-        "SET TRANSACTION READ ONLY",
+        "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
         "SET LOCAL statement_timeout = 10000",
     ]
     assert connect.call_args.kwargs["connect_timeout"] == 3
