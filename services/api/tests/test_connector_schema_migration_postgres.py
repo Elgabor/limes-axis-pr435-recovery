@@ -1,4 +1,4 @@
-"""Full migration chain and P4 data-preservation proof in a dedicated test database."""
+"""Full schema migration and data-preservation proof in a dedicated test database."""
 
 import os
 from uuid import uuid4

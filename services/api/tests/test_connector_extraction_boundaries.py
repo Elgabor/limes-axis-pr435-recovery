@@ -1,4 +1,4 @@
-"""P2 tests at the real extraction and dispatch boundaries; no source network."""
+"""Tests at the real extraction and dispatch boundaries; no source network."""
 
 from types import SimpleNamespace
 

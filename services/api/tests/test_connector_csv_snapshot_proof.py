@@ -1,4 +1,4 @@
-"""P5 CSV snapshot characterization; no claim of durable legacy offset resume."""
+"""CSV snapshot characterization; no claim of durable legacy offset resume."""
 
 import hashlib
 from io import BytesIO

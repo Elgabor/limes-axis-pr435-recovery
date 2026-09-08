@@ -11,7 +11,7 @@ not certify a deployment or enable a connector. The
 | Connector ID | Source | Implemented adapter boundary |
 | --- | --- | --- |
 | `file_csv_manufacturing_assets` | CSV in an allowlisted local dropzone | Header validation, bounded file batches, checkpoints and review-only proposals |
-| `external_db_operational_mirror` | Postgres | Metadata preview, bounded verification/discovery, governed live-sync batches and activated-table extraction |
+| `external_db_operational_mirror` | Postgres | Versioned metadata discovery, bounded live-sync batches and durable activated-table extraction |
 | `s3_object_storage` | S3 / MinIO approved bucket prefix | Opt-in protocol 1.0 discovery and bounded incremental object extraction through the ingestion outbox |
 
 The CSV/Postgres IDs are dispatched by
@@ -41,7 +41,7 @@ boundaries in the next section; they are not new permissions or switches.
 | Files | Conditional: bounded CSV dropzone reads and preview; no document parsing | Not a file-source adapter; raw extraction envelopes can be written to the governed object store | CSV: G0–G7. Object output: G0, G2–G7. The separately gated [S3 input](s3-source-ingestion.md) adds prefix listing, conditional object reads and cross-request hash checkpoints. |
 | Streams | Absent: batch file reader only | Absent: bounded pull reads only | [Event protocol 1.1](connector-events.md) defines webhook/queue/industrial semantics and an offline reference; production ingress remains absent and requires G0–G7 adoption. Temporal scheduling is not a stream source. |
 | Writeback | No external source writeback | Read-only source sessions; no external source writeback | Governed Axis ontology promotion exists separately: G0, G1, G7 plus the existing approval/workflow/policy/idempotency boundary. It does not authorize writes to the source. |
-| Retries | Conditional: failed-run resume from committed batches; duplicate completed execution replays | Same live-sync path; activated ingestion additionally has bounded jittered retries, fenced claims, dead-letter and governed requeue | G0–G7 for live sync; G0, G2–G7 for ingestion. No generic provider-specific retry adapter or cross-source delivery guarantee. |
+| Retries | Conditional: failed-run resume from committed batches; duplicate completed execution replays | Same live-sync path; activated ingestion additionally verifies committed raw batches before reuse, with bounded jittered retries, fenced claims, dead-letter and governed requeue | G0–G7 for live sync; G0, G2–G7 for ingestion. No generic provider-specific retry adapter or cross-source delivery guarantee. |
 | Observability | Metadata-only runs, checkpoints, claims, last successful sync and evidence views | Same, plus resource observations, binding eligibility, ingestion overview, attempt history and extraction-batch reconciliation | G0, G7 for reads; evidence originates in the gated write paths. Optional worker telemetry emits outcome counts. The SDK now supplies a [shared health model](connector-conformance.md); production collection and source-specific SLO evidence remain separate. |
 
 ## Existing gates and owners
@@ -58,10 +58,10 @@ path retains its existing contract.
 | G1 — Manifest and run lifecycle | Registration is not activation. Governed live sync requires a persisted `active_live` manifest, explicit live policy/mode and a valid governed run; preview/configuration/promotion have their own existing lifecycle checks. | [Manifest lifecycle](../services/api/src/axis_api/connector_manifests.py), [run gates](../services/api/src/axis_api/connector_runs.py), [lifecycle tests](../services/api/tests/test_connector_manifests.py), [live-sync tests](../services/api/tests/test_connector_live_sync.py) |
 | G2 — Credentials | Handles are references. Source operations resolve executed lease evidence server-side, bound to tenant/connector; material stays in memory. `env://` is the implemented live resolver. Static-DSN paths remain distinct. | [Lease boundary](../services/api/src/axis_api/connector_credential_leases.py), [resolver](../services/api/src/axis_api/connector_secret_resolution.py), [resolver tests](../services/api/tests/test_connector_lease_scoped_live_sync.py) |
 | G3 — Egress and source profile | Persisted approved-private-endpoint policy and connection-profile binding. Discovery/live reads add dial-target hash matching when runtime enforcement is enabled. Activated extraction checks its static DSN against approved endpoint evidence. | [Egress policies](../services/api/src/axis_api/connector_egress_policies.py), [dial enforcement](../services/api/src/axis_api/connector_execution.py), [extraction](../services/api/src/axis_api/connector_source_extraction.py) |
-| G4 — Schema and binding | CSV required columns/header fingerprint. DB schema allowlists and observations; activation validates selected fingerprints and persists bindings atomically. Ingestion pins binding fingerprints server-side and rejects stale selections. | [CSV preview](../services/api/src/axis_api/connectors.py), [discovery](../services/api/src/axis_api/connector_postgres_discovery.py), [activation](../services/api/src/axis_api/connector_source_activation.py), [ingestion](../services/api/src/axis_api/connector_source_ingestion.py) |
-| G5 — Runtime, claims and replay | Default-off live/extraction gates, per-run idempotency, checkpoint ownership and committed batch resume. The ingestion outbox uses claim tokens, lease expiry, bounded retries and dead-letter; requeue preserves previous attempt evidence. | [Live-sync runner](../services/api/src/axis_api/connector_runs.py), [ingestion dispatcher](../services/api/src/axis_api/connector_source_ingestion.py), [worker composition](../services/worker/src/axis_worker/runtime.py), [worker workflow](../services/worker/src/axis_worker/workflows/connector_live_sync_workflows.py) |
+| G4 — Schema and binding | CSV required columns/header fingerprint. Postgres discovery fingerprints bounded names, types, nullability, primary-key membership, identity and generated modes. Activation validates the fingerprint version and replaces an active binding only through an explicit predecessor. Ingestion rejects stale selections before reading rows. | [CSV preview](../services/api/src/axis_api/connectors.py), [discovery](../services/api/src/axis_api/connector_postgres_discovery.py), [activation](../services/api/src/axis_api/connector_source_activation.py), [schema evidence](../services/api/src/axis_api/connector_source_schema.py), [ingestion](../services/api/src/axis_api/connector_source_ingestion.py) |
+| G5 — Runtime, claims and replay | Default-off live/extraction gates, per-run idempotency and checkpoint ownership. PostgreSQL raw batches use content-addressed keys, commit under an unexpired claim and are verified before replay; a governed requeue creates a new snapshot generation. The S3 path retains its binding checkpoint CAS. | [Live-sync runner](../services/api/src/axis_api/connector_runs.py), [ingestion dispatcher](../services/api/src/axis_api/connector_source_ingestion.py), [worker composition](../services/worker/src/axis_worker/runtime.py), [worker workflow](../services/worker/src/axis_worker/workflows/connector_live_sync_workflows.py) |
 | G6 — Bounded source access | CSV root/path and file/row/batch limits; DB read-only sessions, bounded profiles and queries. Extraction adds row/byte/page/time caps, explicit truncation and oversized-row refusal. | [Readers](../services/api/src/axis_api/connector_execution.py), [extraction reader](../services/api/src/axis_api/connector_source_extraction.py), [reader tests](../services/api/tests/test_connector_source_extraction.py) |
-| G7 — Evidence and downstream use | Tenant-scoped metadata, append-only audit, redaction and read scopes. Live-sync records feed reviewable proposals. Extraction rows go into object-store envelopes; database/API evidence contains counts, digests and watermark presence. Approval-gated exports do not bypass source or graph permissions. | [Evidence invariants](../services/api/src/axis_api/connector_evidence_invariants.py), [batch exports](../services/api/src/axis_api/connector_source_batch_exports.py), [promotion](../services/api/src/axis_api/connector_ontology_promotions.py), [batch tests](../services/api/tests/test_connector_extraction_batches.py) |
+| G7 — Evidence and downstream use | Tenant-scoped metadata, append-only audit, redaction and read scopes. Live-sync records feed reviewable proposals. Extraction rows go only into object-store envelopes; database/API evidence contains counts, digests, storage references and watermark presence. Stored size and checksum must match before a raw batch is accepted or reused. Approval-gated exports do not bypass source or graph permissions. | [Evidence invariants](../services/api/src/axis_api/connector_evidence_invariants.py), [batch exports](../services/api/src/axis_api/connector_source_batch_exports.py), [promotion](../services/api/src/axis_api/connector_ontology_promotions.py), [batch tests](../services/api/tests/test_connector_extraction_batches.py) |
 
 ### Runtime profiles are distinct
 
@@ -70,6 +70,10 @@ path retains its existing contract.
   The Postgres adapter also requires `AXIS_EXTERNAL_DB_SYNC_EXECUTION_ENABLED`,
   `AXIS_EXTERNAL_DB_LIVE_QUERY_PREFLIGHT_ENABLED` and
   `AXIS_EXTERNAL_DB_LIVE_QUERY_EXECUTION_ENABLED`.
+  Its legacy host contract is version `0.1`, produces reviewable proposals and
+  rejects incompatible versions, modes, outputs and required extensions before
+  source access. It does not claim CDC, writeback or durable offset resume. This
+  path is separate from the authoring SDK protocol used by S3.
 - Postgres discovery uses `AXIS_EXTERNAL_DB_DISCOVERY_ENABLED`. A configured DSN or
   lease resolver does not override scopes, lease evidence or egress policy.
 - Lease-scoped material resolution and connect-time enforcement are separate
@@ -99,6 +103,32 @@ correction, the no-primary-key path exposed an uninitialized watermark; it now
 returns `null`, preserving the documented no-resume contract. Regression cases
 cover empty, complete and row-capped reads with and without a primary key.
 
+## Postgres schema and durable raw extraction
+
+Postgres discovery and extraction now share one bounded catalog query and the
+`postgres_schema_v2` fingerprint. A complete fingerprint covers column order,
+database type, nullability, primary-key membership, identity mode and generated
+mode. A truncated discovery result cannot be activated. If the live table no
+longer matches the active binding, extraction stops before reading row data. A
+new binding can replace the old one only by naming its active predecessor; the
+old binding remains as immutable history.
+
+The dispatcher prepares trusted metadata in a short Axis transaction, closes
+that transaction, then opens one read-only repeatable-read source snapshot per
+selection. Each payload is written under a content-addressed key. Its metadata
+and audit event commit together only while the worker claim is current and
+unexpired. A retry verifies the stored checksum and size before reusing a
+committed batch. Unknown legacy batch keys, conflicting metadata and corrupt
+objects fail closed. An interrupted write can leave an unreferenced object for
+reconciliation because the object store and Axis database cannot commit
+atomically.
+
+This is bounded snapshot extraction. It does not provide CDC, deletion capture,
+cross-request snapshot consistency or incremental watermark consumption. Tables
+without one primary-key column use one bounded pass and publish no watermark.
+Raw rows remain in the object store; audit, request evidence and errors contain
+metadata only.
+
 Remaining reusable gaps:
 
 - The [versioned authoring contract](connector-authoring.md) now defines source
@@ -107,7 +137,7 @@ Remaining reusable gaps:
   protocol 1.0 through the existing ingestion host. The [shared conformance suite and health model](connector-conformance.md)
   now provide offline fixture reports and operational metadata semantics; actual
   source/host adoption and release certification remain explicit evidence gates.
-- Live-sync resume uses offsets, so source mutation can change the rows seen
+- Legacy live-sync resume uses offsets, so source mutation can change the rows seen
   after a checkpoint. Keyset extraction restarts with no incoming watermark;
   recording a watermark does not yet implement incremental ingestion across requests.
 - Extraction materializes a bounded envelope in memory. Page limits do not
@@ -150,6 +180,10 @@ test functions still exist and that the supported live IDs remain represented.
 | Activation replay | `services/api/tests/test_connector_source_activation.py::test_identical_resubmission_replays_without_new_rows_or_audit` |
 | Resume | `services/api/tests/test_connector_live_sync.py::test_execute_live_sync_resumes_from_last_committed_checkpoint` |
 | Bounded source reader | `services/api/tests/test_connector_source_extraction.py::test_bounded_reader_uses_profile_timeout_and_reports_ordering` |
+| Legacy contract negotiation | `services/api/tests/test_connector_live_sync_contract.py` |
+| Versioned schema and replacement | `services/api/tests/test_connector_schema_versions.py` |
+| Durable raw replay and fencing | `services/api/tests/test_connector_raw_durability.py` |
+| Controlled CSV/Postgres proof | `services/api/tests/test_connector_csv_snapshot_proof.py`, `services/api/tests/test_connector_controlled_proof.py` |
 | Retry/dead-letter | `services/api/tests/test_connector_source_ingestion.py::test_operational_failure_retries_then_dead_letters_when_exhausted` |
 | Attempt history | `services/api/tests/test_connector_source_ingestion.py::test_completed_attempt_appends_metadata_only_timeline` |
 | Source payload confinement | `services/api/tests/test_connector_source_extraction.py::test_raw_row_values_never_reach_views_audit_errors_or_evidence` |
@@ -165,9 +199,22 @@ for worker composition.
 Run other selectors inside their corresponding package, omitting the
 `services/api/` or `services/worker/` prefix. Run `make docs-check` for local links.
 
+The connector proof runner clears deployment `AXIS_*` variables and disables
+`.env` loading. The default command is offline; the second command requires an
+explicitly isolated PostgreSQL instance on the supplied loopback port:
+
+```sh
+cd services/api
+uv run python scripts/verify_connector_standardization.py
+uv run python scripts/verify_connector_standardization.py --postgres-port 62903
+```
+
 Unit evidence uses temporary files, isolated SQLite and substituted source
-drivers. It does not prove real Postgres source behavior, distributed claims,
-Temporal service execution, object-store credentials or cloud-provider access.
+drivers. The controlled proof additionally covers a synthetic SELECT-only role,
+schema drift, concurrent updates, timeout/retry, process interruption and claim
+fencing on isolated PostgreSQL. It does not prove production credentials,
+distributed execution, Temporal service behavior, cloud object-store operation,
+power-loss durability or production load.
 The existing [Postgres source-ingestion integration lane](../services/api/tests/integration/test_connector_source_ingestion_runtime.py)
 tests the durable validation lifecycle; it is not live extraction-loop evidence.
 The [live-sync integration lane](../services/api/tests/integration/test_connector_scheduled_live_sync_runtime.py)

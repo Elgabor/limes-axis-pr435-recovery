@@ -1,4 +1,4 @@
-"""P5: synthetic PostgreSQL source -> discovery -> selection -> durable raw output.
+"""Synthetic PostgreSQL source -> discovery -> selection -> durable raw output.
 
 Opt-in loopback container only. Roles, databases and datasets are created for this
 proof; no configured credentials, shared schemas, graph service or remote data.

@@ -1,4 +1,4 @@
-"""P1 conformance at the real live-sync planner/reader boundary, offline only."""
+"""Conformance at the real live-sync planner/reader boundary, offline only."""
 
 from pathlib import Path
 

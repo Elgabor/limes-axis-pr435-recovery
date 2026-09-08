@@ -137,25 +137,13 @@ release-bound behavior, not the complete commit history.
   indexes and scanned index entries belonging to every other tenant. Responses
   are unchanged ([#363](https://github.com/Limes-Labs/limes-axis/issues/363)).
 
-- Source extraction recognizes single-column primary keys for PostgreSQL roles
-  with SELECT-only access by reusing verified catalog schema evidence. P5 adds
-  reproducible offline and isolated PostgreSQL connector proofs.
-
-- PostgreSQL source discovery records versioned type/key/nullability metadata;
-  extraction refuses live schema drift before reading rows. The console and API
-  support explicit binding replacement with preserved history. Migration 0067
-  keeps legacy fingerprints and refuses lossy downgrades (P4).
-
-- Raw source ingestion commits each content-addressed selection under an unexpired
-  claim. Operational retries verify and reuse durable batches; explicit requeues
-  acquire a new snapshot generation. Legacy checkpoints require a new request
-  (connector standardization P3).
-
-- Source extraction revalidates current lease/binding/egress evidence before
-  source access, preserves actual dial/read facts through failures and retries
-  temporary source/storage errors within the existing attempt budget. The bounded
-  PostgreSQL reader now uses its profile timeout and supports a null watermark
-  in the single-pass no-primary-key branch (connector standardization P2).
+- CSV/Postgres live sync negotiates an explicit legacy host contract before source
+  access. PostgreSQL discovery records versioned type/key/nullability evidence;
+  extraction refuses schema drift, revalidates lease and egress posture, and
+  commits content-addressed raw batches under an unexpired claim. Retries verify
+  stored bytes before reuse, governed requeues create a new snapshot generation,
+  and SELECT-only source roles retain primary-key ordering. Migration 0067 keeps
+  legacy fingerprints and superseded binding history.
 
 - The architecture overview now describes current runtime truth while delivery
   history lives in a separate changelog ([#359](https://github.com/Limes-Labs/limes-axis/issues/359)).

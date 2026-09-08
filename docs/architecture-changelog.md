@@ -162,43 +162,26 @@ Evidence: [ADR 0003](./adr/0003-external-await-transaction-boundary.md), the
 transaction, pool-occupancy, interruption and duplicate-delivery tests in
 `services/api/tests/test_model_invocations.py`.
 
-## 2026-09-07 — Versioned Source Selection Revisions
+## 2026-09-07 — Version and Persist PostgreSQL Source Selections
 
-**Scope:** connector standardization P4, local contribution.
+**Boundary:** governed PostgreSQL discovery, activation and raw ingestion.
 
-Discovery and the raw reader share bounded PostgreSQL schema fingerprints.
-Activation owns the governed successor/predecessor relationship under the existing
-connector activation lock; immutable raw history keeps its original binding IDs.
-Migration 0067 stores schema versions and predecessor IDs and allows superseded
-bindings. Legacy name-only fingerprints retain their meaning; newly discovered
-PostgreSQL schemas use v2 types/nullability/key evidence. The console carries this
-version through the selection and can explicitly name a predecessor.
+Discovery and extraction share bounded versioned schema evidence. Activation
+replaces a binding only through an explicit predecessor and preserves old binding
+IDs for immutable raw history. Migration 0067 follows the S3 checkpoint migration,
+keeps legacy name-only fingerprints valid and stores schema versions plus
+predecessor IDs.
 
-See [P4](connector-standardization/p4-schema-selection.md), schema-version tests,
-the console discovery/activation regression and the PostgreSQL migration rehearsal.
-No mapping or graph ownership moves into the connector.
+The dispatcher prepares metadata in a short transaction, reads one bounded
+repeatable-read source snapshot outside Axis transactions, writes a
+content-addressed envelope and commits its batch metadata plus audit event under
+an unexpired claim. Retries verify committed bytes before reuse; governed requeues
+create a new generation. Object storage and PostgreSQL cannot commit atomically,
+so unreferenced objects remain detectable by reconciliation.
 
-## 2026-09-07 — Durable Raw Selection Consumer
-
-**Scope:** connector standardization P3, local contribution; no publication.
-
-The raw ingestion dispatcher owns short claim, preparation, batch/audit and final
-transactions. The extraction adapter receives frozen metadata after preparation
-commits, then reads a bounded PostgreSQL repeatable-read snapshot and writes a
-content-addressed envelope outside Axis transactions. Each selection commits
-independently under its unexpired claim. This permits crash recovery without
-keeping an Axis transaction open across source or object-storage I/O.
-
-Operational retries reuse verified committed selections. Explicit requeues include
-their timestamp and idempotency key in a versioned generation identity. Unknown
-legacy checkpoint formats fail closed and require a new governed request. There
-is no schema migration, offset checkpoint, cross-selection snapshot or graph
-promotion. Object storage and PostgreSQL cannot commit atomically; pre-commit
-orphans remain detectable by reconciliation.
-
-Specification and evidence: [P3](connector-standardization/p3-durable-raw-batches.md),
-`services/api/tests/test_connector_raw_durability.py` and
-`services/api/tests/test_connector_raw_postgres.py`.
+The [connector capability matrix](connector-capabilities.md), schema/replay tests
+and isolated PostgreSQL proof record behavior and limits. No mapping or graph
+ownership moves into the connector, and no CDC or cross-request snapshot is added.
 
 ## 2026-08-29 — Separate Current Truth from Delivery History
 
