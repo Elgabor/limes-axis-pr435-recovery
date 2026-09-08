@@ -916,6 +916,10 @@ class _RawCheckpointConflict(Exception):
     pass
 
 
+class _RawCheckpointVersionIncompatible(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class _ClaimedIngestionRequest:
     id: UUID
@@ -1174,13 +1178,22 @@ class SourceIngestionOutboxDispatcher:
             return result
 
         try:
+            checkpoint_compatibility_checked = False
             for selection in row.selections:
+                incompatible = False
                 with session_scope(self._session_factory) as session:
                     repository = AxisPersistenceRepository(session)
                     if not repository.lock_connector_source_ingestion_claim(
                         row.id, row.claim_token, now=self._clock(),
                     ):
                         return _ProcessOutcome(status="fenced")
+                    if not checkpoint_compatibility_checked:
+                        incompatible = repository.has_incompatible_raw_checkpoint(
+                            row.tenant_id, row.request_id,
+                        )
+                        checkpoint_compatibility_checked = True
+                    if incompatible:
+                        raise _RawCheckpointVersionIncompatible()
                     binding_id = str(selection["binding_id"])
                     identity = [row.tenant_id, row.connector_id, row.request_id,
                                 row.generation, binding_id, selection["resource_name"],
@@ -1191,9 +1204,6 @@ class SourceIngestionOutboxDispatcher:
                     batch_key = "raw-v1:" + hashlib.sha256(
                         json.dumps(identity, separators=(",", ":")).encode()
                     ).hexdigest()
-                    incompatible = repository.has_incompatible_raw_checkpoint(
-                        row.tenant_id, row.request_id,
-                    )
                     existing = repository.get_connector_source_extraction_batch_by_key(
                         row.tenant_id, batch_key,
                     )
@@ -1212,11 +1222,6 @@ class SourceIngestionOutboxDispatcher:
                     and prepared.schema_fingerprint_version != version):
                     prepared = SourceExtractionOutcome(
                         ok=False, reason="schema_version_incompatible",
-                    )
-                if incompatible:
-                    return self._finalize_failure(
-                        row, "checkpoint_version_incompatible", permanent=True,
-                        evidence=attempt_evidence(failed=True),
                     )
                 if existing is not None and not isinstance(prepared, SourceExtractionOutcome):
                     consistent = (
@@ -1336,6 +1341,11 @@ class SourceIngestionOutboxDispatcher:
                             "storage_uri": outcome.stored["storage_uri"],
                         }
                     )
+        except _RawCheckpointVersionIncompatible:
+            return self._finalize_failure(
+                row, "checkpoint_version_incompatible", permanent=True,
+                evidence=attempt_evidence(failed=True),
+            )
         except _RawCheckpointConflict:
             return self._finalize_failure(
                 row, "batch_key_conflict", permanent=True,

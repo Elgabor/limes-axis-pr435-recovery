@@ -279,6 +279,41 @@ def test_storage_metadata_must_match_raw_payload(session_factory, tmp_path, monk
     assert outcome.extraction_performed and outcome.source_dial_performed
 
 
+def test_checkpoint_compatibility_is_checked_once_per_request(
+    session_factory,
+    monkeypatch,
+):
+    from test_connector_source_extraction import (
+        bounded_result,
+        run_dispatcher,
+        seed_two_bindings_with_request,
+    )
+
+    from axis_api.persistence import AxisPersistenceRepository
+
+    seed_two_bindings_with_request(session_factory)
+    checks = 0
+    original = AxisPersistenceRepository.has_incompatible_raw_checkpoint
+
+    def counted_check(repository, tenant_id, request_id):
+        nonlocal checks
+        checks += 1
+        return original(repository, tenant_id, request_id)
+
+    monkeypatch.setattr(
+        AxisPersistenceRepository,
+        "has_incompatible_raw_checkpoint",
+        counted_check,
+    )
+    result, _ = run_dispatcher(
+        session_factory,
+        read_result=bounded_result([{"order_id": "o-1"}]),
+    )
+
+    assert result.completed == 1
+    assert checks == 1
+
+
 def test_reused_requeue_key_starts_a_distinct_generation(session_factory):
     from datetime import UTC, datetime, timedelta
 
