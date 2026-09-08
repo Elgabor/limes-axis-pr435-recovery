@@ -7,6 +7,11 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Approval queue search and risk/domain filters, compact counts, and a dedicated
+  mobile review with focus restoration. Explicit approval links remain reviewable
+  outside filters; decision context and required controls are easier to inspect
+  ([#436](https://github.com/Limes-Labs/limes-axis/issues/436)).
+
 - Reproducible ingestion strategy benchmarks for REST, database, object and
   document fixtures, with peak memory, queue delay, bounded admission, tenant
   turn scheduling and checkpoint/replay checks. The experiments evaluate

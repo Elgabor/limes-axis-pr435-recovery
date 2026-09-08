@@ -1,14 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type KeyboardEvent } from "react";
-import { ChevronDown, ChevronRight, Inbox, ShieldAlert } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronDown, ChevronRight, Inbox } from "lucide-react";
 
 import {
   ApprovalDecisionCard,
   useApprovalDecisionState,
   type ApprovalDecisionRecord,
 } from "@/components/approvals/approval-decision-card";
+import { ApprovalQueue, filterApprovalQueue } from "@/components/approvals/approval-queue";
+import { ApprovalReviewLayout } from "@/components/approvals/approval-review-layout";
 import { ActionFollowThrough } from "@/components/approvals/action-follow-through";
 import { Card } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -16,7 +18,7 @@ import { DetailGrid, KeyValueRow } from "@/components/ui/detail-grid";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { InspectDrawer } from "@/components/ui/inspect-drawer";
 import { MasterDetail } from "@/components/ui/master-detail";
-import { MetricStrip, type Metric } from "@/components/ui/metric-strip";
+import type { Metric } from "@/components/ui/metric-strip";
 import { SourcePill } from "@/components/ui/source-pill";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import type { ActionRunList } from "@/lib/action-demo";
@@ -30,9 +32,9 @@ import {
 } from "@/lib/approval-demo";
 import { cn } from "@/lib/cn";
 import type { AxisOperatorError } from "@/lib/axis-api";
-import { stringUrlField, useConsoleUrlState } from "@/lib/console-url-state";
+import { enumUrlField, opaqueStringUrlField, stringUrlField, useConsoleUrlState } from "@/lib/console-url-state";
 import { formatContextPath, formatNumber, formatTimestamp } from "@/lib/format";
-import { type IdentitySessionReadModel, platformStatusClass } from "@/lib/platform-overview";
+import { type IdentitySessionReadModel } from "@/lib/platform-overview";
 import { deriveSourceState } from "@/lib/source-state";
 import { strings } from "@/lib/strings";
 import { parseActionRunList } from "@/lib/runtime-contracts/actions";
@@ -58,9 +60,12 @@ const AUDIT_EVENTS_ENDPOINT = `${OPERATIONS_API_PREFIX}/audit/events`;
 const approvalUrlSchema = {
   approvalId: stringUrlField("approval_id"),
   actionRunId: stringUrlField("action_run_id"),
+  search: opaqueStringUrlField("q"),
+  risk: enumUrlField("risk", ["all", "high", "medium", "low"], "all"),
+  domain: stringUrlField("domain"),
 };
 
-type RailStageState = "done" | "current" | "pending";
+type RailStageState = "done" | "current" | "pending" | "required";
 
 type RailStage = {
   label: string;
@@ -87,9 +92,9 @@ function buildDecisionRail(
       state: "done",
     },
     {
-      label: "Policy evaluation",
+      label: "Required controls",
       detail: `${approval.required_permission} / ${approval.model_policy}`,
-      state: "done",
+      state: "required",
     },
     {
       label: "Approval",
@@ -110,75 +115,29 @@ function buildDecisionRail(
   ];
 }
 
-function RailMarker({ state }: { state: RailStageState }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "inline-block size-2.5 shrink-0 rotate-45",
-        state === "done" && "bg-signal",
-        state === "current" && "border-2 border-signal bg-transparent",
-        state === "pending" && "border border-mist bg-transparent dark:border-white/25",
-      )}
-      style={
-        state === "current"
-          ? { animation: "tick-pulse 1.6s ease-in-out infinite" }
-          : undefined
-      }
-    />
-  );
-}
-
-function DecisionRail({
-  approval,
-  decision,
-}: {
+function DecisionRail({ approval, decision }: {
   approval: ApprovalInboxItem;
   decision: ApprovalDecisionRecord | undefined;
 }) {
-  const stages = buildDecisionRail(approval, decision);
-  const currentIndex = stages.findIndex((stage) => stage.state === "current");
-
   return (
-    <div className="grid gap-1.5" aria-label="Decision stage rail">
-      <div className="flex items-center gap-2">
-        {stages.map((stage, index) => (
-          <div
-            className={cn("flex items-center gap-2", index > 0 && "min-w-0 flex-1")}
-            key={stage.label}
-          >
-            {index > 0 ? (
-              <div className="rule-hairline relative h-px min-w-6 flex-1 overflow-hidden">
-                {index === currentIndex ? (
-                  <span
-                    className="absolute top-1/2 left-0 h-[3px] w-1/5 -translate-y-1/2 rounded-full bg-signal"
-                    style={{ animation: "rail-pulse 1.8s linear infinite" }}
-                  />
-                ) : null}
-              </div>
-            ) : null}
-            <RailMarker state={stage.state} />
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-4 gap-2">
-        {stages.map((stage) => (
-          <div className="grid min-w-0 gap-0.5" key={stage.label}>
-            <p
-              className={cn(
-                "m-0 font-mono text-[10px] tracking-[0.14em] uppercase",
-                stage.state === "pending" ? "text-muted" : "text-signal",
-              )}
-            >
-              {stage.label}
+    <ol aria-label="Decision stage rail" className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 2xl:grid-cols-4">
+      {buildDecisionRail(approval, decision).map((stage, index) => (
+        <li className="flex min-w-0 items-start gap-2" key={stage.label}>
+          <span aria-hidden="true" className={cn(
+            "flex size-6 shrink-0 items-center justify-center rounded-full border text-xs tabular-nums",
+            stage.state === "pending" || stage.state === "required" ? "border-line text-muted dark:border-white/20" : "border-signal/40 bg-signal/10 text-signal",
+          )}>
+            {stage.state === "done" ? <Check size={13} /> : index + 1}
+          </span>
+          <div className="grid min-w-0 flex-1 grid-cols-1 gap-1">
+            <p className="m-0 min-w-0 text-xs font-medium text-ink">
+              {stage.label}<span className="sr-only">: {stage.state}</span>
             </p>
-            <p className="m-0 truncate text-xs text-muted" title={stage.detail}>
-              {stage.detail}
-            </p>
+            <p className="m-0 min-w-0 text-xs leading-relaxed wrap-anywhere text-muted">{stage.detail}</p>
           </div>
-        ))}
-      </div>
-    </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -212,97 +171,6 @@ function BulletList({ items }: { items: string[] }) {
         <li key={item}>{item}</li>
       ))}
     </ul>
-  );
-}
-
-function QueueList({
-  approvals,
-  selectedApproval,
-  decisions,
-  labelDomain,
-  onSelect,
-}: {
-  approvals: ApprovalInboxItem[];
-  selectedApproval: ApprovalInboxItem;
-  decisions: Record<string, ApprovalDecisionRecord>;
-  labelDomain: (domain: string) => string;
-  onSelect: (approvalId: string) => void;
-}) {
-  const itemRefs = useRef(new Map<string, HTMLButtonElement>());
-
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
-      return;
-    }
-    event.preventDefault();
-
-    const index = approvals.findIndex(
-      (approval) => approval.approval_id === selectedApproval.approval_id,
-    );
-    const nextIndex =
-      event.key === "ArrowDown"
-        ? Math.min(index + 1, approvals.length - 1)
-        : Math.max(index - 1, 0);
-    const next = approvals[nextIndex];
-    if (next && next.approval_id !== selectedApproval.approval_id) {
-      onSelect(next.approval_id);
-      itemRefs.current.get(next.approval_id)?.focus();
-    }
-  }
-
-  return (
-    <Card className="grid content-start gap-4">
-      <div className="grid gap-1">
-        <Eyebrow>{strings.approvals.queue.eyebrow}</Eyebrow>
-        <h2 className="font-display m-0 text-xl text-ink">{strings.approvals.queue.title}</h2>
-      </div>
-      {/* Roving arrow-key selection across the queue buttons. */}
-      <div className="grid gap-2" onKeyDown={handleKeyDown}>
-        {approvals.map((approval) => {
-          const decidedLocally = Boolean(decisions[approval.approval_id]);
-          const isSelected = approval.approval_id === selectedApproval.approval_id;
-
-          return (
-            <button
-              aria-pressed={isSelected}
-              className={cn(
-                "flex w-full cursor-pointer items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition-colors",
-                isSelected
-                  ? "border-signal/60 bg-tint-100 dark:bg-signal/15"
-                  : "border-line bg-transparent hover:border-signal/40 hover:bg-tint-50 dark:border-white/10 dark:hover:bg-white/5",
-              )}
-              key={approval.approval_id}
-              onClick={() => onSelect(approval.approval_id)}
-              ref={(element) => {
-                if (element) {
-                  itemRefs.current.set(approval.approval_id, element);
-                } else {
-                  itemRefs.current.delete(approval.approval_id);
-                }
-              }}
-              type="button"
-            >
-              <span className="grid min-w-0 gap-0.5">
-                <span className="text-sm font-medium text-ink">{approval.action}</span>
-                <span className="text-xs text-muted">
-                  {labelDomain(approval.domain)} / {approval.owner_role}
-                </span>
-                <span className="font-mono text-xs text-muted">Due {approval.due}</span>
-              </span>
-              <span
-                className={`status-pill ${
-                  decidedLocally ? "signal-ready" : approvalRiskClass(approval.risk_level)
-                }`}
-              >
-                {decidedLocally
-                  ? approvalDecisionLabel(decisions[approval.approval_id].decision)
-                  : approval.risk_level}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </Card>
   );
 }
 
@@ -415,18 +283,19 @@ function ApprovalDetail({
   tenantId: string;
 }) {
   return (
-    <Card className="grid content-start gap-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="grid max-w-xl gap-1">
+    <Card className="grid min-w-0 content-start gap-5">
+      <div className="grid min-w-0 gap-3">
+        <div className="grid min-w-0 gap-1">
           <Eyebrow>{domainLabel || approval.domain}</Eyebrow>
-          <h2 className="font-display m-0 text-xl text-ink">{approval.action}</h2>
-          <p className="m-0 text-sm text-muted">{approval.summary}</p>
+          <h2 className="font-display m-0 text-xl break-words text-ink">{approval.action}</h2>
+          <p className="m-0 text-sm leading-relaxed break-words text-muted">{approval.summary}</p>
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted">
           <span className={`status-pill ${approvalRiskClass(approval.risk_level)}`}>
-            {approval.risk_level}
+            {approval.risk_level} risk
           </span>
-          <span className="font-mono text-xs text-muted">Due {approval.due}</span>
+          <span>Due {approval.due}</span>
+          <span className="min-w-0 [overflow-wrap:anywhere]">Owner: {approval.owner_role}</span>
         </div>
       </div>
 
@@ -440,8 +309,6 @@ function ApprovalDetail({
         onErrorChange={onErrorChange}
         tenantId={tenantId}
       />
-
-      <DecisionRail approval={approval} decision={decision} />
 
       <div aria-hidden="true" className="rule-hairline" />
 
@@ -466,7 +333,7 @@ function ApprovalDetail({
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection label={strings.approvals.sections.risksAlternatives}>
+      <CollapsibleSection defaultOpen label={strings.approvals.sections.risksAlternatives}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid content-start gap-1.5">
             <p className="m-0 text-xs font-medium text-muted">Risks</p>
@@ -481,6 +348,10 @@ function ApprovalDetail({
 
       <div aria-hidden="true" className="rule-hairline" />
 
+      <CollapsibleSection label="Decision trail">
+        <DecisionRail approval={approval} decision={decision} />
+      </CollapsibleSection>
+
       <div className="grid gap-3">
         <DetailGrid>
           <KeyValueRow label="Workflow" mono>
@@ -489,11 +360,10 @@ function ApprovalDetail({
             </span>
           </KeyValueRow>
           <KeyValueRow label="Requested by">{approval.requested_by}</KeyValueRow>
-          <KeyValueRow label="Owner">{approval.owner_role}</KeyValueRow>
           <KeyValueRow label="Cost exposure">{approval.estimated_cost}</KeyValueRow>
         </DetailGrid>
         <InspectDrawer
-          record={approval}
+          record={{ tenant_id: tenantId, ...approval }}
           title={approval.action}
           trigger={
             <button
@@ -617,6 +487,8 @@ export function ApprovalInbox() {
     (approval) =>
       approval.status !== "decided" && !decisions[approval.approval_id],
   );
+  const filteredApprovals = filterApprovalQueue(actionableApprovals, urlState, labelDomain);
+  const detailOpen = Boolean(urlState.approvalId || urlState.actionRunId);
   const linkedApprovalId = urlState.actionRunId
     ? actionRunAudit.data?.events.find(
         (event) => event.evidence_refs.includes(urlState.actionRunId),
@@ -627,7 +499,7 @@ export function ApprovalInbox() {
       ?? inbox.approvals.find((approval) => approval.approval_id === linkedApprovalId)
     : urlState.approvalId
       ? inbox.approvals.find((approval) => approval.approval_id === urlState.approvalId)
-      : actionableApprovals[0];
+      : filteredApprovals[0];
 
   if (
     urlState.actionRunId
@@ -652,15 +524,6 @@ export function ApprovalInbox() {
     );
   }
 
-  if (!selectedApproval && (urlState.actionRunId || urlState.approvalId)) {
-    return (
-      <EmptyPanel
-        detail={strings.approvals.requestedMissing.detail}
-        icon={Inbox}
-        title={strings.approvals.requestedMissing.title}
-      />
-    );
-  }
   // A decision counts as decided whether it was recorded in this session or
   // already persisted and reconciled into the queue by the API.
   const decidedCount = inbox.approvals.filter(
@@ -703,64 +566,76 @@ export function ApprovalInbox() {
         className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2"
       >
         <p className="m-0 min-w-0 text-sm break-words text-muted">
-          {formatContextPath(inbox.plant_name, inbox.scenario, inbox.tenant_id)}
+          {formatContextPath(inbox.plant_name, inbox.scenario)}
         </p>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <SourcePill
             state={deriveSourceState(source, Boolean(inbox), inbox.provenance)}
             subject="approval queue"
           />
-          <span className={`status-pill ${platformStatusClass(inbox.queue_status)}`}>
-            <ShieldAlert size={15} />
-            {formatNumber(pendingCount)} pending
-          </span>
           <span className="font-mono text-xs text-muted">
             {formatTimestamp(inbox.as_of)}
           </span>
         </div>
       </div>
 
-      <MetricStrip metrics={metrics} label="Approval metrics" />
+      <div aria-label="Approval metrics" className={cn("grid grid-cols-3 divide-x divide-line overflow-hidden rounded-xl border border-line bg-surface dark:divide-white/10 dark:border-white/10", detailOpen && "hidden lg:grid")} role="list">
+        {metrics.map((metric) => (
+          <div className="grid min-w-0 gap-1 px-3 py-3 sm:px-4" key={metric.label} role="listitem">
+            <p className="m-0 text-xs font-medium text-muted">{metric.label}</p>
+            <p className="m-0 text-xl font-medium tabular-nums text-ink">
+              <span className="sr-only">{metric.tone === "ready" ? "Ready:" : metric.tone === "watch" ? "Needs watching:" : "Action required:"} </span>
+              {formatNumber(Number(metric.value))}
+            </p>
+            <p className="m-0 hidden text-xs text-muted sm:block">{metric.detail}</p>
+          </div>
+        ))}
+      </div>
 
-      {selectedApproval ? (
-        <MasterDetail
-          detail={
-            <ApprovalDetail
-              actor={
-                identity.data?.actor_id
-                  ? { actorId: identity.data.actor_id, scopes: identity.data.scopes }
-                  : undefined
-              }
-              approval={selectedApproval}
-              decision={decisions[selectedApproval.approval_id]}
-              domainLabel={labelDomain(selectedApproval.domain)}
-              identitySession={identity.data ?? null}
-              error={errors[selectedApproval.approval_id]}
-              onDecisionChange={handleDecisionChange}
-              onErrorChange={setError}
-              tenantId={inbox.tenant_id}
-            />
-          }
-          list={
-            <QueueList
-              approvals={actionableApprovals}
-              decisions={decisions}
-              labelDomain={labelDomain}
-              onSelect={(approvalId) => setUrlState({
-                actionRunId: "",
-                approvalId,
-              })}
-              selectedApproval={selectedApproval}
-            />
-          }
-        />
-      ) : (
-        <EmptyPanel
-          detail={strings.approvals.empty.detail}
-          icon={Inbox}
-          title={strings.approvals.empty.title}
-        />
-      )}
+      <ApprovalReviewLayout
+        approvalId={selectedApproval?.approval_id}
+        open={detailOpen}
+        onBack={() => setUrlState({ actionRunId: "", approvalId: "" })}
+        queue={
+          <ApprovalQueue
+            allApprovals={actionableApprovals}
+            approvals={filteredApprovals}
+            filters={urlState}
+            labelDomain={labelDomain}
+            onFilterChange={(change) => setUrlState({ ...change, actionRunId: "", approvalId: "" })}
+            onReset={() => setUrlState({ search: "", risk: "all", domain: "", actionRunId: "", approvalId: "" })}
+            onSelect={(approvalId, pushHistory) => setUrlState({ actionRunId: "", approvalId }, { history: pushHistory ? "push" : "replace" })}
+            selectedApprovalId={selectedApproval?.approval_id}
+          />
+        }
+        detail={selectedApproval ? (
+          <>
+          {detailOpen && actionableApprovals.some((approval) => approval.approval_id === selectedApproval.approval_id) && !filteredApprovals.some((approval) => approval.approval_id === selectedApproval.approval_id) ? (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-surface p-3 text-sm dark:border-white/10">
+              <p className="m-0 text-muted">This linked approval is outside the current queue filters.</p>
+              <button className="min-h-9 cursor-pointer font-medium text-signal" onClick={() => setUrlState({ search: "", risk: "all", domain: "" })} type="button">Clear queue filters</button>
+            </div>
+          ) : null}
+          <ApprovalDetail
+            actor={identity.data?.actor_id ? { actorId: identity.data.actor_id, scopes: identity.data.scopes } : undefined}
+            approval={selectedApproval}
+            decision={decisions[selectedApproval.approval_id]}
+            domainLabel={labelDomain(selectedApproval.domain)}
+            identitySession={identity.data ?? null}
+            error={errors[selectedApproval.approval_id]}
+            onDecisionChange={handleDecisionChange}
+            onErrorChange={setError}
+            tenantId={inbox.tenant_id}
+          />
+          </>
+        ) : (
+          <EmptyPanel
+            detail={detailOpen ? strings.approvals.requestedMissing.detail : actionableApprovals.length ? strings.approvals.queue.selectDetail : strings.approvals.empty.detail}
+            icon={Inbox}
+            title={detailOpen ? strings.approvals.requestedMissing.title : actionableApprovals.length ? strings.approvals.queue.select : strings.approvals.empty.title}
+          />
+        )}
+      />
 
       <DecisionHistory entries={inbox.decision_history ?? []} />
 
