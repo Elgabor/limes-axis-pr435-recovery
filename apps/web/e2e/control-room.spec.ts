@@ -18,7 +18,7 @@ test.describe("Axis live story: control room", () => {
 
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-    await expect(page.getByText("Plant Operations Cockpit")).toHaveCount(1);
+    await expect(page.getByRole("heading", { name: "Recorded activity" })).toBeVisible();
 
     // The attention strip resolves to items or the explicit all-clear state.
     await expect(

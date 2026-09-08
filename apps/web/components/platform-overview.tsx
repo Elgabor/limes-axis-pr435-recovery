@@ -14,7 +14,6 @@ import { ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import type { ManufacturingAuditExplorer } from "@/lib/audit-demo";
 import type { ManufacturingModelRouting } from "@/lib/model-routing-demo";
 import {
-  formatContextPath,
   formatNumber,
   formatTimestamp,
   NO_VALUE,
@@ -115,73 +114,27 @@ function OverviewHero({
   ];
 
   return (
-    <div className="grid gap-2">
-      <section className="relative overflow-hidden rounded-3xl border border-navy bg-navy px-6 py-6 text-white sm:px-8 dark:border-white/10">
-        {/* Signal glow + static dot grid, same treatment in both themes. */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0"
-          style={{
-            backgroundImage:
-              "radial-gradient(ellipse 80% 90% at 50% 110%, rgb(47 100 255 / 0.35) 0%, rgb(47 100 255 / 0.08) 45%, transparent 70%), radial-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px)",
-            backgroundSize: "auto, 22px 22px",
-          }}
-        />
-        <div className="relative z-10 flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
-          <div className="grid gap-1">
-            <h2 className="font-display font-display-lg m-0 text-2xl text-white">
-              {formatContextPath(data.scenario) || strings.overview.hero.fallbackTitle}
-            </h2>
-            <p className="m-0 text-sm text-white/70" data-hero-subtitle>
-              {formatContextPath(data.plant_name, formatTimestamp(asOf))}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-x-8 gap-y-3">
-            {facts.map((fact) => (
-              <div className="grid gap-0.5" key={fact.label}>
-                {/* Facts sit one step below the scenario title so the band has a
-                    single focal point, and use tabular figures so the row does
-                    not shift as counts change. */}
-                <span
-                  className="font-display text-xl tabular-nums text-white"
-                  data-testid={fact.testId}
-                >
-                  {fact.value}
-                </span>
-                <span className="font-mono text-[11px] tracking-[0.12em] text-white/60 uppercase">
-                  {fact.label}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-      <div
-        aria-label="Overview data sources"
-        className="flex min-w-0 flex-wrap items-center justify-end gap-1.5"
-      >
-        <SourcePill
-          state={deriveSourceState(overview.source, true, data.provenance)}
-          subject="scenario context"
-        />
-        <SourcePill
-          state={deriveSourceState(
-            snapshot.source,
-            Boolean(snapshot.data),
-            snapshot.data?.provenance,
-          )}
-          subject="operations snapshot"
-        />
-        <SourcePill
-          state={deriveSourceState(
-            auditEvents.source,
-            Boolean(auditEvents.data),
-            auditEvents.data?.provenance,
-          )}
-          subject="audit window"
-        />
+    <section aria-label={strings.clarity.recordedActivity} className="grid gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="m-0 text-sm font-medium text-ink">{strings.clarity.recordedActivity}</h2>
+        <span className="text-xs text-muted">{data.plant_name} · {formatTimestamp(asOf)}</span>
       </div>
-    </div>
+      <dl className="m-0 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {facts.map((fact) => (
+          <div className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10" key={fact.label}>
+            <dt className="text-xs text-muted">{fact.label}</dt>
+            <dd className="m-0 mt-1 font-display text-2xl tabular-nums text-ink" data-testid={fact.testId}>
+              {fact.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <div aria-label="Overview data sources" className="flex min-w-0 flex-wrap gap-1.5">
+        <SourcePill compact state={deriveSourceState(overview.source, true, data.provenance)} subject="Context" />
+        <SourcePill compact state={deriveSourceState(snapshot.source, Boolean(snapshot.data), snapshot.data?.provenance)} subject="Operations" />
+        <SourcePill compact state={deriveSourceState(auditEvents.source, Boolean(auditEvents.data), auditEvents.data?.provenance)} subject="Audit" />
+      </div>
+    </section>
   );
 }
 
@@ -282,15 +235,13 @@ export function PlatformOverview() {
 
   return (
     <div className="grid gap-4">
-      {/* Partially onboarded tenants keep a compact progress strip on top;
-          it renders nothing at 0 of 5 or 5 of 5. */}
-      <OnboardingChecklist tenantId={tenantId} variant="compact" />
       <OverviewHero
         auditEvents={auditEventsQuery}
         overview={overviewQuery}
         snapshot={snapshotQuery}
       />
 
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
       <NeedsAttention
         actor={
           identityQuery.data?.actor_id
@@ -301,6 +252,10 @@ export function PlatformOverview() {
         overview={overviewQuery}
         tenantId={tenantId}
       />
+        <SideRail auditEvents={auditEventsQuery} />
+      </div>
+
+      <OnboardingChecklist tenantId={tenantId} variant="compact" />
 
       <PostureCards
         overview={overviewQuery}
@@ -309,7 +264,7 @@ export function PlatformOverview() {
         tenantId={tenantId}
       />
 
-      <div className="ops-dashboard-grid grid grid-cols-1 gap-4 min-[1400px]:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="ops-dashboard-grid grid grid-cols-1 gap-4">
         <section aria-label="Operations evidence" className="ops-dashboard-main grid min-w-0 content-start gap-4">
           <EvidenceFeed auditEvents={auditEventsQuery} />
           {/* Suspense boundary for useSearchParams inside the artifact panel. */}
@@ -317,12 +272,7 @@ export function PlatformOverview() {
             <ArtifactPanel onArtifactCommitted={triggerRefresh} snapshot={snapshotQuery} />
           </Suspense>
         </section>
-        <aside
-          aria-label="Operations side rail"
-          className="ops-right-rail grid min-w-0 content-start gap-4"
-        >
-          <SideRail overview={overviewQuery} routing={routingQuery} snapshot={snapshotQuery} />
-        </aside>
+
       </div>
     </div>
   );

@@ -3,6 +3,7 @@
 import { Bot } from "lucide-react";
 
 import { AgentDetail } from "@/components/agents/agent-detail";
+import { Disclosure } from "@/components/ui/disclosure";
 import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { FilterBar, type FilterDef } from "@/components/ui/filter-bar";
@@ -339,8 +340,7 @@ export function AgentRegistry() {
       )}
 
       {registry.registry_notes.length > 0 ? (
-        <Card className="grid content-start gap-3">
-          <Eyebrow>Registry Notes</Eyebrow>
+        <Disclosure title={strings.clarity.agentDetails}>
           <div className="grid gap-2">
             {registry.registry_notes.map((note) => (
               <p className="m-0 text-sm text-muted" key={note}>
@@ -348,7 +348,7 @@ export function AgentRegistry() {
               </p>
             ))}
           </div>
-        </Card>
+        </Disclosure>
       ) : null}
     </div>
   );

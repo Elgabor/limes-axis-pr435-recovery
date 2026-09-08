@@ -162,11 +162,12 @@ beforeEach(() => {
 });
 
 describe("PlatformOverview hero", () => {
-  it("renders the cockpit name exactly once, without the duplicated prefix", () => {
+  it("leads with recorded activity instead of repeating a scenario title", () => {
     mockQueriesByPath();
     renderOverview();
 
-    expect(screen.getAllByText("Plant Operations Cockpit")).toHaveLength(1);
+    expect(screen.getByRole("heading", { name: "Recorded activity" })).toBeInTheDocument();
+    expect(screen.queryByText("Plant Operations Cockpit")).not.toBeInTheDocument();
     expect(screen.queryByText(/Operations Plant Operations Cockpit/)).not.toBeInTheDocument();
   });
 
@@ -184,7 +185,7 @@ describe("PlatformOverview hero", () => {
     // Vertical-neutral: this console is not manufacturing-only, and a tenant
     // with no scenario of its own must not be labelled as one.
     expect(
-      screen.getByRole("heading", { name: strings.overview.hero.fallbackTitle }),
+      screen.getByRole("heading", { name: "Recorded activity" }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Manufacturing overview/)).not.toBeInTheDocument();
     expect(screen.getByTestId("hero-audit-count")).toBeInTheDocument();
@@ -197,7 +198,7 @@ describe("PlatformOverview hero", () => {
 
     const heroCount = screen.getByTestId("hero-audit-count");
     expect(heroCount).toHaveTextContent(/^4$/);
-    expect(screen.getByText("Showing 4 of 4")).toBeInTheDocument();
+    expect(screen.getByText("Showing 4 of 4 recent events")).toBeInTheDocument();
     // The static seeded "Audit" metric string never renders anywhere.
     expect(screen.queryByText(/128 events/)).not.toBeInTheDocument();
   });
@@ -209,10 +210,10 @@ describe("PlatformOverview hero", () => {
     renderOverview();
 
     const sources = screen.getByLabelText("Overview data sources");
-    expect(within(sources).getByText("scenario context: reference scenario"))
+    expect(within(sources).getByText("Context: example"))
       .toBeInTheDocument();
-    expect(within(sources).getByText("operations snapshot: live")).toBeInTheDocument();
-    expect(within(sources).getByText("audit window: live")).toBeInTheDocument();
+    expect(within(sources).getByText("Operations: live")).toBeInTheDocument();
+    expect(within(sources).getByText("Audit: live")).toBeInTheDocument();
 
     const posture = screen.getByLabelText("Platform posture");
     const cards = within(posture).getAllByRole("listitem");
@@ -231,9 +232,9 @@ describe("PlatformOverview hero", () => {
       .toBeInTheDocument();
 
     const attentionSources = screen.getByLabelText("Needs attention data sources");
-    expect(within(attentionSources).getByText("approval queue: reference scenario"))
+    expect(within(attentionSources).getByText("Approvals: example"))
       .toBeInTheDocument();
-    expect(within(attentionSources).getByText("action follow-through: live"))
+    expect(within(attentionSources).getByText("Outcomes: live"))
       .toBeInTheDocument();
   });
 
@@ -284,7 +285,7 @@ describe("PlatformOverview per-section degradation", () => {
     mockQueriesByPath([`${OPERATIONS_API_PREFIX}/audit/events`]);
     renderOverview();
 
-    expect(screen.getByText("Plant Operations Cockpit")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recorded activity" })).toBeInTheDocument();
     expect(screen.getByText("Expedite supplier batch")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Audit evidence API unavailable" }),
@@ -371,7 +372,7 @@ describe("PlatformOverview onboarding checklist", () => {
 
     expect(screen.getByText("4 of 5 setup steps complete")).toBeInTheDocument();
     // The control room still renders around the strip.
-    expect(screen.getByText("Plant Operations Cockpit")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Recorded activity" })).toBeInTheDocument();
   });
 
   it("hides the checklist entirely once every setup step is complete", () => {

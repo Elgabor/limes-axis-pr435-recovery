@@ -22,6 +22,7 @@ import {
   type TenantRecord,
 } from "@/lib/platform-tenants";
 import { formatTimestamp } from "@/lib/format";
+import { strings } from "@/lib/strings";
 import { deriveSourceState, PROVENANCE_NOT_APPLICABLE } from "@/lib/source-state";
 import { useOidcConsoleSession } from "@/lib/use-oidc-session";
 import { useConsole } from "@/providers/console-provider";
@@ -35,6 +36,7 @@ type TimelineEntry = {
   actor: string | null;
   reason: string | null;
   auditEventId: string | null;
+  auditEventSuperseded: boolean;
 };
 
 function buildTimeline(tenant: TenantRecord): TimelineEntry[] {
@@ -49,6 +51,7 @@ function buildTimeline(tenant: TenantRecord): TimelineEntry[] {
       // creation entry only when no later lifecycle change has occurred.
       auditEventId:
         tenant.suspended_at || tenant.reactivated_at ? null : tenant.audit_event_id ?? null,
+      auditEventSuperseded: Boolean(tenant.suspended_at || tenant.reactivated_at),
     },
   ];
 
@@ -60,6 +63,7 @@ function buildTimeline(tenant: TenantRecord): TimelineEntry[] {
       actor: tenant.suspended_by ?? null,
       reason: tenant.suspension_reason ?? null,
       auditEventId: tenant.status === "suspended" ? tenant.audit_event_id ?? null : null,
+      auditEventSuperseded: tenant.status !== "suspended",
     });
   }
 
@@ -71,6 +75,7 @@ function buildTimeline(tenant: TenantRecord): TimelineEntry[] {
       actor: tenant.reactivated_by ?? null,
       reason: null,
       auditEventId: tenant.status === "active" ? tenant.audit_event_id ?? null : null,
+      auditEventSuperseded: tenant.status !== "active",
     });
   }
 
@@ -193,7 +198,7 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
         </div>
       </section>
 
-      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
+      <div className="grid grid-cols-2 gap-3.5 xl:grid-cols-4 [&>*]:min-w-0">
         <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
           <p className="eyebrow m-0">Status</p>
           <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{tenantStatusLabel(tenant.status)}</p>
@@ -201,7 +206,7 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
         </article>
         <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
           <p className="eyebrow m-0">Created By</p>
-          <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{tenant.created_by}</p>
+          <p className="mx-0 mt-3 mb-1.5 font-mono text-sm leading-relaxed break-words text-ink">{tenant.created_by}</p>
           <p className="m-0 text-xs leading-relaxed text-muted break-words">{formatTimestamp(tenant.created_at)}</p>
         </article>
         <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
@@ -211,7 +216,7 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
         </article>
         <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
           <p className="eyebrow m-0">Last Audit Event</p>
-          <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{tenant.audit_event_type}</p>
+          <p className="mx-0 mt-3 mb-1.5 font-mono text-sm leading-relaxed break-words text-ink">{tenant.audit_event_type}</p>
           <p className="m-0 text-xs leading-relaxed text-muted break-words font-mono text-[13px]">{tenant.audit_event_id ?? "No audit id"}</p>
         </article>
       </div>
@@ -248,7 +253,7 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
               </div>
               <div>
                 <p className="eyebrow m-0">Audit Event ID</p>
-                <p className="mx-0 mt-1 mb-0 leading-snug text-muted break-words font-mono text-[13px]">{entry.auditEventId ?? "Superseded by later event"}</p>
+                <p className="mx-0 mt-1 mb-0 leading-snug text-muted break-words font-mono text-[13px]">{entry.auditEventId ?? (entry.auditEventSuperseded ? "Superseded by later event" : strings.clarity.auditEventIdUnavailable)}</p>
               </div>
             </div>
           ))}
@@ -264,16 +269,16 @@ export function TenantDetail({ tenantId }: { tenantId: string }) {
       <TenantVocabularyEditor tenantId={tenant.tenant_id} />
 
       {notes.length > 0 ? (
-        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
-          <p className="eyebrow m-0">Tenant Notes</p>
-          <div className="grid min-w-0 gap-2.5">
+        <details className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+          <summary className="cursor-pointer text-sm font-medium text-ink">Tenant notes</summary>
+          <div className="mt-3 grid min-w-0 gap-2.5">
             {notes.map((note) => (
               <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words" key={note}>
                 {note}
               </p>
             ))}
           </div>
-        </section>
+        </details>
       ) : null}
     </div>
   );

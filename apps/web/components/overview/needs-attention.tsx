@@ -117,13 +117,15 @@ function AttentionRow({
   action: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line px-4 py-3 dark:border-white/10">
-      {tone}
-      <div className="grid min-w-0 flex-1 gap-0.5">
-        <p className="m-0 text-sm font-medium break-words text-ink">{title}</p>
-        <p className="m-0 text-xs text-muted">{detail}</p>
+    <div className="grid content-start gap-3 rounded-2xl border border-line px-4 py-3 dark:border-white/10">
+      <div className="flex min-w-0 items-start gap-3">
+        <span className="mt-0.5 shrink-0">{tone}</span>
+        <div className="grid min-w-0 flex-1 gap-0.5">
+          <p className="m-0 text-sm font-medium break-words text-ink">{title}</p>
+          <p className="m-0 text-xs text-muted">{detail}</p>
+        </div>
       </div>
-      {action}
+      <div className="flex flex-wrap items-center gap-2">{action}</div>
     </div>
   );
 }
@@ -154,7 +156,7 @@ function ApprovalAttentionRow({
     <>
       <AttentionRow
         action={
-          <span className="flex items-center gap-2">
+          <span className="flex flex-wrap items-center gap-2">
             {decision ? (
               <span className="status-pill signal-ready">
                 {approvalDecisionLabel(decision.decision)}
@@ -227,31 +229,34 @@ function AttentionSources({
   return (
     <div
       aria-label="Needs attention data sources"
-      className="flex min-w-0 flex-wrap items-center justify-end gap-1.5"
+      className="flex min-w-0 flex-wrap items-center gap-1.5"
     >
       <SourcePill
+        compact
         state={deriveSourceState(
           overview.source,
           Boolean(overview.data),
           overview.data?.provenance,
         )}
-        subject="risk context"
+        subject="Risks"
       />
       <SourcePill
+        compact
         state={deriveSourceState(
           approvals.source,
           Boolean(approvals.data),
           approvals.data?.provenance,
         )}
-        subject="approval queue"
+        subject="Approvals"
       />
       <SourcePill
+        compact
         state={deriveSourceState(
           actionRuns.source,
           Boolean(actionRuns.data),
           PROVENANCE_NOT_APPLICABLE,
         )}
-        subject="action follow-through"
+        subject="Outcomes"
       />
     </div>
   );
@@ -309,6 +314,7 @@ export function NeedsAttention({
       .filter((approval) => approval.status !== "decided")
       .slice(0, APPROVAL_LIMIT) ?? [];
   const blockedWorkflows = overview.data?.workflows.filter(isBlockedWorkflow) ?? [];
+  const referenceWorkflows = overview.data?.provenance === "reference_scenario";
   const stalledRuns = stalledActionRuns(actionRunsQuery.data);
   const riskSignals = overview.data ? pendingRiskSignals(overview.data) : [];
   const approvalsFailed = !approvalsQuery.data && approvalsQuery.source === "unavailable";
@@ -356,7 +362,7 @@ export function NeedsAttention({
       {approvalsFailed ? <SourceUnavailableNote message={copy.approvalsUnavailable} /> : null}
       {overviewFailed ? <SourceUnavailableNote message={copy.overviewUnavailable} /> : null}
       {actionRunsFailed ? <SourceUnavailableNote message={copy.actionRunsUnavailable} /> : null}
-      <Card className="grid gap-2 p-4">
+      <Card className="grid gap-2 p-4 lg:grid-cols-2">
         {approvals.map((approval) => (
           <ApprovalAttentionRow
             approval={approval}
@@ -370,10 +376,10 @@ export function NeedsAttention({
           <AttentionRow
             action={
               <Link className={rowLinkClass()} href="/workflows">
-                {copy.openWorkflows}
+                {referenceWorkflows ? copy.viewRecordedRuns : copy.openWorkflows}
               </Link>
             }
-            detail={workflow.blocker ?? normalizeLabel(workflow.state)}
+            detail={`${referenceWorkflows ? `${copy.exampleWorkflow} · ` : ""}${workflow.blocker ?? normalizeLabel(workflow.state)}`}
             key={workflow.workflow_id}
             title={workflow.name}
             tone={<GitBranch aria-hidden="true" className="shrink-0 text-warning" size={16} />}

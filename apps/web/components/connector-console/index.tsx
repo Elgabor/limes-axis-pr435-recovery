@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Cable, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Disclosure } from "@/components/ui/disclosure";
 import { Card } from "@/components/ui/card";
 import { DetailGrid, KeyValueRow } from "@/components/ui/detail-grid";
 import { Eyebrow } from "@/components/ui/eyebrow";
@@ -315,11 +316,7 @@ function ConnectorWorkspace({ scope }: { scope: ReturnType<typeof useConsoleTena
         label={strings.connectors.metrics.stripLabel}
       />
 
-      <ManifestImportPanel
-        identitySession={identitySession}
-        onApplied={triggerRefresh}
-        tenantId={tenantId}
-      />
+
 
       {requestedSnapshot ? <SnapshotPanel snapshot={requestedSnapshot} /> : null}
 
@@ -386,6 +383,14 @@ function ConnectorWorkspace({ scope }: { scope: ReturnType<typeof useConsoleTena
           }
         />
       )}
+
+      <Disclosure title={strings.clarity.advancedConnectorImport}>
+      <ManifestImportPanel
+        identitySession={identitySession}
+        onApplied={triggerRefresh}
+        tenantId={tenantId}
+      />
+      </Disclosure>
 
       {wizard}
     </div>

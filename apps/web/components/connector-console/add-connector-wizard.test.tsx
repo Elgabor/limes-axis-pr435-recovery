@@ -138,10 +138,13 @@ afterEach(() => {
 });
 
 describe("AddConnectorWizard CSV flow", () => {
-  it("uploads a file, posts its parsed content to the preview endpoint, and shows the result", async () => {
+  it.each([
+    { total: 2, included: 2, summary: "2 rows / 2 accepted / 0 rejected" },
+    { total: 1000, included: 500, summary: "Preview includes 500 of 1,000 records. 500 records are not included." },
+  ])("uploads a file and reports preview coverage for $total records", async ({ total, included, summary }) => {
     const user = userEvent.setup();
     mocks.axisFetch.mockResolvedValueOnce(
-      jsonResponse({ ...csvPreviewReady, tenant_id: "tenant_acme" }),
+      jsonResponse({ ...csvPreviewReady, tenant_id: "tenant_acme", record_count: total, accepted_record_count: included, rejected_record_count: total - included }),
     );
     renderWizard({ tenantId: "tenant_acme" });
 
@@ -160,7 +163,8 @@ describe("AddConnectorWizard CSV flow", () => {
 
     // Preview table renders the proposed entities from the API response.
     expect(screen.getByText("ast-9")).toBeInTheDocument();
-    expect(screen.getByText(/2 rows/)).toBeInTheDocument();
+    expect(screen.getByText(summary)).toBeInTheDocument();
+    expect(screen.queryByText(/500 rejected/)).not.toBeInTheDocument();
   });
 
   it("rejects a preview response from a different tenant", async () => {

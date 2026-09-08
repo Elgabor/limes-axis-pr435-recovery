@@ -43,10 +43,10 @@ test.describe("Axis live overview demo", () => {
 
     await page.goto("/");
 
-    // Single page header + slim hero: the cockpit name renders exactly once.
+    // One page title followed by persisted activity counts.
     await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-    await expect(page.getByText("Plant Operations Cockpit")).toHaveCount(1);
-    await expect(page.locator("[data-hero-subtitle]")).toContainText("Ravenna Works");
+    await expect(page.getByRole("heading", { name: "Recorded activity" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Recorded activity" })).toContainText("Ravenna Works");
 
     // The hero audit count and the evidence feed read the same registry.
     // "—" is the placeholder while the audit events query is still loading.
@@ -54,7 +54,7 @@ test.describe("Axis live overview demo", () => {
     const heroAuditCount = await page.getByTestId("hero-audit-count").innerText();
     const visibleAuditCount = Math.min(Number(heroAuditCount.trim()), 10);
     await expect(
-      page.getByText(`Showing ${visibleAuditCount} of ${heroAuditCount.trim()}`),
+      page.getByText(`Showing ${visibleAuditCount} of ${heroAuditCount.trim()} recent events`),
     ).toBeVisible();
 
     // Needs-attention strip: decision entry points while work is pending;
@@ -83,9 +83,8 @@ test.describe("Axis live overview demo", () => {
     await expect(page.getByRole("button", { name: /Generate daily brief/ })).toBeDisabled();
     await expect(page.getByRole("button", { name: /Build quality scenario/ })).toBeDisabled();
 
-    // Side rail: system health radar + quick actions.
-    await expect(page.getByRole("heading", { name: "System health" })).toBeVisible();
-    await expect(page.getByText("Quick actions")).toBeVisible();
+    // Labeled category shares use the same returned audit window.
+    await expect(page.getByRole("region", { name: "Activity by category" })).toBeVisible();
 
     // Dropped surfaces stay dropped: domain graph, routing strip, readiness QA.
     await expect(page.getByRole("heading", { name: "Domain graph" })).toHaveCount(0);
@@ -256,45 +255,27 @@ test.describe("Axis live overview demo", () => {
     await expect(page.locator(".ops-dashboard-grid")).toBeVisible();
     await expect(page.locator("[data-kpi-card]")).toHaveCount(5);
 
+    await expect(page.getByRole("region", { name: "Needs attention", exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Activity by category", exact: true })).toBeVisible();
+
     const dashboardLayout = await page.evaluate(() => {
-      const dashboard = document.querySelector<HTMLElement>(".ops-dashboard-grid");
-      const main = document.querySelector<HTMLElement>(".ops-dashboard-main");
-      const rightRail = document.querySelector<HTMLElement>(".ops-right-rail");
+      const attention = document.querySelector<HTMLElement>('section[aria-label="Needs attention"]');
+      const chart = document.querySelector<HTMLElement>('section[aria-label="Activity by category"]');
       const kpiCards = Array.from(document.querySelectorAll<HTMLElement>("[data-kpi-card]"));
-
-      const rect = (element: HTMLElement | null) => {
-        if (!element) {
-          return null;
-        }
-
-        const bounds = element.getBoundingClientRect();
-        return {
-          bottom: Math.round(bounds.bottom),
-          height: Math.round(bounds.height),
-          top: Math.round(bounds.top),
-          width: Math.round(bounds.width),
-        };
-      };
-
+      const attentionBounds = attention?.getBoundingClientRect();
+      const chartBounds = chart?.getBoundingClientRect();
       return {
-        hasDashboard: Boolean(dashboard),
-        hasMain: Boolean(main),
-        hasRightRail: Boolean(rightRail),
-        gridColumns: dashboard ? window.getComputedStyle(dashboard).gridTemplateColumns : "",
+        attentionWidth: attentionBounds?.width ?? 0,
+        chartWidth: chartBounds?.width ?? 0,
+        topDifference: Math.abs((attentionBounds?.top ?? 0) - (chartBounds?.top ?? 0)),
         kpiWidths: kpiCards.map((card) => Math.round(card.getBoundingClientRect().width)),
-        main: rect(main),
-        rightRail: rect(rightRail),
       };
     });
 
-    expect(dashboardLayout.hasDashboard).toBe(true);
-    expect(dashboardLayout.hasMain).toBe(true);
-    expect(dashboardLayout.hasRightRail).toBe(true);
-    expect(dashboardLayout.gridColumns.trim().split(/\s+/)).toHaveLength(1);
+    expect(dashboardLayout.attentionWidth).toBeGreaterThanOrEqual(500);
+    expect(dashboardLayout.chartWidth).toBeGreaterThanOrEqual(260);
+    expect(dashboardLayout.topDifference).toBeLessThanOrEqual(8);
     expect(Math.min(...dashboardLayout.kpiWidths)).toBeGreaterThanOrEqual(170);
-    expect(dashboardLayout.rightRail?.top ?? 0).toBeGreaterThan(
-      dashboardLayout.main?.top ?? 0,
-    );
     await expectNoHorizontalOverflow(page);
   });
 });

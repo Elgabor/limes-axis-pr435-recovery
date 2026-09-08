@@ -36,6 +36,9 @@ coverage/
 .tmp/
 tmp/
 data/
+# The console route is source code, not local runtime data.
+!apps/web/app/data/
+!apps/web/app/data/page.tsx
 *.log
 
 # Playwright / frontend QA

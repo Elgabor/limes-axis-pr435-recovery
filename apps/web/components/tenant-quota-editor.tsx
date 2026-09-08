@@ -216,11 +216,9 @@ export function TenantQuotaEditor({ tenantId }: { tenantId: string }) {
           <p className="eyebrow m-0">Per-Tenant Quotas</p>
           <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">Quota overrides</h2>
           <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
-            Reads GET and writes PUT /platform/tenants/{tenantId}/quotas. Requires the{" "}
-            {platformTenantQuotaScope} scope. Leaving a field blank clears the override and falls
+            Leaving a field blank clears the override and falls
             back to the global configuration.
           </p>
-          <p className="mx-0 mt-1 mb-0 leading-snug text-muted break-words font-mono text-[13px]">{buildPlatformTenantQuotasPath(tenantId)}</p>
         </div>
         <Gauge size={18} />
       </div>
@@ -299,15 +297,18 @@ export function TenantQuotaEditor({ tenantId }: { tenantId: string }) {
         </p>
       ) : null}
 
-      {quotaNotes.length > 0 ? (
-        <div className="grid min-w-0 gap-2.5">
+      <details className="mt-4 border-t border-line/60 pt-3 text-sm text-muted dark:border-white/10">
+        <summary className="cursor-pointer font-medium text-ink">Quota technical details</summary>
+        <div className="mt-3 grid min-w-0 grid-cols-1 gap-2.5 [&>p]:min-w-0 [&>p]:[overflow-wrap:anywhere]">
+          <p className="m-0 leading-snug break-words">Required permission: {platformTenantQuotaScope}.</p>
+          <p className="m-0 break-words font-mono text-[13px]">GET / PUT {buildPlatformTenantQuotasPath(tenantId)}</p>
           {quotaNotes.map((note) => (
             <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words" key={note}>
               {note}
             </p>
           ))}
         </div>
-      ) : null}
+      </details>
     </section>
   );
 }

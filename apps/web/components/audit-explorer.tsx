@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Download, FileText, Filter, RotateCcw, ShieldCheck } from "lucide-react";
 
 import {
@@ -49,6 +49,11 @@ import { Field } from "@/components/ui/field";
 import { InspectDrawer } from "@/components/ui/inspect-drawer";
 import { Select } from "@/components/ui/select";
 import { SourcePill } from "@/components/ui/source-pill";
+import {
+  AuditActivityHeatmap,
+  filterAuditTimeInterval,
+  type AuditTimeInterval,
+} from "@/components/audit-activity-heatmap";
 import {
   missingRequiredScopePermission,
   ScopeDenialPanel,
@@ -157,6 +162,12 @@ function AuditIntegrityExportPanel({ exportBundle }: { exportBundle: AuditExport
 export function AuditExplorer() {
   const [auditExport, setAuditExport] = useState<AuditExportBundle | null>(null);
   const [auditExportError, setAuditExportError] = useState<AxisOperatorError | null>(null);
+  const [timeSelection, setTimeSelection] = useState<{
+    interval: AuditTimeInterval;
+    data: ManufacturingAuditExplorer;
+    context: string;
+  } | null>(null);
+  const eventsId = useId();
   const [urlState, setUrlState] = useConsoleUrlState(auditUrlSchema);
   const { refreshNonce } = useConsole();
   const { session } = useOidcConsoleSession();
@@ -182,6 +193,15 @@ export function AuditExplorer() {
     Boolean(auditData),
     auditData?.provenance,
   );
+  const timeContext = JSON.stringify([
+    auditEventsPath, tenantId, session?.actorId, session?.tenantId,
+    auditQuery.source, auditData?.provenance, refreshNonce,
+  ]);
+  // A local selection belongs to exactly one returned query/principal snapshot.
+  // Invalidate during render so a changed source cannot briefly use the old interval.
+  const timeInterval = timeSelection && timeSelection.data === auditData && timeSelection.context === timeContext
+    ? timeSelection.interval : null;
+  if (timeSelection && !timeInterval) setTimeSelection(null);
   const filters: AuditFilters = auditData
     ? {
         tenant: urlState.tenant === allAuditFilter
@@ -244,9 +264,10 @@ export function AuditExplorer() {
   }, [auditExportPath, refreshNonce, session, tenantId, tenantQueriesEnabled]);
 
   const filteredEvents = auditData ? filterAuditEvents(auditData, filters) : [];
+  const visibleEvents = filterAuditTimeInterval(filteredEvents, timeInterval);
   const selectedEvent = urlState.eventId
-    ? filteredEvents.find((event) => event.audit_event_id === urlState.eventId)
-    : filteredEvents[0];
+    ? visibleEvents.find((event) => event.audit_event_id === urlState.eventId)
+    : visibleEvents[0];
   const selectedEventConnectorSnapshotHref =
     selectedEvent?.event_type === "connector.evidence_invariants.snapshot_persisted" &&
     selectedEvent.payload_preview.snapshot_id
@@ -261,7 +282,13 @@ export function AuditExplorer() {
   }
 
   function resetFilters() {
+    setTimeSelection(null);
     setUrlState({ ...defaultFilters, eventId: "" });
+  }
+
+  function selectTimeInterval(interval: AuditTimeInterval | null) {
+    setTimeSelection(interval && auditData ? { interval, data: auditData, context: timeContext } : null);
+    setUrlState({ eventId: "" });
   }
 
   if (identity.source === "loading") {
@@ -320,7 +347,7 @@ export function AuditExplorer() {
     );
   }
 
-  if (!selectedEvent) {
+  if (!selectedEvent && !timeInterval) {
     return (
       <EmptyPanel
         action={{ label: "Reset filters", onClick: resetFilters }}
@@ -354,19 +381,31 @@ export function AuditExplorer() {
         </div>
       </div>
 
-      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
-        {auditData.metrics.map((metric) => (
-          <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]" key={metric.label}>
-            <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-t border-line/60 py-3 first:border-t-0 dark:border-white/10">
-              <p className="eyebrow m-0">{metric.label}</p>
-              <span className={`status-pill ${platformStatusClass(metric.status)}`}>
+      <div className="grid min-w-0 items-start gap-3.5 xl:grid-cols-[minmax(0,0.65fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-2 gap-3.5 xl:grid-cols-1 [&>*]:min-w-0">
+        {auditData.metrics.filter((metric) => !["Query Source", "Replay"].includes(metric.label)).map((metric) => (
+          <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5" key={metric.label}>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <p className="eyebrow m-0">{metric.label === "Persisted Events" ? "Events" : metric.label}</p>
+              {metric.status !== "ready" ? <span className={`status-pill ${platformStatusClass(metric.status)}`}>
                 {platformStatusLabel(metric.status)}
-              </span>
+              </span> : null}
             </div>
             <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{metric.value}</p>
-            <p className="m-0 text-xs leading-relaxed text-muted break-words">{metric.detail}</p>
+            <p className="m-0 text-xs leading-relaxed text-muted break-words">{metric.label === "Persisted Events"
+              ? "Events in the returned window"
+              : metric.label === "Action Required" ? "Events marked for attention" : metric.detail}</p>
           </article>
         ))}
+        </div>
+        <AuditActivityHeatmap
+          key={timeContext}
+          events={filteredEvents}
+          returnedEvents={auditData.events}
+          selectedInterval={timeInterval}
+          onSelectInterval={selectTimeInterval}
+          controlsId={eventsId}
+        />
       </div>
 
       <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 flex flex-wrap items-end justify-between gap-4">
@@ -414,28 +453,27 @@ export function AuditExplorer() {
         </div>
       </section>
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(310px,0.48fr)_minmax(0,1fr)] [&>*]:min-w-0">
-        <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
+      <div className={`grid items-start gap-4 [&>*]:min-w-0 ${selectedEvent ? "lg:grid-cols-[minmax(310px,0.48fr)_minmax(0,1fr)]" : ""}`}>
+        <section id={eventsId} aria-label="Visible audit events" className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
             <div>
               <p className="eyebrow m-0">Events</p>
-              <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{formatNumber(filteredEvents.length)} visible</h2>
+              <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink" aria-live="polite">{formatNumber(visibleEvents.length)} visible</h2>
             </div>
             <span className="status-pill signal-ready">
               <Filter size={15} />
-              {formatNumber(auditData.events.length)} total
+              {formatNumber(auditData.events.length)} returned
             </span>
           </div>
-          {filteredEvents.length === 0 ? (
+          {visibleEvents.length === 0 ? (
             <EmptyPanel
-              action={{ label: "Reset filters", onClick: resetFilters }}
-              detail="Adjust or reset the tenant, event and scope filters to see recorded audit events."
-              title="No events match the current filters"
+              detail="No returned events in this interval match the current tenant, event and scope filters. Select another cell or clear the time filter."
+              title="No events in this time interval"
             />
           ) : null}
           <div className="grid">
-            {filteredEvents.map((event) => {
-              const isSelected = event.audit_event_id === selectedEvent.audit_event_id;
+            {visibleEvents.map((event) => {
+              const isSelected = event.audit_event_id === selectedEvent?.audit_event_id;
 
               return (
                 <button
@@ -445,12 +483,11 @@ export function AuditExplorer() {
                   onClick={() => setUrlState({ eventId: event.audit_event_id })}
                   type="button"
                 >
-                  <span>
-                    <span className="m-0 font-medium text-ink break-words font-mono text-[13px]">{event.event_type}</span>
+                  <span className="grid min-w-0 gap-1">
+                    <span className="m-0 text-sm font-medium text-ink break-words">{formatAuditLabel(event.event_type)}</span>
                     <span className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
                       {formatDateTime(event.occurred_at)} / {event.actor_id}
                     </span>
-                    <span className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">{event.scope}</span>
                   </span>
                   <span className={`status-pill ${platformStatusClass(event.severity)}`}>
                     {event.result}
@@ -461,7 +498,7 @@ export function AuditExplorer() {
           </div>
         </section>
 
-        <section
+        {selectedEvent ? <section
           aria-label="Selected audit event"
           className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5 grid gap-4"
           data-audit-detail
@@ -560,7 +597,7 @@ export function AuditExplorer() {
               ))}
             </div>
           </section>
-        </section>
+        </section> : null}
       </div>
 
       <section className="min-w-0 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5">

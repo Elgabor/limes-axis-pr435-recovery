@@ -82,12 +82,6 @@ export function TenantUsagePanel({ tenantId }: { tenantId: string }) {
         <div>
           <p className="eyebrow m-0">Usage Metering</p>
           <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">Consumption over the last {defaultUsageWindowDays} days</h2>
-          <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
-            Reads GET /platform/tenants/{tenantId}/usage. Requires the{" "}
-            {platformTenantUsageScope} scope. Metering is cumulative consumption
-            accounting; quotas remain the enforcement ceilings.
-          </p>
-          <p className="mx-0 mt-1 mb-0 leading-snug text-muted break-words font-mono text-[13px]">{buildPlatformTenantUsagePath(tenantId)}</p>
         </div>
         <Activity size={18} />
       </div>
@@ -114,15 +108,19 @@ export function TenantUsagePanel({ tenantId }: { tenantId: string }) {
         </div>
       )}
 
-      {usageNotes.length > 0 ? (
-        <div className="grid min-w-0 gap-2.5">
+      <details className="mt-4 border-t border-line/60 pt-3 text-sm text-muted dark:border-white/10">
+        <summary className="cursor-pointer font-medium text-ink">Usage methodology and access</summary>
+        <div className="mt-3 grid min-w-0 grid-cols-1 gap-2.5 [&>p]:min-w-0 [&>p]:[overflow-wrap:anywhere]">
+          <p className="m-0 leading-snug">Metering is cumulative consumption accounting; quotas remain the enforcement ceilings.</p>
+          <p className="m-0 leading-snug break-words">Required permission: {platformTenantUsageScope}.</p>
+          <p className="m-0 break-words font-mono text-[13px]">GET {buildPlatformTenantUsagePath(tenantId)}</p>
           {usageNotes.map((note) => (
             <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words" key={note}>
               {note}
             </p>
           ))}
         </div>
-      ) : null}
+      </details>
     </section>
   );
 }

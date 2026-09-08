@@ -321,7 +321,7 @@ describe("WorkflowConsole detail", () => {
     expect(within(banner).getByText(/Owner approval required/)).toBeInTheDocument();
 
     const link = within(banner).getByRole("link", { name: /Review blocking approval/ });
-    expect(link).toHaveAttribute("href", "/approvals");
+    expect(link).toHaveAttribute("href", "/approvals?approval_id=appr_supply_fixture");
     expect(link).toHaveTextContent("appr_supply_fixture");
   });
 

@@ -28,14 +28,12 @@ export function ConsolePage({
   pageKey,
   title,
   subtitle,
-  eyebrow,
   sourceLabel,
   controls,
   children,
 }: ConsolePageProps) {
   const pageStrings = pageKey ? strings.pages[pageKey] : undefined;
   const resolvedTitle = title ?? pageStrings?.title ?? "";
-  const resolvedEyebrow = eyebrow ?? pageStrings?.eyebrow ?? "";
   const resolvedDescription = subtitle ?? pageStrings?.description;
 
   return (
@@ -44,7 +42,6 @@ export function ConsolePage({
       <PageHeader
         actions={controls}
         description={resolvedDescription}
-        eyebrow={resolvedEyebrow}
         title={resolvedTitle}
       />
       <div className="grid min-w-0 gap-3.5">

@@ -208,7 +208,10 @@ describe("ConnectorRuns list states", () => {
 });
 
 describe("ConnectorRuns validate action", () => {
-  it("re-runs the CSV preview with the recorded sample and reports the result inline", async () => {
+  it.each([
+    { total: 2, included: 2, summary: "2 rows checked / 2 accepted / 0 rejected" },
+    { total: 1000, included: 500, summary: "Preview includes 500 of 1,000 records. 500 records are not included." },
+  ])("re-runs the CSV preview and reports coverage for $total records", async ({ total, included, summary }) => {
     const user = userEvent.setup();
     mocks.axisFetch.mockResolvedValueOnce(
       jsonResponse({
@@ -217,9 +220,9 @@ describe("ConnectorRuns validate action", () => {
         file_name: "assets.csv",
         preview_status: "ready",
         sync_mode: "preview_only",
-        record_count: 2,
-        accepted_record_count: 2,
-        rejected_record_count: 0,
+        record_count: total,
+        accepted_record_count: included,
+        rejected_record_count: total - included,
         validation_issues: [],
         proposed_entities: [],
         audit_event_preview: {
@@ -238,7 +241,8 @@ describe("ConnectorRuns validate action", () => {
     await user.click(screen.getByRole("button", { name: "Validate" }));
 
     expect(await screen.findByText("Validation passed")).toBeInTheDocument();
-    expect(screen.getByText(/2 rows checked \/ 2 accepted \/ 0 rejected/)).toBeInTheDocument();
+    expect(screen.getByText(summary)).toBeInTheDocument();
+    expect(screen.queryByText(/500 rejected/)).not.toBeInTheDocument();
 
     const [path, options] = mocks.axisFetch.mock.calls[0];
     expect(path).toBe(`${OPERATIONS_API_PREFIX}/connectors/file-csv/preview`);

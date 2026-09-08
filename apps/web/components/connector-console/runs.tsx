@@ -382,7 +382,9 @@ export function ConnectorRuns({
           </p>
           <p className="m-0 text-sm text-muted">
             {validateOutcome.kind === "csv"
-              ? `${formatNumber(validateOutcome.result.record_count)} ${copy.validate.rows} / ` +
+              ? validateOutcome.result.preview_status === "ready" && validateOutcome.result.accepted_record_count < validateOutcome.result.record_count
+                ? strings.connectors.partialCsvPreview(validateOutcome.result.accepted_record_count, validateOutcome.result.record_count)
+                : `${formatNumber(validateOutcome.result.record_count)} ${copy.validate.rows} / ` +
                 `${formatNumber(validateOutcome.result.accepted_record_count)} ${copy.validate.accepted} / ` +
                 `${formatNumber(validateOutcome.result.rejected_record_count)} ${copy.validate.rejected}`
               : `${formatNumber(validateOutcome.result.inspected_table.columns.length)} ${copy.validate.columnsChecked} / ` +

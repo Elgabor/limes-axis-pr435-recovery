@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -341,6 +341,41 @@ describe("ModelRoutingConsole no-match filter state", () => {
     expect(
       screen.queryByRole("heading", { name: "No routes match the current filters" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("counts blocked routes within the visible filter result and restores the count on reset", async () => {
+    const user = userEvent.setup();
+    render(<ModelRoutingConsole />);
+    expect(screen.getByRole("heading", { name: "2 visible" })).toBeInTheDocument();
+    expect(screen.getByText("1 blocked")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Provider"), "local-vllm");
+    expect(screen.getByRole("heading", { name: "1 visible" })).toBeInTheDocument();
+    expect(screen.getByText("0 blocked")).toBeInTheDocument();
+    expect(screen.queryByText("1 blocked")).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Decision"), "blocked_by_default");
+    expect(screen.getByRole("heading", { name: "No routes match the current filters" })).toBeInTheDocument();
+    expect(screen.queryByText("1 blocked")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(screen.getByRole("heading", { name: "2 visible" })).toBeInTheDocument();
+    expect(screen.getByText("1 blocked")).toBeInTheDocument();
+  });
+
+  it("opens the selected dependency through the existing route filters and detail selection", async () => {
+    const user = userEvent.setup();
+    render(<ModelRoutingConsole />);
+    await user.selectOptions(screen.getByLabelText("Domain"), "Operations");
+    const diagram = screen.getByRole("region", { name: "Provider to model diagram" });
+    await user.click(within(diagram).getByRole("button", { name: "Select general-large from External General LLM" }));
+    expect(new URLSearchParams(window.location.search).get("domain")).toBe("Operations");
+    await user.click(screen.getByRole("button", { name: "Inspect first matching route" }));
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("provider")).toBe("external-general-llm");
+    expect(params.get("route_id")).toBe("route_quality_fixture");
+    expect(params.has("domain")).toBe(false);
+    expect(screen.getByRole("heading", { name: "Quality Fixture Agent" })).toBeInTheDocument();
   });
 
   it("uses the payload provenance as the single source-of-truth badge", () => {

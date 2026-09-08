@@ -234,7 +234,7 @@ test.describe("Axis console smoke", () => {
     await expect(
       page.getByRole("heading", { name: "Operations snapshot API unavailable" }),
     ).toBeVisible();
-    await expect(page.getByRole("heading", { name: "System health unavailable" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Activity breakdown unavailable" })).toBeVisible();
     await expect(page.getByText(strings.overview.hero.error.detail)).toBeVisible();
 
     // Posture cards degrade in place instead of disappearing.
@@ -584,6 +584,7 @@ test.describe("Axis console smoke", () => {
 
     await expect(page.getByRole("heading", { name: "Agents", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Agent API unavailable" })).toBeVisible();
+    await page.locator("summary").filter({ hasText: /^Action catalog:/ }).click();
     await expect(page.getByRole("heading", { name: "Action API unavailable" })).toBeVisible();
     await expect(page.getByText("Local fallback agent records are disabled.")).toBeVisible();
     await expect(page.getByText("Local fallback action records are disabled.")).toBeVisible();
@@ -613,6 +614,14 @@ test.describe("Axis console smoke", () => {
     await page.goto("/policies/policy_e2e_navigation");
     await expect(page.locator("[data-mobile-current-section]")).toHaveText("Policies");
     await expectMobileHeadersStacked(page);
+    await expectNoHorizontalOverflow(page);
+  });
+
+  test("opens Data as a tenant-bound catalog rather than a missing page", async ({ page }) => {
+    await page.goto("/data");
+    await expect(page.getByRole("heading", { name: "Data", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Data catalog unavailable" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Page not found" })).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
   });
 
@@ -780,6 +789,11 @@ test.describe("Axis console smoke", () => {
     await page.goto("/ontology?history_origin=1");
     await page.goto("/ontology");
 
+    if ((page.viewportSize()?.width ?? 1024) < 640) {
+      await page.getByRole("button", { name: "Graph", exact: true }).click();
+      await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("graph");
+    }
+    const explorerSearch = new URL(page.url()).search;
     const graph = page.getByTestId("ontology-graph");
     await expect(graph).toBeVisible();
     const ontologySource = page.locator('[data-source-state="reference"]');
@@ -812,7 +826,7 @@ test.describe("Axis console smoke", () => {
       "href",
       "/ontology/asset_line_2",
     );
-    await expect(sheet.getByText("Read-only entity context")).toBeVisible();
+    await expect(sheet.getByRole("heading", { name: "Summary", exact: true })).toBeVisible();
     expect(new URL(page.url()).pathname).toBe("/ontology");
     expect(new URL(page.url()).searchParams.get("entity_id")).toBe("asset_line_2");
 
@@ -829,7 +843,7 @@ test.describe("Axis console smoke", () => {
     await page.goBack();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     expect(new URL(page.url()).pathname).toBe("/ontology");
-    expect(new URL(page.url()).search).toBe("");
+    expect(new URL(page.url()).search).toBe(explorerSearch);
     await expect(graph).toHaveAttribute("viewBox", zoomedViewBox ?? "");
 
     // Explicit Close collapses the whole peer traversal to the explorer root.
@@ -845,7 +859,7 @@ test.describe("Axis console smoke", () => {
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(graph).toHaveAttribute("viewBox", zoomedViewBox ?? "");
     expect(new URL(page.url()).pathname).toBe("/ontology");
-    expect(new URL(page.url()).search).toBe("");
+    expect(new URL(page.url()).search).toBe(explorerSearch);
 
     await page.goBack();
     await expect.poll(() => new URL(page.url()).searchParams.get("history_origin")).toBe("1");
@@ -1073,6 +1087,7 @@ test.describe("Axis console smoke", () => {
 
     await page.goto("/policies");
 
+    await page.locator("summary").filter({ hasText: /^Create policy$/ }).click();
     const createForm = page.getByRole("form", { name: "Platform policy authoring" });
     await expect(createForm).toBeVisible();
 
@@ -1549,6 +1564,7 @@ test.describe("Axis console smoke", () => {
       0,
     );
 
+    await page.locator("summary").filter({ hasText: /^Create organization$/ }).click();
     const provisionForm = page.getByRole("form", { name: "Tenant provisioning" });
     await expect(provisionForm).toBeVisible();
 

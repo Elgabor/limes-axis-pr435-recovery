@@ -26,6 +26,7 @@ import { MetricStrip, type Metric } from "@/components/ui/metric-strip";
 import { SourcePill } from "@/components/ui/source-pill";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import { cn } from "@/lib/cn";
+import { buildApprovalHref } from "@/lib/approval-demo";
 import { stringUrlField, useConsoleUrlState } from "@/lib/console-url-state";
 import { formatContextPath, formatDateTime, formatNumber } from "@/lib/format";
 import {
@@ -144,7 +145,7 @@ function BlockerBanner({ workflow }: { workflow: WorkflowRun }) {
         <p className="m-0 text-sm text-muted">{workflow.blocker}</p>
         <Link
           className="mt-1 inline-flex flex-wrap items-center gap-1.5 text-sm font-medium text-signal underline-offset-2 hover:underline"
-          href="/approvals"
+          href={buildApprovalHref(approvalId)}
         >
           {approvalId ? (
             <>

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   axisFetchParsedJson: vi.fn(),
   useAxisQuery: vi.fn(),
   useConsoleTenantScope: vi.fn(),
+  refreshNonce: 0,
   session: {
     accessToken: "fixture-token",
     actorId: "fixture-actor",
@@ -23,7 +24,7 @@ vi.mock("@/lib/axis-api", async (importOriginal) => ({
 
 vi.mock("@/providers/console-provider", () => ({
   useConsole: () => ({
-    refreshNonce: 0,
+    refreshNonce: mocks.refreshNonce,
     triggerRefresh: vi.fn(),
     apiBaseUrl: "http://localhost:8000",
     apiStatus: { state: "ok", label: "Ready", detail: "" },
@@ -165,6 +166,10 @@ function queryResult(data: unknown, source: "loading" | "api" | "unavailable") {
 
 describe("AuditExplorer integrity and export", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/audit");
+    mocks.refreshNonce = 0;
+    mocks.session.actorId = "fixture-actor";
+    mocks.session.tenantId = "tenant_fixture";
     mocks.axisFetchParsedJson.mockReset();
     mocks.useAxisQuery.mockReset();
     mocks.useConsoleTenantScope.mockReset();
@@ -192,6 +197,115 @@ describe("AuditExplorer integrity and export", () => {
     expect(screen.queryByText(new RegExp("f00dfeed"))).not.toBeInTheDocument();
     expect(screen.queryByText(new RegExp("beefcafe"))).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Inspect" })).toBeInTheDocument();
+  });
+
+  it("keeps filtered heatmap coverage while a zero cell clears the event list and old details", async () => {
+    const user = userEvent.setup();
+    mocks.useAxisQuery.mockReturnValue(queryResult({
+      ...explorerFixture,
+      filter_options: { ...explorerFixture.filter_options, event_types: ["agent.proposal.created", "policy.egress.blocked"] },
+      events: [...explorerFixture.events, {
+        ...explorerFixture.events[0], audit_event_id: "audit_policy", event_type: "policy.egress.blocked",
+        occurred_at: "2026-07-10T18:00:00Z",
+      }],
+    }, "api"));
+    render(<AuditExplorer />);
+    expect(screen.getByText("2 events")).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Event"), "agent.proposal.created");
+    expect(screen.getByText("1 of 1 filtered events")).toBeInTheDocument();
+    expect(screen.getByText(/2 returned.*10 Jul 2026 UTC/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /10 Jul 2026, 18:00–24:00 UTC: 0 events/ }));
+    expect(screen.getByRole("heading", { name: "0 visible" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "No events in this time interval" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Selected audit event" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Event")).toHaveValue("agent.proposal.created");
+    expect(screen.getByText("1 of 1 filtered events")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear time filter" }));
+    expect(within(screen.getByRole("region", { name: "Visible audit events" })).getByRole("button", { pressed: true })).toHaveTextContent("Agent Proposal Created");
+    expect(screen.getByRole("heading", { name: "Redacted fields" })).toBeInTheDocument();
+  });
+
+  it("composes the exact time interval with tenant, event and scope filters and resets independently", async () => {
+    const user = userEvent.setup();
+    mocks.useAxisQuery.mockReturnValue(queryResult({
+      ...explorerFixture,
+      filter_options: { ...explorerFixture.filter_options,
+        event_types: ["agent.proposal.created", "policy.egress.blocked"], scopes: ["wf_fixture", "wf_other"] },
+      events: [...explorerFixture.events,
+        { ...explorerFixture.events[0], audit_event_id: "at_end", occurred_at: "2026-07-09T12:00:00Z" },
+        { ...explorerFixture.events[0], audit_event_id: "other_type", event_type: "policy.egress.blocked" },
+        { ...explorerFixture.events[0], audit_event_id: "other_scope", scope: "wf_other" },
+      ],
+    }, "api"));
+    render(<AuditExplorer />);
+    await user.selectOptions(screen.getByLabelText("Tenant"), "tenant_fixture");
+    await user.selectOptions(screen.getByLabelText("Event"), "agent.proposal.created");
+    await user.selectOptions(screen.getByLabelText("Scope"), "wf_fixture");
+    expect(screen.getByRole("heading", { name: "2 visible" })).toBeInTheDocument();
+    const cell = screen.getByRole("button", { name: /9 Jul 2026, 06:00–12:00 UTC: 1 event/ });
+    await user.click(cell);
+    expect(screen.getByRole("heading", { name: "1 visible" })).toBeInTheDocument();
+    expect(screen.getByText("Time filter: 9 Jul 2026, 06:00–12:00 UTC")).toBeInTheDocument();
+    expect(screen.queryByText("at_end")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Tenant")).toHaveValue("tenant_fixture");
+    expect(screen.getByLabelText("Event")).toHaveValue("agent.proposal.created");
+    expect(screen.getByLabelText("Scope")).toHaveValue("wf_fixture");
+    await user.click(screen.getByRole("button", { name: "Clear time filter" }));
+    expect(screen.getByRole("heading", { name: "2 visible" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Event")).toHaveValue("agent.proposal.created");
+    await user.click(cell);
+    await user.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(screen.getByRole("heading", { name: "4 visible" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear time filter" })).not.toBeInTheDocument();
+    expect(mocks.axisFetchParsedJson).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["query", "provenance", "tenant", "actor", "refresh", "source"])("resets a time selection when %s changes", async (change) => {
+    const user = userEvent.setup();
+    const { rerender } = render(<AuditExplorer />);
+    await user.click(screen.getByRole("button", { name: /9 Jul 2026, 00:00–06:00 UTC: 0 events/ }));
+    expect(screen.getByRole("heading", { name: "0 visible" })).toBeInTheDocument();
+    if (change === "query") mocks.useAxisQuery.mockReturnValue(queryResult({ ...explorerFixture }, "api"));
+    if (change === "provenance") mocks.useAxisQuery.mockReturnValue(queryResult({ ...explorerFixture, provenance: "reference" }, "api"));
+    if (change === "tenant") {
+      mocks.useConsoleTenantScope.mockReturnValue({ identity: queryResult({ authenticated: true, tenant_id: "tenant_next" }, "api"), tenantId: "tenant_next", tenantQueriesEnabled: true });
+      mocks.useAxisQuery.mockReturnValue(queryResult({
+        ...explorerFixture,
+        tenant_id: "tenant_next",
+        filter_options: { ...explorerFixture.filter_options, tenants: ["tenant_next"] },
+        events: explorerFixture.events.map((event) => ({ ...event, tenant_id: "tenant_next" })),
+      }, "api"));
+    }
+    if (change === "actor") mocks.session.actorId = "actor_next";
+    if (change === "refresh") mocks.refreshNonce = 1;
+    if (change === "source") mocks.useAxisQuery.mockReturnValue(queryResult(explorerFixture, "unavailable"));
+    rerender(<AuditExplorer />);
+    expect(screen.queryByRole("button", { name: "Clear time filter" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "1 visible" })).toBeInTheDocument();
+    // Returning to the original query object must not resurrect the old selection.
+    mocks.refreshNonce = 0;
+    mocks.session.actorId = "fixture-actor";
+    mocks.useAxisQuery.mockReturnValue(queryResult(explorerFixture, "api"));
+    mocks.useConsoleTenantScope.mockReturnValue({ identity: queryResult({ authenticated: true, tenant_id: "tenant_fixture" }, "api"), tenantId: "tenant_fixture", tenantQueriesEnabled: true });
+    rerender(<AuditExplorer />);
+    expect(screen.queryByRole("button", { name: "Clear time filter" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "1 visible" })).toBeInTheDocument();
+  });
+
+  it("uses operational metric copy while preserving returned values", () => {
+    mocks.useAxisQuery.mockReturnValue(queryResult({
+      ...explorerFixture,
+      metrics: [
+        { label: "Persisted Events", value: "86", status: "ready", detail: "Append-only audit events read from Postgres" },
+        { label: "Action Required", value: "12", status: "watch", detail: "Persisted events currently marked as requiring attention" },
+      ],
+    }, "api"));
+    render(<AuditExplorer />);
+    expect(screen.getByText("Events in the returned window")).toBeInTheDocument();
+    expect(screen.getByText("Events marked for attention")).toBeInTheDocument();
+    expect(screen.getByText("86")).toBeInTheDocument();
+    expect(screen.getByText("12")).toBeInTheDocument();
+    expect(screen.queryByText(/read from Postgres/)).not.toBeInTheDocument();
   });
 
   it("downloads the fetched export bundle as a dated JSON file", async () => {
@@ -232,7 +346,7 @@ describe("AuditExplorer integrity and export", () => {
     render(<AuditExplorer />);
 
     const selected = await screen.findByRole("button", { pressed: true });
-    expect(selected).toHaveTextContent("agent.proposal.created");
+    expect(selected).toHaveTextContent("Agent Proposal Created");
 
     window.history.replaceState(null, "", originalLocation);
   });

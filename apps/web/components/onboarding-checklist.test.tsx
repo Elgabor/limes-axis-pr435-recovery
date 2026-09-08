@@ -12,6 +12,7 @@ vi.mock("@/lib/use-axis-query", () => ({
 
 import { ONBOARDING_ENDPOINTS, OnboardingChecklist } from "./onboarding-checklist";
 import { OPERATIONS_API_PREFIX } from "@/lib/tenant-scope";
+import { parseManufacturingWorkflowConsole } from "@/lib/runtime-contracts/workflows";
 
 type Source = "loading" | "api" | "unavailable";
 
@@ -189,6 +190,53 @@ describe("OnboardingChecklist (full)", () => {
     // Completed steps drop their CTA link.
     expect(screen.queryByRole("link", { name: "Open connectors" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open agents" })).toBeInTheDocument();
+  });
+
+  it("keeps Run a governed workflow open when reference workflows exist but persisted runs are empty", () => {
+    mockRegistries({ connectors: 1, ontology: 1, policies: 1, agents: 1 });
+    const registryQuery = mocks.useAxisQuery.getMockImplementation()!;
+    const runsPath = `${OPERATIONS_API_PREFIX}/workflows/runs?tenant_id=tenant_acme`;
+    const referencePath = `${OPERATIONS_API_PREFIX}/workflows?tenant_id=tenant_acme`;
+    mocks.useAxisQuery.mockImplementation((path: string, options: { parse: (value: unknown) => unknown }) => {
+      // The reference endpoint can contain examples while the runtime is empty.
+      // Keeping its literal URL independent of ONBOARDING_ENDPOINTS catches a regression.
+      if (path === referencePath) {
+        return queryResult({ workflow_runs: [{ workflow_id: "reference_scenario_workflow" }] }, "api");
+      }
+      if (path === runsPath) {
+        return queryResult(options.parse({
+          tenant_id: "tenant_acme", plant_name: null, scenario: null,
+          provenance: "empty", as_of: "2026-09-08T00:00:00Z", runtime_status: "watch",
+          metrics: [], workflow_runs: [], runtime_notes: [],
+        }), "api");
+      }
+      return registryQuery(path, options);
+    });
+    render(<OnboardingChecklist tenantId="tenant_acme" variant="full" />);
+
+    expect(screen.getByText("4 of 5 setup steps complete")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open workflows" })).toHaveAttribute("href", "/workflows");
+    expect(mocks.useAxisQuery).toHaveBeenCalledWith(runsPath, {
+      expectedTenantId: "tenant_acme", parse: parseManufacturingWorkflowConsole,
+    });
+    expect(mocks.useAxisQuery.mock.calls.some(([path]) => path === referencePath)).toBe(false);
+  });
+
+  it("marks the workflow step done only after the persisted-run query returns a run", () => {
+    mockRegistries({ workflows: 1 });
+    render(<OnboardingChecklist variant="full" />);
+
+    expect(ONBOARDING_ENDPOINTS.workflows).toBe(`${OPERATIONS_API_PREFIX}/workflows/runs`);
+    expect(screen.getByText("1 of 5 setup steps complete")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open workflows" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the workflow step open when the persisted-run query is unavailable", () => {
+    mockRegistries({ workflows: 1 }, [`${OPERATIONS_API_PREFIX}/workflows/runs`]);
+    render(<OnboardingChecklist variant="full" />);
+
+    expect(screen.getByText("0 of 5 setup steps complete")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open workflows" })).toBeInTheDocument();
   });
 
   it("keeps the connectors step open while registered connectors are not activated yet", () => {

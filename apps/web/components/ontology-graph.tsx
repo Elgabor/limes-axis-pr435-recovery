@@ -73,7 +73,7 @@ function GraphControlButton({
 /**
  * Interactive ontology graph. Diamond nodes echo the AxisMark glyph; edges
  * draw in with the brand `.draw-path` utility (reduced-motion renders them
- * complete). Hovering or focusing a node pings it and dims non-neighbors;
+ * complete). Hovering or focusing a node highlights it and dims non-neighbors;
  * Enter or click activates the node (slide-over detail or navigation).
  * The view zooms with the wheel (cursor-centered) or the +/− controls and
  * pans by dragging — all via viewBox math, so no new animations run.
@@ -157,6 +157,7 @@ export function OntologyGraph({
   }, [bounds]);
 
   const focusId = activeId ?? selectedNodeId ?? null;
+  const isZoomed = viewBox.width < bounds.width;
   const focusNeighbors = focusId ? (layout.neighbors.get(focusId) ?? new Set<string>()) : null;
 
   const isDimmed = (id: string) =>
@@ -261,112 +262,117 @@ export function OntologyGraph({
   }
 
   return (
-    <div className="relative">
-      <svg
-        // `touch-pan-y`, not `touch-none`: the graph is full-width, so capturing
-        // every touch made it physically impossible to scroll past it on a phone.
-        // Vertical page scroll passes through; horizontal drag still pans.
-        className={`h-auto w-full touch-pan-y select-none ${isPanning ? "cursor-grabbing" : "cursor-grab"}`}
-        data-testid="ontology-graph"
-        ref={svgRef}
-        role="group"
-        aria-label={`Ontology graph with ${layout.nodes.length} nodes and ${layout.edges.length} relationships`}
-        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
-        onPointerCancel={onPointerEnd}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerEnd}
-      >
-        {/* Edges */}
-        <g fill="none">
-          {layout.edges.map((edge) => {
-            const active = isEdgeActive(edge.sourceId, edge.targetId);
-            const muted = Boolean(focusId) && !active;
+    <div className="relative min-w-0">
+      <div className="max-h-[560px] overflow-auto rounded-xl" tabIndex={0} role="region" aria-label={strings.clarity.graphRegion}>
+        <svg
+          // Full view uses native scrolling. Once zoomed, touch drags must pan
+          // the viewBox to reach nodes outside it; Reset restores native scroll.
+          className={`mx-auto block h-auto ${isZoomed ? "touch-none" : "touch-auto"} select-none ${isPanning ? "cursor-grabbing" : "cursor-grab"}`}
+          style={{ width: layout.width, minWidth: layout.width }}
+          data-testid="ontology-graph"
+          ref={svgRef}
+          role="group"
+          aria-label={`Ontology graph with ${layout.nodes.length} nodes and ${layout.edges.length} relationships`}
+          viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+          onPointerCancel={onPointerEnd}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerEnd}
+        >
+          {/* Edges */}
+          <g fill="none">
+            {layout.edges.map((edge) => {
+              const active = isEdgeActive(edge.sourceId, edge.targetId);
+              const muted = Boolean(focusId) && !active;
+
+              return (
+                <path
+                  className={`draw-path${drawn ? " drawn" : ""}`}
+                  d={edge.path}
+                  key={edge.id}
+                  stroke="rgb(var(--signal))"
+                  strokeOpacity={active ? 0.9 : muted ? 0.12 : 0.38}
+                  strokeWidth={active ? 2 : 1.25}
+                  style={{ "--path-length": `${Math.ceil(edge.length) + 2}` } as CSSProperties}
+                >
+                  <title>{edge.relationType}</title>
+                </path>
+              );
+            })}
+          </g>
+
+          {/* Nodes */}
+          {layout.nodes.map((node) => {
+            const focused = node.id === focusId;
+            const dimmed = isDimmed(node.id);
+            const fill = focused ? "rgb(var(--signal))" : "rgb(var(--ink))";
 
             return (
-              <path
-                className={`draw-path${drawn ? " drawn" : ""}`}
-                d={edge.path}
-                key={edge.id}
-                stroke="rgb(var(--signal))"
-                strokeOpacity={active ? 0.9 : muted ? 0.12 : 0.38}
-                strokeWidth={active ? 2 : 1.25}
-                style={{ "--path-length": `${Math.ceil(edge.length) + 2}` } as CSSProperties}
+              <g
+                className="cursor-pointer outline-none focus-visible:[&>polygon]:stroke-[rgb(var(--signal))] focus-visible:[&>polygon]:stroke-2"
+                key={node.id}
+                role="link"
+                tabIndex={0}
+                aria-label={`${node.label} — ${formatNodeType(node.type)}, ${platformStatusLabel(node.status)}`}
+                opacity={dimmed ? 0.25 : 1}
+                onBlur={() => setActiveId((current) => (current === node.id ? null : current))}
+                onClick={() => openNode(node.id)}
+                onFocus={() => setActiveId(node.id)}
+                onKeyDown={(event) => onNodeKeyDown(event, node.id)}
+                onMouseEnter={() => setActiveId(node.id)}
+                onMouseLeave={() => setActiveId((current) => (current === node.id ? null : current))}
               >
-                <title>{edge.relationType}</title>
-              </path>
+                {/* Focus outline echoes the AxisMark diamond. */}
+                {focused ? (
+                  <polygon
+                    fill="none"
+                    points={diamondPoints(node, NODE_HALF + 3)}
+                    stroke="rgb(var(--signal))"
+                    strokeWidth={1.5}
+                  />
+                ) : null}
+                {/* Generous invisible hit target */}
+                <circle cx={node.x} cy={node.y} fill="transparent" r={NODE_HALF + 12} />
+                <polygon
+                  fill={fill}
+                  points={diamondPoints(node, node.tier === 0 ? NODE_HALF + 3 : NODE_HALF)}
+                  stroke="rgb(var(--bg))"
+                  strokeWidth={1.5}
+                />
+                {node.status !== "ready" ? (
+                  <circle
+                    cx={node.x + NODE_HALF + 2}
+                    cy={node.y - NODE_HALF - 2}
+                    fill={
+                      node.status === "action_required" ? "rgb(var(--danger))" : "rgb(var(--warning))"
+                    }
+                    r={3}
+                  >
+                    <title>{platformStatusLabel(node.status)}</title>
+                  </circle>
+                ) : null}
+                {(node.labelVisible || focused) && (node.labelY !== node.y + 25 || node.labelX !== node.x) ? (
+                  <line x1={node.x} y1={node.y} x2={node.labelX} y2={node.labelY - 6} stroke="rgb(var(--muted))" strokeOpacity={0.35} pointerEvents="none" />
+                ) : null}
+                {node.labelVisible || focused ? <text
+                  className="font-mono"
+                  fill={focused ? "rgb(var(--signal))" : "rgb(var(--muted))"}
+                  fontSize={13}
+                  textAnchor="middle"
+                  x={node.labelX}
+                  y={node.labelY}
+                  stroke="rgb(var(--bg))"
+                  strokeWidth={4}
+                  paintOrder="stroke"
+                >
+                  <title>{node.label}</title>
+                  {node.displayLabel}
+                </text> : null}
+              </g>
             );
           })}
-        </g>
-
-        {/* Nodes */}
-        {layout.nodes.map((node) => {
-          const focused = node.id === focusId;
-          const dimmed = isDimmed(node.id);
-          const fill = focused ? "rgb(var(--signal))" : "rgb(var(--ink))";
-
-          return (
-            <g
-              className="cursor-pointer outline-none focus-visible:[&>polygon]:stroke-[rgb(var(--signal))] focus-visible:[&>polygon]:stroke-2"
-              key={node.id}
-              role="link"
-              tabIndex={0}
-              aria-label={`${node.label} — ${formatNodeType(node.type)}, ${platformStatusLabel(node.status)}`}
-              opacity={dimmed ? 0.25 : 1}
-              onBlur={() => setActiveId((current) => (current === node.id ? null : current))}
-              onClick={() => openNode(node.id)}
-              onFocus={() => setActiveId(node.id)}
-              onKeyDown={(event) => onNodeKeyDown(event, node.id)}
-              onMouseEnter={() => setActiveId(node.id)}
-              onMouseLeave={() => setActiveId((current) => (current === node.id ? null : current))}
-            >
-              {/* Hover ping halo (echoes the AxisMark diamond) */}
-              {focused ? (
-                <polygon
-                  fill="none"
-                  points={diamondPoints(node, NODE_HALF + 3)}
-                  stroke="rgb(var(--signal))"
-                  strokeWidth={1.5}
-                  style={{
-                    animation: "node-ping 1.4s cubic-bezier(0, 0, 0.2, 1) infinite",
-                    transformOrigin: `${node.x}px ${node.y}px`,
-                  }}
-                />
-              ) : null}
-              {/* Generous invisible hit target */}
-              <circle cx={node.x} cy={node.y} fill="transparent" r={NODE_HALF + 12} />
-              <polygon
-                fill={fill}
-                points={diamondPoints(node, node.tier === 0 ? NODE_HALF + 3 : NODE_HALF)}
-                stroke="rgb(var(--bg))"
-                strokeWidth={1.5}
-              />
-              {node.status !== "ready" ? (
-                <circle
-                  cx={node.x + NODE_HALF + 2}
-                  cy={node.y - NODE_HALF - 2}
-                  fill={
-                    node.status === "action_required" ? "rgb(var(--danger))" : "rgb(var(--warning))"
-                  }
-                  r={3}
-                >
-                  <title>{platformStatusLabel(node.status)}</title>
-                </circle>
-              ) : null}
-              <text
-                className="font-mono"
-                fill={focused ? "rgb(var(--signal))" : "rgb(var(--muted))"}
-                fontSize={10.5}
-                textAnchor="middle"
-                x={node.x}
-                y={node.y + NODE_HALF + 16}
-              >
-                {node.label}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+        </svg>
+      </div>
 
       <div
         aria-label={strings.ontology.graph.controlsLabel}

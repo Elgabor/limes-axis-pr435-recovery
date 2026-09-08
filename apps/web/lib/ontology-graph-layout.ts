@@ -19,6 +19,10 @@ export type OntologyGraphLayoutNode = {
   tier: number;
   x: number;
   y: number;
+  labelX: number;
+  labelY: number;
+  displayLabel: string;
+  labelVisible: boolean;
 };
 
 export type OntologyGraphLayoutEdge = {
@@ -186,8 +190,52 @@ export function buildOntologyGraphLayout(
         tier,
         x,
         y,
+        labelX: x,
+        labelY: y + 25,
+        displayLabel: node.label.length > 28 ? `${node.label.slice(0, 27)}…` : node.label,
+        labelVisible: false,
       });
     });
+  }
+
+  // Keep 13px monospace labels clear of other labels and node hit targets.
+  // Prefer the nearest free position; the graph retains its radial nodes.
+  const labelBoxes: { left: number; right: number; top: number; bottom: number }[] = [];
+  for (const node of layoutNodes) {
+    const halfWidth = node.displayLabel.length * 4;
+    node.labelX = clamp(node.x, halfWidth + 8, width - halfWidth - 8);
+    const candidates: { x: number; y: number; distance: number }[] = [];
+    for (let y = 24; y <= height - 12; y += 20) {
+      for (let x = halfWidth + 8; x <= width - halfWidth - 8; x += 24) {
+        candidates.push({ x, y, distance: (x - node.x) ** 2 + (y - node.y - 25) ** 2 });
+      }
+    }
+    candidates.unshift({ x: node.labelX, y: node.y + 25, distance: 0 });
+    candidates.sort((left, right) => left.distance - right.distance);
+    for (const candidate of candidates) {
+      const box = {
+        left: candidate.x - halfWidth - 4,
+        right: candidate.x + halfWidth + 4,
+        top: candidate.y - 14,
+        bottom: candidate.y + 4,
+      };
+      if (box.top < 8 || box.bottom > height - 8) continue;
+      const overlapsLabel = labelBoxes.some((other) =>
+        box.left < other.right && box.right > other.left &&
+        box.top < other.bottom && box.bottom > other.top,
+      );
+      const overlapsNode = layoutNodes.some((other) =>
+        box.left < other.x + 14 && box.right > other.x - 14 &&
+        box.top < other.y + 14 && box.bottom > other.y - 14,
+      );
+      if (!overlapsLabel && !overlapsNode) {
+        node.labelX = round(candidate.x);
+        node.labelY = round(candidate.y);
+        node.labelVisible = true;
+        labelBoxes.push(box);
+        break;
+      }
+    }
   }
 
   const neighbors = new Map<string, Set<string>>();

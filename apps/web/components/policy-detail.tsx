@@ -319,7 +319,7 @@ export function PolicyDetail({ policyId }: { policyId: string }) {
         </div>
       </section>
 
-      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0">
+      <div className="grid grid-cols-2 gap-3.5 xl:grid-cols-4 [&>*]:min-w-0">
         <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
           <p className="eyebrow m-0">Current Revision</p>
           <p className="mx-0 mt-2 mb-0 font-mono text-[13px] break-words text-ink">r{current.revision_number}</p>
@@ -332,7 +332,7 @@ export function PolicyDetail({ policyId }: { policyId: string }) {
         </article>
         <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">
           <p className="eyebrow m-0">Authored By</p>
-          <p className="font-display mx-0 mt-3 mb-1.5 text-2xl tabular-nums break-words text-ink">{current.created_by}</p>
+          <p className="mx-0 mt-3 mb-1.5 font-mono text-sm leading-relaxed break-words text-ink">{current.created_by}</p>
           <p className="m-0 text-xs leading-relaxed text-muted break-words">{formatTimestamp(current.created_at)}</p>
         </article>
         <article className="min-w-0 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5 min-h-[120px]">

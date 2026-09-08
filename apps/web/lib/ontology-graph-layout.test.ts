@@ -113,6 +113,52 @@ describe("buildOntologyGraphLayout", () => {
     }
   });
 
+  it("keeps long labels separate from labels and node markers in a populated graph", () => {
+    const populated = Array.from({ length: 18 }, (_, index) => node({
+      node_id: `node_${index}`,
+      node_type: nodes[index % nodes.length].node_type,
+      label: `Supplier Delay Review Batch ${index}`,
+    }));
+    const layout = buildOntologyGraphLayout(populated, []);
+    expect(layout.nodes.every((entry) => entry.labelVisible)).toBe(true);
+    const boxes = layout.nodes.map((entry) => ({
+      left: entry.labelX - entry.displayLabel.length * 4 - 4,
+      right: entry.labelX + entry.displayLabel.length * 4 + 4,
+      top: entry.labelY - 14,
+      bottom: entry.labelY + 4,
+    }));
+    boxes.forEach((box, index) => {
+      expect(box.top).toBeGreaterThanOrEqual(8);
+      expect(box.bottom).toBeLessThanOrEqual(layout.height - 8);
+      for (const other of boxes.slice(index + 1)) {
+        expect(box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top).toBe(false);
+      }
+      for (const marker of layout.nodes) {
+        expect(box.left < marker.x + 14 && box.right > marker.x - 14 && box.top < marker.y + 14 && box.bottom > marker.y - 14).toBe(false);
+      }
+    });
+  });
+
+  it("defers crowded labels to node focus without dropping their full names", () => {
+    const crowded = Array.from({ length: 60 }, (_, index) => node({
+      node_id: `node_${index}`,
+      node_type: nodes[index % nodes.length].node_type,
+      label: `Supplier Delay Review Batch ${index}`,
+    }));
+    const layout = buildOntologyGraphLayout(crowded, []);
+    expect(layout.nodes.some((entry) => !entry.labelVisible)).toBe(true);
+    expect(layout.nodes).toHaveLength(crowded.length);
+    expect(layout.nodes.map((entry) => entry.label).sort()).toEqual(crowded.map((entry) => entry.label).sort());
+    const visible = layout.nodes.filter((entry) => entry.labelVisible);
+    visible.forEach((entry, index) => {
+      for (const other of visible.slice(index + 1)) {
+        const overlapsX = Math.abs(entry.labelX - other.labelX) < (entry.displayLabel.length + other.displayLabel.length) * 4 + 8;
+        const overlapsY = Math.abs(entry.labelY - other.labelY) < 18;
+        expect(overlapsX && overlapsY).toBe(false);
+      }
+    });
+  });
+
   it("builds edge paths and symmetric neighbor sets from relationships", () => {
     const layout = buildOntologyGraphLayout(nodes, relationships);
 

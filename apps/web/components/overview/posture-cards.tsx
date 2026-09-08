@@ -174,12 +174,12 @@ export function PostureCards({
   return (
     <div
       aria-label="Platform posture"
-      className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5"
+      className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5"
       role="list"
     >
       {cards.map((card) => (
         <article
-          className="grid content-start gap-2 rounded-2xl border border-line bg-surface p-5 dark:border-white/10 dark:bg-white/5"
+          className="grid content-start gap-2 rounded-2xl border border-line bg-surface p-4 dark:border-white/10 dark:bg-white/5"
           data-kpi-card
           key={card.key}
           role="listitem"
@@ -193,7 +193,6 @@ export function PostureCards({
           ) : (
             <p className="font-display m-0 text-xl break-words text-ink">{card.value}</p>
           )}
-          <div aria-hidden="true" className="rule-hairline" />
           <p className="m-0 text-xs text-muted">{card.detail}</p>
           <SourcePill
             className="w-fit max-w-full"

@@ -118,15 +118,6 @@ body {
   text-rendering: optimizelegibility;
 }
 
-/* Dark body treatment: navy base + dim signal glow + static dot grid. */
-[data-theme="dark"] body {
-  background-color: rgb(var(--bg));
-  background-image:
-    radial-gradient(ellipse 80% 90% at 50% 110%, rgb(var(--signal) / 0.25) 0%, rgb(var(--signal) / 0.07) 45%, transparent 70%),
-    radial-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px);
-  background-size: auto, 22px 22px;
-  background-attachment: fixed, fixed;
-}
 
 /*
  * Element defaults live in the base layer so Tailwind utility classes
@@ -174,7 +165,9 @@ a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid rgb(var(--signal));
   outline-offset: 2px;
 }
