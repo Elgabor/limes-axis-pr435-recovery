@@ -7,6 +7,11 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Offline GET-only REST source profiles with typed selectors/parameters, declared
+  limits and context-bound SDK checkpoints. Endpoint revisions and selection
+  changes invalidate resume; no HTTP transport or source execution is enabled
+  ([#859](https://github.com/Limes-Labs/limes-axis/issues/859)).
+
 - Approval queue search and risk/domain filters, compact counts, and a dedicated
   mobile review with focus restoration. Explicit approval links remain reviewable
   outside filters; decision context and required controls are easier to inspect
