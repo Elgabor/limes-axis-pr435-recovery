@@ -72,6 +72,13 @@ release-bound behavior, not the complete commit history.
   negotiation and a bounded offline reference. The author guide maps adoption
   to existing host gates without enabling new sources
   ([#334](https://github.com/Limes-Labs/limes-axis/issues/334)).
+
+- Shared document-source contracts for scoped identities, immutable revisions,
+  ACL freshness and explicit deletion/access-loss observations. Pure replay and
+  predecessor checks reject stale updates without adding a store or granting
+  read access; provider adapters remain unimplemented
+  ([#863](https://github.com/Limes-Labs/limes-axis/issues/863)).
+
 - A repository-topology ADR makes the private repository the commercial source
   of truth and defines the fail-closed, fresh-history boundary for any future
   OSS edition ([#319](https://github.com/Limes-Labs/limes-axis/issues/319)).
