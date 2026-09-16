@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 import { Database, List, Share2, ShieldCheck } from "lucide-react";
 
 import { ErrorPanel } from "@/components/ui/states";
@@ -86,6 +86,8 @@ export function OntologyExplorer() {
   const narrow = useSyncExternalStore(subscribeToViewport, narrowViewport, serverViewport);
   const view: OntologyView = urlState.view === "auto" ? (narrow ? "list" : "graph") : urlState.view;
   const selectedNodeId = urlState.entityId || null;
+  const entityTriggerRef = useRef<HTMLElement | SVGElement | null>(null);
+  const explorerHeadingRef = useRef<HTMLHeadingElement>(null);
   const updateEntityId = useCallback(
     (entityId: string, history: "push" | "replace") => {
       setUrlState({ entityId }, { history });
@@ -96,6 +98,25 @@ export function OntologyExplorer() {
     entityId: selectedNodeId,
     updateEntityId,
   });
+
+  function activateEntity(nodeId: string, trigger: HTMLElement | SVGElement) {
+    entityTriggerRef.current = trigger;
+    navigateToEntity(nodeId);
+  }
+
+  function restoreEntityFocus(event: Event) {
+    event.preventDefault();
+    const fallback = explorerHeadingRef.current;
+    // Route unmounts must leave focus management to the destination page.
+    if (!fallback?.isConnected) return;
+
+    const trigger = entityTriggerRef.current;
+    if (trigger?.isConnected) {
+      trigger.focus();
+      if (trigger.ownerDocument.activeElement === trigger) return;
+    }
+    fallback.focus();
+  }
 
   const nodeLabels = useMemo(
     () => (ontology ? nodeLabelById(ontology) : new Map<string, string>()),
@@ -170,7 +191,7 @@ export function OntologyExplorer() {
       <Card className="grid gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="grid gap-1">
-            <h2 className="font-display m-0 text-xl text-ink">{strings.clarity.ontologyObjects}</h2>
+            <h2 ref={explorerHeadingRef} tabIndex={-1} className="font-display m-0 text-xl text-ink">{strings.clarity.ontologyObjects}</h2>
           </div>
           <div className="flex gap-2" role="group" aria-label="Ontology view">
             <Button
@@ -201,7 +222,7 @@ export function OntologyExplorer() {
               nodes={ontology.nodes}
               relationships={ontology.relationships}
               selectedNodeId={selectedNodeId ?? undefined}
-              onNodeActivate={navigateToEntity}
+              onNodeActivate={activateEntity}
             />
             <div
               className="flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[11px] tracking-[0.14em] text-muted uppercase"
@@ -229,7 +250,7 @@ export function OntologyExplorer() {
           <div className="grid gap-4">
             <div className="grid gap-2 sm:hidden" aria-label={strings.clarity.businessObjects}>
               {ontology.nodes.map((node) => (
-                <button key={node.node_id} type="button" onClick={() => navigateToEntity(node.node_id)}
+                <button key={node.node_id} type="button" onClick={(event) => activateEntity(node.node_id, event.currentTarget)}
                   className="grid min-w-0 justify-items-start gap-2 rounded-xl border border-line p-3 text-left dark:border-white/10">
                   <span className="font-medium text-ink">{node.label}</span>
                   <span className="text-xs text-muted">{formatNodeType(node.node_type)} · {node.domain}</span>
@@ -255,7 +276,7 @@ export function OntologyExplorer() {
                     <td>
                       <button
                         className="cursor-pointer border-0 bg-transparent p-0 text-left font-medium text-signal hover:underline"
-                        onClick={() => navigateToEntity(node.node_id)}
+                        onClick={(event) => activateEntity(node.node_id, event.currentTarget)}
                         type="button"
                       >
                         {node.label}
@@ -374,6 +395,7 @@ export function OntologyExplorer() {
 
       <OntologyEntitySheet
         nodeId={selectedNodeId}
+        onCloseAutoFocus={restoreEntityFocus}
         onNavigateToNode={navigateToEntity}
         onOpenChange={(open) => {
           if (!open) {

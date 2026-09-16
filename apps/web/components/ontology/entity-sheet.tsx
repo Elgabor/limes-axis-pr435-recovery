@@ -13,6 +13,7 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
+  type SheetContentProps,
 } from "@/components/ui/sheet";
 import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
 import { formatNodeType } from "@/lib/ontology-demo";
@@ -23,6 +24,7 @@ type OntologyEntitySheetProps = {
   /** Entity to show; `null` keeps the sheet closed (and fetches nothing). */
   nodeId: string | null;
   onOpenChange: (open: boolean) => void;
+  onCloseAutoFocus?: SheetContentProps["onCloseAutoFocus"];
   /** Swap the sheet to a peer entity without navigating away. */
   onNavigateToNode?: (nodeId: string) => void;
   /** API-verified tenant inherited from the ontology explorer. */
@@ -37,6 +39,7 @@ type OntologyEntitySheetProps = {
 export function OntologyEntitySheet({
   nodeId,
   onOpenChange,
+  onCloseAutoFocus,
   onNavigateToNode,
   tenantId,
 }: OntologyEntitySheetProps) {
@@ -48,7 +51,7 @@ export function OntologyEntitySheet({
 
   return (
     <Sheet open onOpenChange={onOpenChange}>
-      <SheetContent className="sm:max-w-xl">
+      <SheetContent className="sm:max-w-xl" onCloseAutoFocus={onCloseAutoFocus}>
         <SheetHeader>
           <Eyebrow>{strings.ontology.sheet.eyebrow}</Eyebrow>
           <SheetTitle>{detail ? detail.node.label : nodeId}</SheetTitle>

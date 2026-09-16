@@ -101,6 +101,12 @@ release-bound behavior, not the complete commit history.
 
 ### Changed
 
+- Closing ontology entity details returns keyboard focus to the opening graph
+  node or list control, with the explorer heading as a fallback for direct links,
+  removed nodes or responsive hidden controls. Peer navigation, browser history,
+  view selection, zoom and tenant-bound reads are preserved
+  ([#431](https://github.com/Limes-Labs/limes-axis/issues/431)).
+
 - The connector console loads a bounded, principal-scoped summary and selected
   details on demand. A local 60-connector browser fixture drops from seven
   initial requests/161,020 bytes to two requests/9,587 bytes; pagination, audit
