@@ -57,6 +57,14 @@ async function expectFocusReturned(opener: Element) {
   expect(new URLSearchParams(window.location.search).has("entity_id")).toBe(false);
 }
 
+async function expectFallbackFocus() {
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: strings.clarity.ontologyObjects })).toHaveFocus();
+  });
+  expect(new URLSearchParams(window.location.search).has("entity_id")).toBe(false);
+}
+
 beforeEach(() => {
   vi.stubGlobal("innerWidth", 1280);
   window.history.replaceState(null, "", "/ontology");
@@ -90,7 +98,8 @@ describe("ontology entity focus return", () => {
 
     await user.tab();
     expect(controls[2]).toHaveFocus();
-    expect(new URLSearchParams(window.location.search).get("view")).toBe(surface === "graph" ? "graph" : "list");
+    expect(new URLSearchParams(window.location.search).get("view"))
+      .toBe(surface === "graph" ? "graph" : "list");
   });
 
   it.each(surfaces)("returns to the clicked %s control when Close is activated", async (surface) => {
@@ -100,7 +109,7 @@ describe("ontology entity focus return", () => {
 
     await user.click(opener);
     const dialog = screen.getByRole("dialog");
-    await user.click(within(dialog).getByRole("button", { name: "Close", exact: true }));
+    await user.click(within(dialog).getByRole("button", { name: "Close" }));
 
     await expectFocusReturned(opener);
   });
@@ -109,13 +118,17 @@ describe("ontology entity focus return", () => {
     const user = userEvent.setup();
     renderSurface("table");
     const opener = within(screen.getByRole("table", { name: "Ontology nodes" }))
-      .getByRole("button", { name: "Line 2 Packaging", exact: true });
+      .getByRole("button", { name: "Line 2 Packaging" });
     await user.click(opener);
-    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Fixture Plant", exact: true }));
-    expect(within(screen.getByRole("dialog")).getByRole("heading", { name: "Fixture Plant", exact: true })).toBeInTheDocument();
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Fixture Plant" }));
+    expect(within(screen.getByRole("dialog")).getByRole("heading", { name: "Fixture Plant" }))
+      .toBeInTheDocument();
 
     act(() => window.history.back());
-    await waitFor(() => expect(within(screen.getByRole("dialog")).getByRole("heading", { name: "Line 2 Packaging", exact: true })).toBeInTheDocument());
+    await waitFor(() => {
+      expect(within(screen.getByRole("dialog")).getByRole("heading", { name: "Line 2 Packaging" }))
+        .toBeInTheDocument();
+    });
     act(() => window.history.back());
     await expectFocusReturned(opener);
     act(() => window.history.forward());
@@ -126,12 +139,16 @@ describe("ontology entity focus return", () => {
 
   it.each(["asset_line_2", "missing-entity"])("uses the explorer heading when a direct link has no opener (%s)", async (nodeId) => {
     const user = userEvent.setup();
-    window.history.replaceState({ unrelatedRouterState: "retained" }, "", `/ontology?view=list&entity_id=${nodeId}&context=retained`);
+    window.history.replaceState(
+      { unrelatedRouterState: "retained" },
+      "",
+      `/ontology?view=list&entity_id=${nodeId}&context=retained`,
+    );
     const go = vi.spyOn(window.history, "go");
     render(<OntologyExplorer />);
-    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close", exact: true }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
 
-    await expectFocusReturned(screen.getByRole("heading", { name: strings.clarity.ontologyObjects, exact: true }));
+    await expectFallbackFocus();
     expect(new URLSearchParams(window.location.search).get("view")).toBe("list");
     expect(new URLSearchParams(window.location.search).get("context")).toBe("retained");
     expect(window.history.state.unrelatedRouterState).toBe("retained");
@@ -147,7 +164,9 @@ describe("ontology entity focus return", () => {
       data: {
         ...ontologyFixture,
         nodes: ontologyFixture.nodes.filter((node) => node.node_id !== "asset_line_2"),
-        relationships: ontologyFixture.relationships.filter((relationship) => relationship.source_id !== "asset_line_2" && relationship.target_id !== "asset_line_2"),
+        relationships: ontologyFixture.relationships.filter(
+          (relationship) => relationship.source_id !== "asset_line_2" && relationship.target_id !== "asset_line_2",
+        ),
       },
       source: "api",
     });
@@ -155,13 +174,13 @@ describe("ontology entity focus return", () => {
     expect(opener.isConnected).toBe(false);
     await user.keyboard("{Escape}");
 
-    await expectFocusReturned(screen.getByRole("heading", { name: strings.clarity.ontologyObjects, exact: true }));
+    await expectFallbackFocus();
   });
 
   it("keeps focus trapped in the open sheet and preserves the graph zoom on close", async () => {
     const user = userEvent.setup();
     renderSurface("graph");
-    await user.click(screen.getByRole("button", { name: "Zoom in", exact: true }));
+    await user.click(screen.getByRole("button", { name: "Zoom in" }));
     const graph = screen.getByTestId("ontology-graph");
     const viewBox = graph.getAttribute("viewBox");
     const opener = controlsFor("graph")[1];
@@ -169,7 +188,7 @@ describe("ontology entity focus return", () => {
     await user.keyboard(" ");
     const dialog = screen.getByRole("dialog");
     const first = within(dialog).getByRole("link", { name: /Open full page/ });
-    const last = within(dialog).getByRole("button", { name: "Close", exact: true });
+    const last = within(dialog).getByRole("button", { name: "Close" });
     act(() => first.focus());
 
     await user.tab({ shift: true });
