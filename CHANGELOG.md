@@ -77,7 +77,6 @@ release-bound behavior, not the complete commit history.
   negotiation and a bounded offline reference. The author guide maps adoption
   to existing host gates without enabling new sources
   ([#334](https://github.com/Limes-Labs/limes-axis/issues/334)).
-
 - Shared document-source contracts for scoped identities, immutable revisions,
   ACL freshness and explicit deletion/access-loss observations. Pure replay and
   predecessor checks reject stale updates without adding a store or granting
@@ -100,6 +99,12 @@ release-bound behavior, not the complete commit history.
   automated documentation-path check ([#323](https://github.com/Limes-Labs/limes-axis/issues/323)).
 
 ### Changed
+
+- Closing ontology entity details returns keyboard focus to the opening graph
+  node or list control, with the explorer heading as a fallback for direct links,
+  removed nodes or responsive hidden controls. Peer navigation, browser history,
+  view selection, zoom and tenant-bound reads are preserved
+  ([#431](https://github.com/Limes-Labs/limes-axis/issues/431)).
 
 - The connector console loads a bounded, principal-scoped summary and selected
   details on demand. A local 60-connector browser fixture drops from seven
