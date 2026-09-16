@@ -132,7 +132,7 @@ jobs:
           docker run -d --name axis-ci-s3-input -p 127.0.0.1:19335:9000 \
             -e MINIO_ROOT_USER=axis335fixture \
             -e MINIO_ROOT_PASSWORD=axis335fixturepassword \
-            minio/minio:RELEASE.2024-10-13T13-34-11Z@sha256:9535594ad4122b7a78c6632788a989b96d9199b483d3bd71a5ceae73a922cdfa server /data
+            quay.io/minio/minio:RELEASE.2024-10-13T13-34-11Z@sha256:9535594ad4122b7a78c6632788a989b96d9199b483d3bd71a5ceae73a922cdfa server /data
           for _ in $(seq 1 60); do
             if curl -fsS --max-time 1 http://127.0.0.1:19335/minio/health/ready > /dev/null; then
               exit 0
