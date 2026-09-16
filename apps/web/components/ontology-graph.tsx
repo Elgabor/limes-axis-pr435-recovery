@@ -37,7 +37,7 @@ type OntologyGraphProps = {
   /** Highlighted node (e.g. the entity currently open). */
   selectedNodeId?: string;
   /** Invoked on click/Enter on a node; defaults to navigating to the entity page. */
-  onNodeActivate?: (nodeId: string) => void;
+  onNodeActivate?: (nodeId: string, trigger: SVGGElement) => void;
 };
 
 function diamondPoints(node: OntologyGraphLayoutNode, half: number): string {
@@ -165,13 +165,13 @@ export function OntologyGraph({
   const isEdgeActive = (sourceId: string, targetId: string) =>
     Boolean(focusId && (sourceId === focusId || targetId === focusId));
 
-  function openNode(nodeId: string) {
+  function openNode(nodeId: string, trigger: SVGGElement) {
     if (suppressActivateRef.current) {
       return;
     }
 
     if (onNodeActivate) {
-      onNodeActivate(nodeId);
+      onNodeActivate(nodeId, trigger);
       return;
     }
 
@@ -181,7 +181,7 @@ export function OntologyGraph({
   function onNodeKeyDown(event: KeyboardEvent<SVGGElement>, nodeId: string) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      openNode(nodeId);
+      openNode(nodeId, event.currentTarget);
     }
   }
 
@@ -316,7 +316,7 @@ export function OntologyGraph({
                 aria-label={`${node.label} — ${formatNodeType(node.type)}, ${platformStatusLabel(node.status)}`}
                 opacity={dimmed ? 0.25 : 1}
                 onBlur={() => setActiveId((current) => (current === node.id ? null : current))}
-                onClick={() => openNode(node.id)}
+                onClick={(event) => openNode(node.id, event.currentTarget)}
                 onFocus={() => setActiveId(node.id)}
                 onKeyDown={(event) => onNodeKeyDown(event, node.id)}
                 onMouseEnter={() => setActiveId(node.id)}
