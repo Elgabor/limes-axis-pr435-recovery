@@ -77,6 +77,7 @@ release-bound behavior, not the complete commit history.
   negotiation and a bounded offline reference. The author guide maps adoption
   to existing host gates without enabling new sources
   ([#334](https://github.com/Limes-Labs/limes-axis/issues/334)).
+
 - Shared document-source contracts for scoped identities, immutable revisions,
   ACL freshness and explicit deletion/access-loss observations. Pure replay and
   predecessor checks reject stale updates without adding a store or granting
