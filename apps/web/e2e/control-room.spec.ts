@@ -70,6 +70,7 @@ test.describe("approval review workspace", () => {
     await expect(page).toHaveURL(/domain=quality/i);
     const row = page.getByRole("button", { name: /Place Batch Q-1842/ });
     await row.click();
+    await expect(page).toHaveURL(/approval_id=/);
     await expect(page.getByRole("heading", { name: "Place Batch Q-1842 on quality hold" })).toBeVisible();
     if (compact(page)) {
       await expect(page.getByRole("region", { name: "Approval review", exact: true })).toBeFocused();
@@ -83,6 +84,7 @@ test.describe("approval review workspace", () => {
     await expect(page).not.toHaveURL(/approval_id=/);
     await expect(page.getByRole("combobox", { name: "Domain", exact: true })).toHaveValue(/quality/i, { timeout: 10_000 });
     await row.click();
+    await expect(page).toHaveURL(/approval_id=/);
     await page.goBack();
     await expect(page).toHaveURL(/\/approvals(?:\?|$)/);
     await expect(page).not.toHaveURL(/approval_id=/);
