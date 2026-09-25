@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { strings } from "@/lib/strings";
 import { ConsolePage } from "@/components/console-page";
 import { OntologyEntityDetail } from "@/components/ontology-entity-detail";
 
@@ -20,7 +21,7 @@ export default async function OntologyEntityPage({ params }: OntologyEntityPageP
   return (
     <ConsolePage
       pageKey="ontology"
-      subtitle="Connected relationships, permission scopes, evidence references and read-only governance boundaries."
+      subtitle={strings.clarity.entityPurpose}
       title="Entity detail"
     >
       <OntologyEntityDetail nodeId={nodeId} />

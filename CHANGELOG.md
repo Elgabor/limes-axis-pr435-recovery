@@ -7,6 +7,16 @@ release-bound behavior, not the complete commit history.
 
 ### Added
 
+- Offline GET-only REST source profiles with typed selectors/parameters, declared
+  limits and context-bound SDK checkpoints. Endpoint revisions and selection
+  changes invalidate resume; no HTTP transport or source execution is enabled
+  ([#859](https://github.com/Limes-Labs/limes-axis/issues/859)).
+
+- Approval queue search and risk/domain filters, compact counts, and a dedicated
+  mobile review with focus restoration. Explicit approval links remain reviewable
+  outside filters; decision context and required controls are easier to inspect
+  ([#436](https://github.com/Limes-Labs/limes-axis/issues/436)).
+
 - Reproducible ingestion strategy benchmarks for REST, database, object and
   document fixtures, with peak memory, queue delay, bounded admission, tenant
   turn scheduling and checkpoint/replay checks. The experiments evaluate
@@ -67,6 +77,13 @@ release-bound behavior, not the complete commit history.
   negotiation and a bounded offline reference. The author guide maps adoption
   to existing host gates without enabling new sources
   ([#334](https://github.com/Limes-Labs/limes-axis/issues/334)).
+
+- Shared document-source contracts for scoped identities, immutable revisions,
+  ACL freshness and explicit deletion/access-loss observations. Pure replay and
+  predecessor checks reject stale updates without adding a store or granting
+  read access; provider adapters remain unimplemented
+  ([#863](https://github.com/Limes-Labs/limes-axis/issues/863)).
+
 - A repository-topology ADR makes the private repository the commercial source
   of truth and defines the fail-closed, fresh-history boundary for any future
   OSS edition ([#319](https://github.com/Limes-Labs/limes-axis/issues/319)).
@@ -83,6 +100,12 @@ release-bound behavior, not the complete commit history.
   automated documentation-path check ([#323](https://github.com/Limes-Labs/limes-axis/issues/323)).
 
 ### Changed
+
+- Closing ontology entity details returns keyboard focus to the opening graph
+  node or list control, with the explorer heading as a fallback for direct links,
+  removed nodes or responsive hidden controls. Peer navigation, browser history,
+  view selection, zoom and tenant-bound reads are preserved
+  ([#431](https://github.com/Limes-Labs/limes-axis/issues/431)).
 
 - The connector console loads a bounded, principal-scoped summary and selected
   details on demand. A local 60-connector browser fixture drops from seven

@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 import { cn } from "@/lib/cn";
 
 export type Metric = {
@@ -37,18 +39,18 @@ export function MetricStrip({ metrics, label }: { metrics: Metric[]; label?: str
   const visible = metrics.slice(0, MAX_METRICS);
 
   return (
-    <div role="list" aria-label={label} className="flex min-w-0 flex-wrap gap-3">
+    <div role="list" aria-label={label} className="grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2 lg:grid-cols-[repeat(var(--metric-count),minmax(0,1fr))]" style={{ "--metric-count": Math.max(1, visible.length) } as CSSProperties}>
       {visible.map((metric) => (
         <article
           key={metric.label}
           className={cn(
-            "min-w-[160px] flex-1 basis-40 rounded-2xl border border-line bg-surface p-4",
+            "min-w-0 rounded-2xl border border-line bg-surface p-4",
             "dark:border-white/10 dark:bg-white/5",
           )}
           role="listitem"
         >
-          <p className="eyebrow m-0">{metric.label}</p>
-          <p className="font-display mx-0 mt-3 mb-0 flex items-center gap-2 text-2xl tabular-nums text-ink">
+          <p className="eyebrow m-0 break-words">{metric.label}</p>
+          <p className="font-display mx-0 mt-2 mb-0 flex items-center gap-2 text-2xl tabular-nums break-words text-ink">
             {metric.tone ? (
               <>
                 <span aria-hidden="true" className={cn("status-dot", toneClasses[metric.tone])} />

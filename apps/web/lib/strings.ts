@@ -117,73 +117,73 @@ const pages = {
     eyebrow: nav.operate,
     title: "Overview",
     description:
-      "See what needs your attention right now across approvals, workflows, and platform health.",
+      "Turn connected business data into actions your team can review and track.",
   },
   approvals: {
     eyebrow: nav.operate,
     title: "Approvals",
     description:
-      "Review proposed actions, record decisions, and see what external executors report afterward.",
+      "Review proposed actions and follow their reported outcomes.",
   },
   workflows: {
     eyebrow: nav.operate,
     title: "Workflows",
     description:
-      "Follow governed workflow runs from start to finish and see exactly what is blocking them.",
+      "Track workflow progress and resolve blockers.",
   },
   agents: {
     eyebrow: nav.operate,
     title: "Agents",
     description:
-      "See every registered agent, what it is allowed to do, and how its recent runs went.",
+      "Check what each agent can do and review its runs.",
   },
   ontology: {
     eyebrow: nav.dataAndModels,
     title: "Ontology",
     description:
-      "Browse the shared business vocabulary that connects your data, agents, and policies.",
+      "Explore business objects, such as orders and machines, and their connections.",
   },
   connectors: {
     eyebrow: nav.dataAndModels,
     title: "Connectors",
     description:
-      "Bring data in from files and external systems, with every sync governed and recorded.",
+      "Connect your data sources and monitor their imports.",
   },
   data: {
     eyebrow: nav.dataAndModels,
     title: "Data",
     description:
-      "See every data asset the platform knows about, what has actually been observed, and where stewardship is still missing.",
+      "Find data assets, inspect their evidence, and assign ownership.",
   },
   "model-routing": {
     eyebrow: nav.dataAndModels,
     title: "Models",
     description:
-      "See which AI models the platform routes work to, and the calls it has actually made.",
+      "Review model selection rules and recorded AI calls.",
   },
   policies: {
     eyebrow: nav.governance,
     title: "Policies",
     description:
-      "Write and version the rules that decide what agents may do and when a human steps in.",
+      "Set rules for actions, data access, and human approval.",
   },
   audit: {
     eyebrow: nav.governance,
     title: "Audit",
     description:
-      "Search the tamper-evident record of everything that has happened on the platform.",
+      "Trace recorded actions, decisions, and the evidence behind them.",
   },
   simulation: {
     eyebrow: nav.governance,
     title: "Simulation",
     description:
-      "Replay past decisions against different policies to see what would change before you commit.",
+      "Compare policy outcomes before applying changes.",
   },
   tenants: {
     eyebrow: nav.platform,
     title: "Tenants",
     description:
-      "Manage the organizations on this deployment and the resources each one can use.",
+      "Manage organizations and their resource limits.",
   },
   settings: {
     eyebrow: nav.platform,
@@ -247,6 +247,19 @@ const approvals = {
   queue: {
     eyebrow: "Queue",
     title: "Approval inbox",
+    filters: "Approval queue filters",
+    search: "Search approvals",
+    searchPlaceholder: "Action, owner or workflow…",
+    risk: "Risk",
+    allRisks: "All risks",
+    domain: "Domain",
+    allDomains: "All domains",
+    clear: "Clear filters",
+    noMatches: "No pending approvals match these filters. Try another search or clear the filters.",
+    review: "Approval review",
+    back: "Back to approval inbox",
+    select: "Select an approval to review",
+    selectDetail: "Choose a matching action from the queue to see its evidence and decision options.",
   },
   history: {
     eyebrow: "History",
@@ -502,6 +515,8 @@ const workflows = {
 
 /** Connector console copy: list, detail tabs, wizard, and preview-sync runs. */
 const connectors = {
+  partialCsvPreview: (included: number, total: number) =>
+    `Preview includes ${included.toLocaleString("en")} of ${total.toLocaleString("en")} records. ${(total - included).toLocaleString("en")} records are not included.`,
   list: {
     eyebrow: "Registry",
     neverSampled: "Never sampled",
@@ -1268,6 +1283,8 @@ const overview = {
     eyebrow: "Needs attention",
     review: "Review & decide",
     openWorkflows: "Open workflows",
+    viewRecordedRuns: "View recorded runs",
+    exampleWorkflow: "Example workflow",
     openAudit: "Open audit",
     openApproval: "Open approval",
     approvalsUnavailable: "Pending approvals could not be loaded from the approval API.",
@@ -1824,6 +1841,33 @@ const tenantVocabulary = {
 } as const;
 
 export const strings = {
+  clarity: {
+    objectSummary: "Summary",
+    entityPurpose: "Inspect this object, its relationships, and who can access it.",
+    policyPurpose: "Review the rule, compare revisions, and test its effect.",
+    tenantPurpose: "Manage this organization's access, resource limits, and activity.",
+    auditEventIdUnavailable: "Audit event ID unavailable",
+    recordedActivity: "Recorded activity",
+    advancedConnectorImport: "Advanced: import connector configuration",
+    actionCatalog: "Action catalog: available actions and permissions",
+    agentDetails: "Agent registry details",
+    modelMonitoring: "Model monitoring details",
+    businessObjects: "Business objects",
+    relationships: "Relationships",
+    ontologySources: "Sources and access details",
+    ontologyObjects: "Business objects and connections",
+    graphRegion: "Scrollable ontology graph",
+    createPolicy: "Create policy",
+    createOrganization: "Create organization",
+    activity: {
+      title: "Activity by category",
+      window: (count: number) => `Share of ${count} events in the latest window (up to 25).`,
+      errorTitle: "Activity breakdown unavailable",
+      errorDetail: "Refresh to load the recent audit window.",
+      emptyTitle: "No activity to compare",
+      emptyDetail: "Recorded events will appear here.",
+    },
+  },
   scopeDenial,
   nav,
   identityGate,

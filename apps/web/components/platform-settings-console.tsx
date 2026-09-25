@@ -136,9 +136,10 @@ function CheckList({ checks }: { checks: SettingsCheck[] }) {
                 {settingsCheckGuidance(check.check_id)}
               </p>
             ) : null}
-            <p className="m-0 font-mono text-xs leading-snug text-muted break-words">
-              {check.detail}
-            </p>
+            <details className="text-xs text-muted">
+              <summary className="min-h-6 w-fit cursor-pointer">{strings.states.technicalDetails}</summary>
+              <p className="mt-2 font-mono leading-snug break-words">{check.detail}</p>
+            </details>
           </div>
           <SettingsStatusPill status={check.status} />
         </div>

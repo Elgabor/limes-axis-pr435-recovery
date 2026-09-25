@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { strings } from "@/lib/strings";
 import { ConsolePage } from "@/components/console-page";
 import { TenantDetail } from "@/components/tenant-detail";
 
@@ -20,7 +21,7 @@ export default async function TenantDetailPage({ params }: TenantDetailPageProps
   return (
     <ConsolePage
       pageKey="tenants"
-      subtitle="Full tenant record, lifecycle timeline with actor and audit evidence, suspend/reactivate actions and per-tenant quota administration."
+      subtitle={strings.clarity.tenantPurpose}
       title="Tenant detail"
     >
       <TenantDetail key={tenantId} tenantId={tenantId} />

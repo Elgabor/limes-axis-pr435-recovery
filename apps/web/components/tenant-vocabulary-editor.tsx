@@ -324,13 +324,7 @@ export function TenantVocabularyEditor({ tenantId }: { tenantId: string }) {
           <p className="eyebrow m-0">{copy.eyebrow}</p>
           <h2 className="font-display mx-0 mt-1 mb-4 text-xl text-ink">{copy.title}</h2>
           <p className="mx-0 mt-1 mb-0 text-sm leading-snug text-muted break-words">
-            {copy.description} {copy.requiredScope(platformTenantConfigureScope)}
-          </p>
-          <p
-            aria-label={copy.endpoint}
-            className="mx-0 mt-1 mb-0 font-mono text-[13px] leading-snug text-muted break-words"
-          >
-            {buildPlatformTenantVocabularyPath(tenantId)}
+            {copy.description}
           </p>
         </div>
         <BookOpenText size={18} />
@@ -516,11 +510,16 @@ export function TenantVocabularyEditor({ tenantId }: { tenantId: string }) {
         </p>
       ) : null}
 
-      {vocabularySet?.vocabulary_notes?.map((note) => (
-        <p className="mx-0 mt-3 mb-0 text-sm leading-snug text-muted" key={note}>
-          {note}
-        </p>
-      ))}
+      <details className="mt-4 border-t border-line/60 pt-3 text-sm text-muted dark:border-white/10">
+        <summary className="cursor-pointer font-medium text-ink">Vocabulary technical details</summary>
+        <div className="mt-3 grid min-w-0 grid-cols-1 gap-2.5 [&>p]:min-w-0 [&>p]:[overflow-wrap:anywhere]">
+          <p className="m-0 leading-snug break-words">{copy.requiredScope(platformTenantConfigureScope)}</p>
+          <p aria-label={copy.endpoint} className="m-0 font-mono text-[13px] leading-snug break-words">{buildPlatformTenantVocabularyPath(tenantId)}</p>
+          {vocabularySet?.vocabulary_notes?.map((note) => (
+            <p className="m-0 leading-snug break-words" key={note}>{note}</p>
+          ))}
+        </div>
+      </details>
     </section>
   );
 }

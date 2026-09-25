@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -262,6 +262,26 @@ describe("DataCatalog", () => {
     render(<DataCatalog />);
     await user.type(screen.getByLabelText("Search data assets"), "m");
 
-    expect(mocks.setUrlState).toHaveBeenCalledWith({ q: "m" });
+    expect(mocks.setUrlState).toHaveBeenCalledWith({ q: "m", assetId: "" });
+  });
+
+  it.each(["search", "evidence"])("selects a matching asset after changing %s with another asset selected", (filter) => {
+    mocks.urlState.assetId = "source:file_csv_manufacturing_assets:default";
+    mocks.useDataAssetCatalog.mockReturnValue(loadedCatalog(catalogFixture()));
+    const { rerender } = render(<DataCatalog />);
+
+    if (filter === "search") {
+      fireEvent.change(screen.getByLabelText("Search data assets"), { target: { value: "mirror" } });
+    } else {
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "declared_only" } });
+    }
+    const patch = mocks.setUrlState.mock.calls.at(-1)?.[0];
+    expect(patch).toMatchObject({ assetId: "" });
+    mocks.urlState = { ...mocks.urlState, ...patch };
+    rerender(<DataCatalog />);
+
+    expect(screen.getByRole("button", { name: /Operational DB mirror/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: /Manufacturing assets CSV/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(strings.dataCatalog.states.noMatches.title)).not.toBeInTheDocument();
   });
 });

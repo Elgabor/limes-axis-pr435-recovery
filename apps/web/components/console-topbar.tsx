@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Bell, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { Bell, RefreshCw, Search } from "lucide-react";
 
 import { ConsoleCommandMenu } from "@/components/console-command-menu";
 import { announcePopoverOpened, useExclusivePopover } from "@/lib/console-popovers";
@@ -119,12 +119,6 @@ export function ConsoleTopbar({
       className="ops-topbar sticky top-14 isolate z-10 -mx-4 flex min-h-[62px] flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-surface/80 px-4 py-2 backdrop-blur-xl max-sm:grid max-sm:min-h-0 max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:gap-2 max-sm:py-1.5 sm:-mx-6 sm:px-6 min-[921px]:top-0 dark:border-white/10"
       aria-label="Console status bar"
     >
-      <div className="hidden min-w-0 flex-1 sm:block">
-        <span className="flex items-center gap-2.5 text-xs font-semibold text-ink/80 [&>svg]:text-positive">
-          <ShieldCheck size={17} />
-          Sovereign Control
-        </span>
-      </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2 max-sm:flex-nowrap max-sm:overflow-x-auto max-sm:pb-px max-sm:[&_.status-pill]:px-2 max-sm:[&_.status-pill]:text-[11px] max-sm:[&_.status-pill]:whitespace-nowrap sm:ml-auto sm:justify-end">
         <span className={`status-pill ${apiStatusClass(apiStatus.state)}`} title={apiStatus.detail}>
           <span aria-hidden="true" className={`status-dot ${apiStatusClass(apiStatus.state)}`} />
@@ -139,7 +133,7 @@ export function ConsoleTopbar({
         ) : null}
       </div>
       <div
-        className="ops-toolbar-icons flex min-w-0 flex-wrap items-center justify-end gap-2 max-sm:flex-nowrap max-sm:gap-1"
+        className="ops-toolbar-icons flex min-w-0 flex-wrap items-center justify-end gap-2 max-sm:flex-nowrap max-sm:gap-0.5"
         aria-label="Utility actions"
       >
         <button

@@ -36,7 +36,7 @@ test.describe("Axis live story: approval inbox console", () => {
   test.describe.configure({ mode: "serial" });
 
   const QUEUE_ENDPOINT =
-    "http://127.0.0.1:8000/operations/approvals?tenant_id=tenant_demo_manufacturing";
+    `${process.env.AXIS_E2E_API_BASE_URL ?? "http://127.0.0.1:8000"}/operations/approvals?tenant_id=tenant_demo_manufacturing`;
 
   type QueueApproval = {
     approval_id: string;
@@ -127,7 +127,7 @@ test.describe("Axis live story: approval inbox console", () => {
     // Keyboard path only: Tab reaches the option buttons in DOM order,
     // Enter opens the confirm dialog for the focused option.
     const approveOption = page.getByRole("button", { name: /Approve/ });
-    const rejectOption = page.getByRole("button", { name: "Reject" });
+    const rejectOption = page.getByRole("button", { name: /^Reject/ });
     await approveOption.focus();
     await expect(approveOption).toBeFocused();
 

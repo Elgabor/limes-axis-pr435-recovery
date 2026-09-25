@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight, CircleAlert, CircleCheck, Clock3 } from "lucide-react";
 
-import { Eyebrow } from "@/components/ui/eyebrow";
 import { cn } from "@/lib/cn";
 import { platformStatusLabel, type PlatformStatus } from "@/lib/platform-overview";
 import type { AxisQuerySource } from "@/lib/use-axis-query";
@@ -91,8 +90,7 @@ export function PanelHeader({
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="grid gap-1">
-        <Eyebrow>{eyebrow}</Eyebrow>
-        {title ? <h2 className="font-display m-0 text-lg text-ink">{title}</h2> : null}
+        <h2 className="font-display m-0 text-lg text-ink">{title ?? eyebrow}</h2>
       </div>
       {aside}
     </div>

@@ -102,7 +102,8 @@ describe("NeedsAttention items", () => {
     expect(screen.getByText("Supplier Delay Review")).toBeInTheDocument();
     expect(screen.getByText(/Awaiting expedite approval/)).toBeInTheDocument();
     expect(screen.queryByText("Quality Hold Review")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Open workflows" })[0]).toHaveAttribute(
+    expect(screen.getByText(/Example workflow · Awaiting expedite approval/)).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "View recorded runs" })[0]).toHaveAttribute(
       "href",
       "/workflows",
     );
@@ -113,6 +114,18 @@ describe("NeedsAttention items", () => {
       "href",
       "/audit",
     );
+  });
+
+  it("keeps live workflows actionable without describing them as examples", () => {
+    mockApprovalsQuery({ data: approvalInboxFixture, source: "api" });
+    renderStrip({ data: { ...overviewFixture, provenance: "live" }, source: "api" });
+
+    expect(screen.getAllByRole("link", { name: "Open workflows" })[0]).toHaveAttribute(
+      "href",
+      "/workflows",
+    );
+    expect(screen.queryByText(/Example workflow/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "View recorded runs" })).not.toBeInTheDocument();
   });
 
   it("does not present reconciled decided approvals as attention items", () => {

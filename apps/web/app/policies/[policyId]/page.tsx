@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { strings } from "@/lib/strings";
 import { ConsolePage } from "@/components/console-page";
 import { PolicyDetail } from "@/components/policy-detail";
 
@@ -20,7 +21,7 @@ export default async function PolicyDetailPage({ params }: PolicyDetailPageProps
   return (
     <ConsolePage
       pageKey="policies"
-      subtitle="Full policy definition, typed conditions, revision authoring with idempotent replay, revision compare and dry-run evaluation."
+      subtitle={strings.clarity.policyPurpose}
       title="Policy detail"
     >
       <PolicyDetail key={policyId} policyId={policyId} />

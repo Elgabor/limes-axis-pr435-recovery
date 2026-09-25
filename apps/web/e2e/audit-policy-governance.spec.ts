@@ -165,6 +165,7 @@ test.describe("Axis live story: governed audit and policy authoring", () => {
     await expect(
       page.getByRole("heading", { name: "Policies", exact: true }),
     ).toBeVisible({ timeout: 15_000 });
+    await page.locator("summary").filter({ hasText: /^Create policy$/ }).click();
     await page.getByLabel("New policy id").fill(POLICY_ID);
     await page.getByLabel("New policy display name").fill(DISPLAY_NAME);
     await page

@@ -600,9 +600,15 @@ export function AddConnectorWizard({
                           : copy.csvStep.blockedTitle}
                       </span>
                       <span className="text-sm text-muted">
-                        {formatNumber(csvPreview.record_count)} {copy.csvStep.rows} /{" "}
-                        {formatNumber(csvPreview.accepted_record_count)} {copy.csvStep.accepted} /{" "}
-                        {formatNumber(csvPreview.rejected_record_count)} {copy.csvStep.rejected}
+                        {csvPreview.preview_status === "ready" && csvPreview.accepted_record_count < csvPreview.record_count ? (
+                          strings.connectors.partialCsvPreview(csvPreview.accepted_record_count, csvPreview.record_count)
+                        ) : (
+                          <>
+                            {formatNumber(csvPreview.record_count)} {copy.csvStep.rows} /{" "}
+                            {formatNumber(csvPreview.accepted_record_count)} {copy.csvStep.accepted} /{" "}
+                            {formatNumber(csvPreview.rejected_record_count)} {copy.csvStep.rejected}
+                          </>
+                        )}
                       </span>
                     </div>
                     {csvPreview.validation_issues.length > 0 ? (

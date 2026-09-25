@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -170,6 +170,43 @@ describe("OntologyExplorer", () => {
     expect(window.location.search).toBe("?view=list");
     const nodesTable = screen.getByRole("table", { name: "Ontology nodes" });
     expect(within(nodesTable).getByText("Line 2 Packaging")).toBeInTheDocument();
+  });
+
+  it("starts with mobile object cards and preserves an explicit graph choice across resize", async () => {
+    const previousWidth = window.innerWidth;
+    window.innerWidth = 390;
+    try {
+      render(<OntologyExplorer />);
+      expect(screen.getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
+      expect(screen.queryByTestId("ontology-graph")).not.toBeInTheDocument();
+      expect(within(screen.getByLabelText("Business objects")).getByText("Line 2 Packaging")).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Graph" }));
+      expect(window.location.search).toBe("?view=graph");
+      act(() => { window.innerWidth = 1280; window.dispatchEvent(new Event("resize")); });
+      act(() => { window.innerWidth = 390; window.dispatchEvent(new Event("resize")); });
+      expect(screen.getByTestId("ontology-graph")).toBeInTheDocument();
+    } finally {
+      window.innerWidth = previousWidth;
+    }
+  });
+
+  it("enables touch panning while zoomed and restores native scrolling on reset", async () => {
+    window.history.replaceState(null, "", "/ontology?view=graph");
+    render(<OntologyExplorer />);
+    const graph = screen.getByTestId("ontology-graph");
+    const fullView = graph.getAttribute("viewBox");
+    expect(graph).toHaveClass("touch-auto");
+    expect(graph).not.toHaveClass("touch-none");
+
+    await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    expect(graph.getAttribute("viewBox")).not.toBe(fullView);
+    expect(graph).toHaveClass("touch-none");
+    expect(graph).not.toHaveClass("touch-auto");
+
+    await userEvent.click(screen.getByRole("button", { name: "Reset view" }));
+    expect(graph).toHaveAttribute("viewBox", fullView);
+    expect(graph).toHaveClass("touch-auto");
+    expect(graph).not.toHaveClass("touch-none");
   });
 
   it("restores a shareable list view from the URL", () => {

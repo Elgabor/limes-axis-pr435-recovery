@@ -1,245 +1,64 @@
 "use client";
 
-import Link from "next/link";
-import { Bot, GitBranch, Play, ShieldCheck } from "lucide-react";
-
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
-import { Eyebrow } from "@/components/ui/eyebrow";
-import { ErrorPanel, LoadingPanel } from "@/components/ui/states";
-import {
-  countBlockedModelRoutes,
-  type ManufacturingModelRouting,
-} from "@/lib/model-routing-demo";
-import {
-  platformStatusLabel,
-  type ManufacturingOperationsSnapshot,
-  type ManufacturingOverview,
-  type PlatformStatus,
-} from "@/lib/platform-overview";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SourcePill } from "@/components/ui/source-pill";
+import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/ui/states";
+import type { ManufacturingAuditExplorer } from "@/lib/audit-demo";
 import { strings } from "@/lib/strings";
+import { deriveSourceState } from "@/lib/source-state";
 
-import { overviewErrorReference, StatusDot, type OverviewQuery } from "./overview-shared";
+import { normalizeLabel, type OverviewQuery } from "./overview-shared";
+import { ActivityTimeline } from "./activity-timeline";
 
-/*
- * Overview side rail: the system-health radar (computed from the live
- * overview / snapshot / model-routing payloads — the internal demo-readiness
- * QA panel is gone) plus quick actions. Signals from a failed endpoint are
- * simply omitted rather than faked.
- */
-
-type HealthSignal = { label: string; status: PlatformStatus };
-
-function statusScore(status: PlatformStatus): number {
-  if (status === "ready") {
-    return 0.92;
-  }
-
-  return status === "watch" ? 0.68 : 0.46;
-}
-
-function radarPoint(index: number, total: number, status: PlatformStatus): string {
-  const center = 54;
-  const radius = 41 * statusScore(status);
-  const angle = -Math.PI / 2 + (Math.PI * 2 * index) / total;
-
-  return `${(center + Math.cos(angle) * radius).toFixed(1)},${(
-    center + Math.sin(angle) * radius
-  ).toFixed(1)}`;
-}
-
-function buildHealthSignals({
-  overview,
-  snapshot,
-  routing,
-}: {
-  overview: ManufacturingOverview | null;
-  snapshot: ManufacturingOperationsSnapshot | null;
-  routing: ManufacturingModelRouting | null;
-}): HealthSignal[] {
-  const signals: HealthSignal[] = [];
-
-  if (overview) {
-    const workflowMetric = overview.metrics.find((metric) => metric.label === "Workflow Load");
-    const agentsMetric = overview.metrics.find((metric) => metric.label === "Agents");
-    signals.push(
-      { label: "Workflows", status: workflowMetric?.status ?? "watch" },
-      { label: "Agents", status: agentsMetric?.status ?? "ready" },
-      { label: "Approvals", status: overview.approvals.length > 0 ? "watch" : "ready" },
+/** Each bar uses the same denominator: the returned audit window, not all activity. */
+export function SideRail({ auditEvents }: { auditEvents: OverviewQuery<ManufacturingAuditExplorer> }) {
+  const copy = strings.clarity.activity;
+  const [view, setView] = useState("category");
+  if (!auditEvents.data) {
+    return auditEvents.source === "loading" ? <LoadingPanel layout="detail" /> : (
+      <ErrorPanel title={copy.errorTitle} detail={copy.errorDetail}
+        reference={auditEvents.errorRequestId ?? undefined} />
     );
   }
-
-  if (snapshot) {
-    signals.push(
-      {
-        label: "Data",
-        status: snapshot.metrics.every((metric) => metric.status === "ready") ? "ready" : "watch",
-      },
-      {
-        label: "Connectors",
-        status: snapshot.recent_audit_events.some((event) =>
-          event.event_type.startsWith("connector."),
-        )
-          ? "ready"
-          : "watch",
-      },
-    );
+  const events = auditEvents.data.events;
+  if (events.length === 0) {
+    return <EmptyPanel title={copy.emptyTitle} detail={copy.emptyDetail} />;
   }
-
-  if (routing) {
-    signals.push({ label: "Models", status: routing.routing_status });
-  }
-
-  return signals;
-}
-
-function SystemHealth({
-  overview,
-  snapshot,
-  routing,
-}: {
-  overview: OverviewQuery<ManufacturingOverview>;
-  snapshot: OverviewQuery<ManufacturingOperationsSnapshot>;
-  routing: OverviewQuery<ManufacturingModelRouting>;
-}) {
-  const copy = strings.overview.sideRail;
-  const signals = buildHealthSignals({
-    overview: overview.data,
-    snapshot: snapshot.data,
-    routing: routing.data,
-  });
-
-  // A radar needs at least three axes; below that the section degrades.
-  if (signals.length < 3) {
-    const anyLoading = [overview, snapshot, routing].some(
-      (query) => query.source === "loading" && !query.data,
-    );
-
-    if (anyLoading) {
-      return <LoadingPanel layout="detail" />;
-    }
-
-    return (
-      <ErrorPanel
-        detail={copy.error.detail}
-        reference={overviewErrorReference(overview, snapshot, routing)}
-        title={copy.error.title}
-      />
-    );
-  }
-
-  const polygon = signals
-    .map((signal, index) => radarPoint(index, signals.length, signal.status))
-    .join(" ");
-  const baseline = signals
-    .map((_, index) => radarPoint(index, signals.length, "watch"))
-    .join(" ");
+  const counts = new Map<string, number>();
+  for (const event of events) counts.set(event.category, (counts.get(event.category) ?? 0) + 1);
+  const categories = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
 
   return (
-    <Card className="grid content-start gap-3">
-      <h2 className="eyebrow m-0 text-[11px] font-medium">{copy.health}</h2>
-      <svg
-        aria-label="System health radar"
-        className="mx-auto h-auto w-full max-w-52"
-        role="img"
-        viewBox="0 0 108 108"
-      >
-        {[18, 30, 42].map((radius) => (
-          <circle
-            cx="54"
-            cy="54"
-            fill="none"
-            key={radius}
-            r={radius}
-            stroke="rgb(var(--line) / 0.7)"
-          />
-        ))}
-        {signals.map((signal, index) => {
-          const point = radarPoint(index, signals.length, "ready");
-          const [x, y] = point.split(",");
-
-          return (
-            <line key={signal.label} stroke="rgb(var(--line) / 0.6)" x1="54" x2={x} y1="54" y2={y} />
-          );
-        })}
-        <polygon
-          fill="none"
-          points={baseline}
-          stroke="rgb(var(--muted) / 0.5)"
-          strokeDasharray="2 3"
-        />
-        <polygon
-          fill="rgb(var(--signal) / 0.16)"
-          points={polygon}
-          stroke="rgb(var(--signal))"
-          strokeWidth="2"
-        />
-      </svg>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-        {signals.map((signal) => (
-          <span className="inline-flex items-center gap-2 text-xs text-muted" key={signal.label}>
-            <StatusDot status={signal.status} />
-            {signal.label}
-          </span>
-        ))}
+    <Card as="section" aria-label={view === "category" ? copy.title : "Activity by date"} className="grid min-w-0 content-start gap-4">
+      <div className="grid gap-1">
+        <h2 className="m-0 font-display text-lg text-ink">{view === "category" ? copy.title : "Activity by date"}</h2>
+        <p className="m-0 text-xs text-muted">{view === "category" ? copy.window(events.length) : `${events.length} returned events · latest window, up to 25.`}</p>
       </div>
-      {routing.data ? (
-        <>
-          <div aria-hidden="true" className="rule-hairline" />
-          <p className="m-0 text-xs text-muted">
-            Routing posture: {platformStatusLabel(routing.data.routing_status)} /{" "}
-            {countBlockedModelRoutes(routing.data)} blocked route
-            {countBlockedModelRoutes(routing.data) === 1 ? "" : "s"}
-          </p>
-        </>
-      ) : null}
+      <Tabs value={view} onValueChange={setView}>
+        <TabsList aria-label="Activity chart view" className="w-full">
+          <TabsTrigger value="category" className="flex-1 px-2.5">Category</TabsTrigger>
+          <TabsTrigger value="date" className="flex-1 px-2.5">By date</TabsTrigger>
+        </TabsList>
+        <TabsContent value="category">
+      <dl className="m-0 grid gap-4">
+        {categories.map(([category, count]) => (
+          <div key={category} className="grid gap-2">
+            <div className="flex items-baseline justify-between gap-3 text-sm">
+              <dt className="min-w-0 break-words text-ink">{normalizeLabel(category)}</dt>
+              <dd className="m-0 shrink-0 tabular-nums text-muted">{count} · {new Intl.NumberFormat("en", { maximumFractionDigits: 1 }).format(count / events.length * 100)}%</dd>
+            </div>
+            <div aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-signal/10">
+              <div className="h-full rounded-full bg-signal" style={{ width: `${count / events.length * 100}%` }} />
+            </div>
+          </div>
+        ))}
+      </dl>
+        </TabsContent>
+        <TabsContent value="date"><ActivityTimeline events={events} /></TabsContent>
+      </Tabs>
+      <SourcePill state={deriveSourceState(auditEvents.source, true, auditEvents.data.provenance)} subject="audit window" />
     </Card>
-  );
-}
-
-function QuickActions() {
-  const actions = [
-    { label: "View workflows", href: "/workflows", icon: GitBranch },
-    { label: "View agents", href: "/agents", icon: Bot },
-    { label: "Create policy", href: "/policies", icon: ShieldCheck },
-    { label: "Run simulation", href: "/simulation", icon: Play },
-  ];
-
-  return (
-    <Card className="grid content-start gap-3">
-      <Eyebrow>{strings.overview.sideRail.quickActions}</Eyebrow>
-      <div className="grid grid-cols-2 gap-2">
-        {actions.map((action) => {
-          const Icon = action.icon;
-
-          return (
-            <Link
-              className="inline-flex items-center gap-2 rounded-xl border border-line px-3 py-2.5 text-xs font-medium text-ink transition-colors hover:border-signal/50 hover:text-signal dark:border-white/10"
-              href={action.href}
-              key={action.label}
-            >
-              <Icon className="shrink-0" size={15} />
-              {action.label}
-            </Link>
-          );
-        })}
-      </div>
-    </Card>
-  );
-}
-
-export function SideRail({
-  overview,
-  snapshot,
-  routing,
-}: {
-  overview: OverviewQuery<ManufacturingOverview>;
-  snapshot: OverviewQuery<ManufacturingOperationsSnapshot>;
-  routing: OverviewQuery<ManufacturingModelRouting>;
-}) {
-  return (
-    <>
-      <SystemHealth overview={overview} routing={routing} snapshot={snapshot} />
-      <QuickActions />
-    </>
   );
 }

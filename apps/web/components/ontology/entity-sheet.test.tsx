@@ -150,7 +150,7 @@ describe("OntologyEntitySheet", () => {
       "/ontology/asset_line_2",
     );
     // The presentational entity core renders inside the sheet.
-    expect(within(dialog).getByText("Read-only entity context")).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "Summary" })).toBeInTheDocument();
     expect(within(dialog).getByText(/connected$/)).toBeInTheDocument();
     expect(mocks.axisFetch).toHaveBeenCalledWith(
       `${OPERATIONS_API_PREFIX}/ontology/entities/asset_line_2?tenant_id=${DEMO_TENANT_ID}`,

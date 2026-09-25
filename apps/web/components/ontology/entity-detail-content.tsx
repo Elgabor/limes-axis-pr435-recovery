@@ -8,6 +8,7 @@ import { Reveal } from "@/components/reveal";
 import { Card } from "@/components/ui/card";
 import { Eyebrow } from "@/components/ui/eyebrow";
 import { formatNodeType, type ManufacturingOntologyEntityDetail } from "@/lib/ontology-demo";
+import { strings } from "@/lib/strings";
 import { buildOntologyEntityRoute } from "@/lib/ontology-routes";
 
 /*
@@ -98,6 +99,14 @@ export function EntityDetailContent({
 
   return (
     <div className="grid min-w-0 gap-5">
+      <Card className="flex flex-wrap items-start justify-between gap-4">
+        <div className="grid max-w-2xl gap-1">
+          <h2 className="font-display m-0 text-xl text-ink">{strings.clarity.objectSummary}</h2>
+          <p className="m-0 text-sm text-muted">{detail.node.summary}</p>
+        </div>
+        {summaryAction}
+      </Card>
+
       <div className={`grid grid-cols-2 gap-4 ${isPage ? "lg:grid-cols-4" : ""}`}>
         <EntityMetric
           detail={detail.node.node_id}
@@ -117,14 +126,7 @@ export function EntityDetailContent({
         />
       </div>
 
-      <Card className="flex flex-wrap items-start justify-between gap-4">
-        <div className="grid max-w-2xl gap-1">
-          <Eyebrow>Summary</Eyebrow>
-          <h2 className="font-display m-0 text-xl text-ink">Read-only entity context</h2>
-          <p className="m-0 text-sm text-muted">{detail.node.summary}</p>
-        </div>
-        {summaryAction}
-      </Card>
+
 
       <MaybeReveal>
         <div className={`grid gap-4 ${isPage ? "xl:grid-cols-[3fr_2fr]" : ""}`}>

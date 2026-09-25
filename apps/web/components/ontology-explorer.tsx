@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef, useSyncExternalStore } from "react";
 import { Database, List, Share2, ShieldCheck } from "lucide-react";
 
 import { ErrorPanel } from "@/components/ui/states";
 import { OntologyEntitySheet } from "@/components/ontology/entity-sheet";
 import { useOntologyEntityHistory } from "@/components/ontology/use-ontology-entity-history";
 import { OntologyGraph } from "@/components/ontology-graph";
-import { Reveal } from "@/components/reveal";
+import { Disclosure } from "@/components/ui/disclosure";
 import { PlatformStatusPill } from "@/components/status-pill";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -44,11 +44,19 @@ import {
 
 type OntologyView = "graph" | "list";
 
-const ontologyViews = ["graph", "list"] as const satisfies readonly OntologyView[];
+const ontologyViews = ["auto", "graph", "list"] as const;
 const ontologyUrlSchema = {
   entityId: opaqueStringUrlField("entity_id"),
-  view: enumUrlField("view", ontologyViews, "graph"),
+  view: enumUrlField("view", ontologyViews, "auto"),
 };
+
+function subscribeToViewport(onChange: () => void) {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+}
+
+function narrowViewport() { return window.innerWidth < 640; }
+function serverViewport() { return false; }
 
 function OntologyExplorerSkeleton() {
   return (
@@ -75,7 +83,11 @@ export function OntologyExplorer() {
     parse: parseManufacturingOntology,
   });
   const [urlState, setUrlState] = useConsoleUrlState(ontologyUrlSchema);
+  const narrow = useSyncExternalStore(subscribeToViewport, narrowViewport, serverViewport);
+  const view: OntologyView = urlState.view === "auto" ? (narrow ? "list" : "graph") : urlState.view;
   const selectedNodeId = urlState.entityId || null;
+  const entityTriggerRef = useRef<HTMLElement | SVGElement | null>(null);
+  const explorerHeadingRef = useRef<HTMLHeadingElement>(null);
   const updateEntityId = useCallback(
     (entityId: string, history: "push" | "replace") => {
       setUrlState({ entityId }, { history });
@@ -86,6 +98,25 @@ export function OntologyExplorer() {
     entityId: selectedNodeId,
     updateEntityId,
   });
+
+  function activateEntity(nodeId: string, trigger: HTMLElement | SVGElement) {
+    entityTriggerRef.current = trigger;
+    navigateToEntity(nodeId);
+  }
+
+  function restoreEntityFocus(event: Event) {
+    event.preventDefault();
+    const fallback = explorerHeadingRef.current;
+    // Route unmounts must leave focus management to the destination page.
+    if (!fallback?.isConnected) return;
+
+    const trigger = entityTriggerRef.current;
+    if (trigger?.isConnected) {
+      trigger.focus();
+      if (trigger.ownerDocument.activeElement === trigger) return;
+    }
+    fallback.focus();
+  }
 
   const nodeLabels = useMemo(
     () => (ontology ? nodeLabelById(ontology) : new Map<string, string>()),
@@ -160,24 +191,23 @@ export function OntologyExplorer() {
       <Card className="grid gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="grid gap-1">
-            <Eyebrow>Knowledge Graph</Eyebrow>
-            <h2 className="font-display m-0 text-xl text-ink">Typed entities and relationships</h2>
+            <h2 ref={explorerHeadingRef} tabIndex={-1} className="font-display m-0 text-xl text-ink">{strings.clarity.ontologyObjects}</h2>
           </div>
           <div className="flex gap-2" role="group" aria-label="Ontology view">
             <Button
-              aria-pressed={urlState.view === "graph"}
+              aria-pressed={view === "graph"}
               className="px-4 py-2 text-sm"
               onClick={() => setUrlState({ view: "graph" })}
-              variant={urlState.view === "graph" ? "primary" : "secondary"}
+              variant={view === "graph" ? "primary" : "secondary"}
             >
               <Share2 size={15} />
               Graph
             </Button>
             <Button
-              aria-pressed={urlState.view === "list"}
+              aria-pressed={view === "list"}
               className="px-4 py-2 text-sm"
               onClick={() => setUrlState({ view: "list" })}
-              variant={urlState.view === "list" ? "primary" : "secondary"}
+              variant={view === "list" ? "primary" : "secondary"}
             >
               <List size={15} />
               List
@@ -186,13 +216,13 @@ export function OntologyExplorer() {
         </div>
         <div aria-hidden="true" className="rule-hairline" />
 
-        {urlState.view === "graph" ? (
+        {view === "graph" ? (
           <div className="grid gap-3">
             <OntologyGraph
               nodes={ontology.nodes}
               relationships={ontology.relationships}
               selectedNodeId={selectedNodeId ?? undefined}
-              onNodeActivate={navigateToEntity}
+              onNodeActivate={activateEntity}
             />
             <div
               className="flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[11px] tracking-[0.14em] text-muted uppercase"
@@ -218,6 +248,18 @@ export function OntologyExplorer() {
           </div>
         ) : (
           <div className="grid gap-4">
+            <div className="grid gap-2 sm:hidden" aria-label={strings.clarity.businessObjects}>
+              {ontology.nodes.map((node) => (
+                <button key={node.node_id} type="button" onClick={(event) => activateEntity(node.node_id, event.currentTarget)}
+                  className="grid min-w-0 justify-items-start gap-2 rounded-xl border border-line p-3 text-left dark:border-white/10">
+                  <span className="font-medium text-ink">{node.label}</span>
+                  <span className="text-xs text-muted">{formatNodeType(node.node_type)} · {node.domain}</span>
+                  <span className="text-sm text-muted">{node.summary}</span>
+                  <PlatformStatusPill status={node.status} />
+                </button>
+              ))}
+            </div>
+            <div className="hidden min-w-0 sm:grid sm:gap-4">
             <DataTable aria-label="Ontology nodes">
               <thead>
                 <tr>
@@ -234,7 +276,7 @@ export function OntologyExplorer() {
                     <td>
                       <button
                         className="cursor-pointer border-0 bg-transparent p-0 text-left font-medium text-signal hover:underline"
-                        onClick={() => navigateToEntity(node.node_id)}
+                        onClick={(event) => activateEntity(node.node_id, event.currentTarget)}
                         type="button"
                       >
                         {node.label}
@@ -252,6 +294,8 @@ export function OntologyExplorer() {
               </tbody>
             </DataTable>
 
+            </div>
+            <Disclosure title={strings.clarity.relationships}>
             <DataTable aria-label="Ontology relationships">
               <thead>
                 <tr>
@@ -288,11 +332,12 @@ export function OntologyExplorer() {
                 ))}
               </tbody>
             </DataTable>
+            </Disclosure>
           </div>
         )}
       </Card>
 
-      <Reveal>
+      <Disclosure title={strings.clarity.ontologySources}>
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="grid content-start gap-3">
             <Eyebrow>Source Systems</Eyebrow>
@@ -346,10 +391,11 @@ export function OntologyExplorer() {
             </div>
           </Card>
         </div>
-      </Reveal>
+      </Disclosure>
 
       <OntologyEntitySheet
         nodeId={selectedNodeId}
+        onCloseAutoFocus={restoreEntityFocus}
         onNavigateToNode={navigateToEntity}
         onOpenChange={(open) => {
           if (!open) {

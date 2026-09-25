@@ -16,17 +16,16 @@ afterEach(() => {
 });
 
 describe("PageHeader", () => {
-  it("renders eyebrow, title, description and actions", () => {
+  it("renders one title with its purpose and actions", () => {
     render(
       <PageHeader
         actions={<button type="button">Add connector</button>}
         description="Review and decide on actions agents have proposed."
-        eyebrow="Operate"
         title="Approvals"
       />,
     );
 
-    expect(screen.getByText("Operate")).toBeInTheDocument();
+    expect(screen.queryByText("Operate")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Approvals" })).toBeInTheDocument();
     expect(
       screen.getByText("Review and decide on actions agents have proposed."),

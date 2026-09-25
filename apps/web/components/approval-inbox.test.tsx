@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ToastProvider } from "@/components/ui/toast";
 import type { ActionRunList } from "@/lib/action-demo";
@@ -227,6 +227,12 @@ function renderInbox() {
 }
 
 beforeEach(() => {
+  vi.stubGlobal("matchMedia", vi.fn().mockImplementation((media: string) => ({
+    matches: false,
+    media,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  })));
   mocks.axisFetchParsedJson.mockReset();
   mocks.triggerRefresh.mockReset();
   mocks.useAxisQuery.mockReset();
@@ -234,6 +240,10 @@ beforeEach(() => {
     labelDomain: (domain: string) => domain,
   });
   window.history.replaceState(null, "", "/approvals");
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("ApprovalInbox states", () => {
@@ -368,6 +378,114 @@ describe("ApprovalInbox states", () => {
 
     expect(screen.getByRole("heading", { name: "No approvals waiting" })).toBeInTheDocument();
     expect(screen.getByText("External executor completed the quality hold.")).toBeVisible();
+  });
+});
+
+describe("ApprovalInbox queue triage", () => {
+  beforeEach(() => {
+    mockQuery({ data: inboxFixture, source: "api" });
+  });
+
+  it("searches a multi-word action and clears an excluded selection", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/approvals?approval_id=appr_supply_fixture&context=review");
+    renderInbox();
+
+    await user.type(screen.getByRole("searchbox", { name: "Search approvals" }), "quality hold");
+
+    expect(screen.getByRole("searchbox")).toHaveValue("quality hold");
+    expect(screen.getByText("1 of 2 pending")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Expedite fixture batch/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Place fixture quality hold" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Approve & execute/ })).not.toBeInTheDocument();
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("q")).toBe("quality hold");
+    expect(params.has("approval_id")).toBe(false);
+    expect(params.get("context")).toBe("review");
+    expect(mocks.axisFetchParsedJson).not.toHaveBeenCalled();
+  });
+
+  it("composes risk and domain filters, then restores the queue on clear", async () => {
+    const user = userEvent.setup();
+    renderInbox();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Risk" }), "high");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Domain" }), "Quality");
+
+    expect(screen.getByText("0 of 2 pending")).toBeInTheDocument();
+    expect(screen.getByText(/No pending approvals match these filters/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Approve hold|Approve & execute/ })).not.toBeInTheDocument();
+    // Queue counts retain their full-queue denominator while results are filtered.
+    expect(screen.getByLabelText("Approval metrics")).toHaveTextContent(/Pending\s*Needs watching:\s*2/);
+
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("2 of 2 pending")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Risk" })).toHaveValue("all");
+    expect(screen.getByRole("combobox", { name: "Domain" })).toHaveValue("");
+    expect(screen.getByRole("heading", { name: "Expedite fixture batch" })).toBeInTheDocument();
+    expect(window.location.search).toBe("");
+  });
+
+  it("searches the tenant's domain vocabulary and owner", async () => {
+    const user = userEvent.setup();
+    mocks.useTenantVocabulary.mockReturnValue({ labelDomain: (domain: string) => domain === "Supply" ? "Pharmacy supply" : domain });
+    renderInbox();
+    await user.type(screen.getByRole("searchbox"), "PHARMACY");
+    expect(screen.getByText("1 of 2 pending")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Expedite fixture batch/ })).toBeVisible();
+    await user.clear(screen.getByRole("searchbox"));
+    await user.type(screen.getByRole("searchbox"), "quality-owner");
+    expect(screen.getByRole("heading", { name: "Place fixture quality hold" })).toBeInTheDocument();
+  });
+
+  it("honors an explicit link outside the filters and clears filters without changing the record", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/approvals?risk=high&approval_id=appr_quality_fixture");
+    renderInbox();
+    expect(screen.getByRole("heading", { name: "Place fixture quality hold" })).toBeInTheDocument();
+    expect(screen.getByText(/This linked approval is outside/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Place fixture quality hold/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear queue filters" }));
+    expect(new URLSearchParams(window.location.search).get("approval_id")).toBe("appr_quality_fixture");
+    expect(screen.getByRole("heading", { name: "Place fixture quality hold" })).toBeInTheDocument();
+    expect(screen.getByText("2 of 2 pending")).toBeInTheDocument();
+  });
+
+  it("supports browser Back after opening an approval", async () => {
+    const user = userEvent.setup();
+    renderInbox();
+    await user.click(screen.getByRole("button", { name: /Place fixture quality hold/ }));
+    expect(new URLSearchParams(window.location.search).get("approval_id")).toBe("appr_quality_fixture");
+    window.history.back();
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Expedite fixture batch" })).toBeInTheDocument());
+    expect(window.location.search).toBe("");
+  });
+
+  it("moves mobile focus into review and returns to the filtered opener", async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.matchMedia).mockImplementation((media: string) => ({ matches: true, media } as MediaQueryList));
+    renderInbox();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Domain" }), "Quality");
+    await user.click(screen.getByRole("button", { name: /Place fixture quality hold/ }));
+    expect(screen.getByRole("region", { name: "Approval review" })).toHaveFocus();
+
+    await user.click(screen.getByRole("button", { name: "Back to approval inbox" }));
+    expect(screen.getByRole("button", { name: /Place fixture quality hold/ })).toHaveFocus();
+    expect(screen.getByRole("combobox", { name: "Domain" })).toHaveValue("Quality");
+    expect(new URLSearchParams(window.location.search).get("domain")).toBe("Quality");
+    expect(new URLSearchParams(window.location.search).has("approval_id")).toBe(false);
+    expect(mocks.axisFetchParsedJson).not.toHaveBeenCalled();
+  });
+
+  it("returns mobile focus to the inbox heading when a linked record is missing", async () => {
+    const user = userEvent.setup();
+    vi.mocked(window.matchMedia).mockImplementation((media: string) => ({ matches: true, media } as MediaQueryList));
+    window.history.replaceState(null, "", "/approvals?approval_id=missing&q=quality");
+    renderInbox();
+    expect(screen.getByRole("heading", { name: "Requested approval is not in this queue" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Approve hold|Approve & execute/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to approval inbox" }));
+    expect(screen.getByRole("heading", { name: "Approval inbox" })).toHaveFocus();
+    expect(screen.getByRole("searchbox")).toHaveValue("quality");
   });
 });
 

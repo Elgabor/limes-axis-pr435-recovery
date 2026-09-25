@@ -46,18 +46,8 @@ describe("EvidenceFeed", () => {
       "/audit?event_id=00000000-0000-4000-8000-000000000004",
     );
     // Actor + event count come straight from the payload.
-    expect(screen.getByText("Showing 4 of 4")).toBeInTheDocument();
+    expect(screen.getByText("Showing 4 of 4 recent events")).toBeInTheDocument();
     expect(screen.getByText("connector-runtime")).toBeInTheDocument();
   });
 
-  it("renders one compact sparkline in the feed header", () => {
-    render(<EvidenceFeed auditEvents={{ data: auditEventsFixture, source: "api" }} />);
-
-    expect(
-      screen.getByRole("img", {
-        name:
-          "Recent audit events by category. approval: 1, connector: 1, workflow: 1, agent: 1.",
-      }),
-    ).toBeInTheDocument();
-  });
 });

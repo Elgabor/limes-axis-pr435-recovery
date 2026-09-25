@@ -13,37 +13,37 @@
     "test:e2e": "export NEXT_PUBLIC_AXIS_API_BASE_URL=http://127.0.0.1:65534; next build && pnpm run test:e2e:smoke",
     "test:e2e:smoke": "playwright test e2e/smoke.spec.ts",
     "test:e2e:live": "export AXIS_E2E_API_BASE_URL=${AXIS_E2E_API_BASE_URL:-http://127.0.0.1:8000}; export NEXT_PUBLIC_AXIS_API_BASE_URL=$AXIS_E2E_API_BASE_URL AXIS_E2E_LIVE_API=1; next build && pnpm run test:e2e:live:read && pnpm run test:e2e:live:stateful",
-    "test:e2e:live:read": "export AXIS_E2E_LIVE_API=1; playwright test e2e/live-overview.spec.ts e2e/control-room.spec.ts e2e/connectors-flow.spec.ts e2e/onboarding.spec.ts --grep-invert @stateful",
+    "test:e2e:live:read": "export AXIS_E2E_LIVE_API=1; playwright test e2e/live-overview.spec.ts e2e/control-room.spec.ts e2e/connectors-flow.spec.ts e2e/onboarding.spec.ts e2e/ontology-focus.spec.ts --grep-invert @stateful",
     "test:e2e:live:stateful": "export AXIS_E2E_LIVE_API=1; playwright test e2e/live-overview.spec.ts e2e/onboarding.spec.ts --grep @stateful --project=chromium --workers=1",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hugeicons/core-free-icons": "^4.3.0",
+    "@hugeicons/core-free-icons": "^4.3.2",
     "@hugeicons/react": "^1.1.10",
     "@tailwindcss/postcss": "^4.3.3",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "geist": "^1.7.2",
-    "lucide-react": "^1.39.0",
-    "next": "^16.3.4",
+    "lucide-react": "^1.45.0",
+    "next": "^16.3.5",
     "radix-ui": "^1.6.7",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
-    "zod": "^4.5.4"
+    "zod": "^4.6.4"
   },
   "devDependencies": {
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
-    "@types/node": "^24.10.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@types/node": "^26.5.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.3.4",
+    "eslint-config-next": "^16.3.5",
     "jsdom": "^30.0.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.0"
   }
 }

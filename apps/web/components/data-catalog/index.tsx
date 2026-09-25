@@ -170,8 +170,8 @@ export function DataCatalog() {
             <DataAssetList
               assets={filteredAssets}
               evidenceFilter={urlState.evidence}
-              onEvidenceFilterChange={(evidence) => setUrlState({ evidence })}
-              onSearchChange={(q) => setUrlState({ q })}
+              onEvidenceFilterChange={(evidence) => setUrlState({ evidence, assetId: "" })}
+              onSearchChange={(q) => setUrlState({ q, assetId: "" })}
               onSelect={(assetId) => setUrlState({ assetId }, { history: "push" })}
               search={urlState.q}
               selectedAssetId={selectedAssetId}

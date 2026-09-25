@@ -27,8 +27,8 @@ import type { ManufacturingWorkflowConsole } from "@/lib/workflow-demo";
 
 /*
  * Guided setup checklist (spec §6): five steps from an empty tenant to a
- * governed workflow. Done-state is derived client-side from the registry
- * endpoints, best-effort — a failing registry renders its step as not-done,
+ * governed workflow. Done-state is derived client-side from registry reads
+ * and persisted workflow runs, best-effort — a failing read renders its step as not-done,
  * never as an error wall. The overview renders the "full" variant instead of
  * the control room on an empty tenant, and the "compact" variant above the
  * control room while onboarding is partially complete.
@@ -39,12 +39,12 @@ export const ONBOARDING_ENDPOINTS = {
   ontology: `${OPERATIONS_API_PREFIX}/ontology`,
   policies: "/platform/policies",
   agents: `${OPERATIONS_API_PREFIX}/agents`,
-  workflows: `${OPERATIONS_API_PREFIX}/workflows`,
+  workflows: `${OPERATIONS_API_PREFIX}/workflows/runs`,
 } as const;
 
 export type OnboardingStepId = keyof typeof ONBOARDING_ENDPOINTS;
 
-/** "unknown" means the registry did not answer; rendered as not-done. */
+/** "unknown" means the API did not answer; rendered as not-done. */
 export type OnboardingStepState = "done" | "todo" | "unknown";
 
 export type OnboardingStep = {
@@ -100,7 +100,8 @@ export function activatedConnectorCount(
 }
 
 /**
- * Five best-effort registry queries — one per step, nothing else. Each
+ * Five best-effort queries — one per step, nothing else. Workflow completion
+ * uses persisted runs, never the reference workflow registry. Each
  * failing or pending query yields a null count and an "unknown" step.
  */
 function useOnboardingSteps(tenantId: string): OnboardingStep[] {
