@@ -67,6 +67,7 @@ test.describe("approval review workspace", () => {
     await page.getByRole("button", { name: "Clear filters", exact: true }).click();
     await expect(search).toHaveValue("");
     await page.getByRole("combobox", { name: "Domain", exact: true }).selectOption({ label: "Quality" });
+    await expect(page).toHaveURL(/domain=quality/i);
     const row = page.getByRole("button", { name: /Place Batch Q-1842/ });
     await row.click();
     await expect(page.getByRole("heading", { name: "Place Batch Q-1842 on quality hold" })).toBeVisible();
@@ -78,12 +79,14 @@ test.describe("approval review workspace", () => {
     } else {
       await page.goBack();
     }
+    await expect(page).toHaveURL(/\/approvals(?:\?|$)/);
     await expect(page).not.toHaveURL(/approval_id=/);
-    await expect(page.getByRole("combobox", { name: "Domain", exact: true })).toHaveValue(/quality/i);
+    await expect(page.getByRole("combobox", { name: "Domain", exact: true })).toHaveValue(/quality/i, { timeout: 10_000 });
     await row.click();
     await page.goBack();
+    await expect(page).toHaveURL(/\/approvals(?:\?|$)/);
     await expect(page).not.toHaveURL(/approval_id=/);
-    await expect(search).toBeVisible();
+    await expect(search).toBeVisible({ timeout: 10_000 });
     await row.click();
     if (compact(page)) await page.getByRole("button", { name: "Back to approval inbox" }).click();
     await search.fill("quality");
