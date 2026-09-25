@@ -78,11 +78,12 @@ test.describe("approval review workspace", () => {
     } else {
       await page.goBack();
     }
+    await expect(page).not.toHaveURL(/approval_id=/);
     await expect(page.getByRole("combobox", { name: "Domain", exact: true })).toHaveValue(/quality/i);
     await row.click();
     await page.goBack();
-    await expect(search).toBeVisible();
     await expect(page).not.toHaveURL(/approval_id=/);
+    await expect(search).toBeVisible();
     await row.click();
     if (compact(page)) await page.getByRole("button", { name: "Back to approval inbox" }).click();
     await search.fill("quality");
