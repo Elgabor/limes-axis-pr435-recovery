@@ -129,17 +129,27 @@ jobs:
 
       - name: Start MinIO source fixture
         run: |
-          docker run -d --name axis-ci-s3-input -p 127.0.0.1:19335:9000 \
-            -e MINIO_ROOT_USER=axis335fixture \
-            -e MINIO_ROOT_PASSWORD=axis335fixturepassword \
-            quay.io/minio/minio:RELEASE.2024-10-13T13-34-11Z@sha256:9535594ad4122b7a78c6632788a989b96d9199b483d3bd71a5ceae73a922cdfa server /data
+          minio_package="${RUNNER_TEMP}/minio_20241013133411.0.0_amd64.deb"
+          curl -fsSL --retry 3 --output "$minio_package" \
+            https://github.com/minio/minio/releases/download/RELEASE.2024-10-13T13-34-11Z/minio_20241013133411.0.0_amd64.deb
+          printf '%s  %s\n' \
+            f56b9b5d75abeec416678d8d4184cc9552f64643abb14f24918d250a92d8a598 \
+            "$minio_package" | sha256sum --check --status
+          dpkg-deb --extract "$minio_package" "${RUNNER_TEMP}/axis-ci-minio"
+          mkdir -p "${RUNNER_TEMP}/axis-ci-minio-data"
+          export MINIO_ROOT_USER=axis335fixture
+          export MINIO_ROOT_PASSWORD=axis335fixturepassword
+          "${RUNNER_TEMP}/axis-ci-minio/usr/local/bin/minio" server \
+            "${RUNNER_TEMP}/axis-ci-minio-data" --address 127.0.0.1:19335 \
+            > "${RUNNER_TEMP}/axis-ci-minio.log" 2>&1 &
+          echo "$!" > "${RUNNER_TEMP}/axis-ci-minio.pid"
           for _ in $(seq 1 60); do
             if curl -fsS --max-time 1 http://127.0.0.1:19335/minio/health/ready > /dev/null; then
               exit 0
             fi
             sleep 1
           done
-          docker logs axis-ci-s3-input
+          cat "${RUNNER_TEMP}/axis-ci-minio.log"
           exit 1
 
       - name: Test S3 input and checkpoint contracts
@@ -153,7 +163,10 @@ jobs:
 
       - name: Stop MinIO source fixture
         if: always()
-        run: docker rm -f axis-ci-s3-input > /dev/null 2>&1 || true
+        run: |
+          if [ -f "${RUNNER_TEMP}/axis-ci-minio.pid" ]; then
+            kill "$(cat "${RUNNER_TEMP}/axis-ci-minio.pid")" > /dev/null 2>&1 || true
+          fi
 
       # Migrations are Postgres-only (JSONB columns), which is why this job cannot
       # fall back to SQLite the way local development can.
